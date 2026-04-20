@@ -354,6 +354,7 @@ class InMemoryRepository:
         self._concepts_by_campaign: dict[str, list[str]] = {}
         self._concept_embeddings: dict[str, list[float]] = {}
         self._graph_edges: list[dict] = []
+        self._campaign_exports: list[dict] = []
         self._seed_catalog_locked()
 
     def create_admin_session(self, ttl_hours: int) -> AdminSession:
@@ -1247,6 +1248,21 @@ class InMemoryRepository:
             audit = self._retrieval_audits.get(audit_id)
             return None if audit is None else audit.model_copy(deep=True)
 
+    def list_retrieval_audits_for_campaign(
+        self, campaign_id: str
+    ) -> list[RetrievalAuditRow]:
+        """All retrieval_audit rows for a campaign, oldest first.
+
+        Feeds the M6 RAG export ``queries.jsonl`` dump; no runtime hot
+        path uses this method. Sorted by ``created_at`` ascending so the
+        on-disk artifact reads chronologically.
+        """
+        with self._lock:
+            ids = list(self._retrieval_audits_by_campaign.get(campaign_id, []))
+            rows = [self._retrieval_audits[aid].model_copy(deep=True) for aid in ids]
+        rows.sort(key=lambda row: row.created_at)
+        return rows
+
     # ------------------------------------------------------------------
     # Knowledge graph (M5).
     # ------------------------------------------------------------------
@@ -1462,6 +1478,96 @@ class InMemoryRepository:
         with self._lock:
             vec = self._concept_embeddings.get(concept_id)
             return list(vec) if vec is not None else None
+
+    def list_concepts_for_campaign(self, campaign_id: str) -> list[Concept]:
+        """All concept rows for a campaign, ``first_seen`` ascending.
+
+        M6 export feed. Returned copies drop the ``is_new`` flag so
+        callers can treat the rows as snapshots.
+        """
+        with self._lock:
+            ids = list(self._concepts_by_campaign.get(campaign_id, []))
+            rows = [self._concepts[cid].model_copy(deep=True) for cid in ids]
+        rows.sort(key=lambda row: row.first_seen)
+        for row in rows:
+            row.is_new = False
+        return rows
+
+    def list_graph_edges_for_campaign(self, campaign_id: str) -> list[dict]:
+        """All ``mentioned_with`` + ``contradicts`` edges, newest first.
+
+        Each row: ``{edge_table, from_id, to_id, kind, confidence,
+        session_id, turn_id, created_at}``. ``kind`` is defaulted to
+        ``"contradicts"`` for rows from the ``contradicts`` side list so
+        the export graph carries a consistent shape.
+        """
+        with self._lock:
+            filtered = [
+                edge for edge in self._graph_edges if edge["campaign_id"] == campaign_id
+            ]
+        filtered.sort(key=lambda edge: edge["created_at"], reverse=True)
+        return [
+            {
+                "edge_table": edge["edge_table"],
+                "from_id": edge["from"],
+                "to_id": edge["to"],
+                "kind": edge.get(
+                    "kind",
+                    "contradicts" if edge["edge_table"] == "contradicts" else "",
+                ),
+                "confidence": edge["confidence"],
+                "session_id": edge["session_id"],
+                "turn_id": edge["turn_id"],
+                "created_at": edge["created_at"],
+            }
+            for edge in filtered
+        ]
+
+    # ------------------------------------------------------------------
+    # Campaign export (M6). Audit trail for the ./campaigns/{slug}/rag
+    # folder sync; the on-disk artifact is not the source of truth.
+    # ------------------------------------------------------------------
+
+    def create_campaign_export(
+        self,
+        *,
+        campaign_id: str,
+        manifest: dict,
+        export_path: str,
+    ) -> str:
+        export_id = f"cexport-{uuid4().hex[:12]}"
+        now = _timestamp()
+        with self._lock:
+            self._campaign_exports.append(
+                {
+                    "id": export_id,
+                    "campaign_id": campaign_id,
+                    "manifest": dict(manifest),
+                    "export_path": export_path,
+                    "created_at": now,
+                }
+            )
+        return export_id
+
+    def list_campaign_exports_for_campaign(self, campaign_id: str) -> list[dict]:
+        with self._lock:
+            matches = [
+                dict(row)
+                for row in self._campaign_exports
+                if row["campaign_id"] == campaign_id
+            ]
+        matches.sort(key=lambda row: row["created_at"])
+        return matches
+
+    def get_latest_campaign_export(self, campaign_id: str) -> dict | None:
+        """Return the most recent ``campaign_export`` row for the campaign.
+
+        Centralizes "latest manifest" lookup so the admin route does not
+        open-code ``list(...)[-1]`` and silently break if ordering ever
+        flips. Returns ``None`` when no sync has run yet.
+        """
+        exports = self.list_campaign_exports_for_campaign(campaign_id)
+        return exports[-1] if exports else None
 
 
 def _normalize_concept_label(raw: str) -> str:

@@ -11,6 +11,7 @@ from agentic_survey.auth import (
 )
 from agentic_survey.config import Settings, get_settings
 from agentic_survey.repository import AdminSession, InMemoryRepository, get_repository
+from agentic_survey.services.rag_export import sync_campaign_rag_folder
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -168,4 +169,45 @@ async def get_turn_audit(
             chunks=retrieval_rows,
             scores=retrieval_scores,
         ),
+    )
+
+
+class RagSyncResponse(BaseModel):
+    campaign_id: str
+    export_path: str
+    files: dict[str, str]
+    synced_at: str
+
+
+@router.post(
+    "/campaigns/{campaign_id}/rag/sync",
+    dependencies=[Depends(require_admin_session)],
+)
+async def sync_campaign_rag(
+    campaign_id: str,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> RagSyncResponse:
+    campaign = repository.get_campaign(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    rag_dir = await sync_campaign_rag_folder(
+        campaign_id=campaign_id,
+        repository=repository,
+    )
+    latest = repository.get_latest_campaign_export(campaign_id)
+    # ``sync_campaign_rag_folder`` writes the manifest before returning, so
+    # the route always sees a populated row. An empty manifest would mean
+    # the writer skipped the export audit, which is a bug we want visible.
+    synced_at = (latest or {}).get("manifest", {}).get("synced_at", "")
+    return RagSyncResponse(
+        campaign_id=campaign_id,
+        export_path=str(rag_dir),
+        files={
+            "sources": str(rag_dir / "sources.jsonl"),
+            "chunks": str(rag_dir / "chunks"),
+            "queries": str(rag_dir / "queries.jsonl"),
+            "graph": str(rag_dir / "graph.json"),
+            "readme": str(rag_dir / "README.md"),
+        },
+        synced_at=synced_at,
     )

@@ -1286,13 +1286,36 @@ class SurrealRepository:
         if not rows:
             return None
         row = rows if isinstance(rows, dict) else rows[0]
+        return self._row_to_retrieval_audit(row, audit_id)
+
+    def list_retrieval_audits_for_campaign(
+        self, campaign_id: str
+    ) -> list[RetrievalAuditRow]:
+        rows = self._query(
+            """
+            SELECT *
+            FROM retrieval_audit
+            WHERE campaign = type::thing('campaign', $cid)
+            ORDER BY created_at ASC;
+            """,
+            {"cid": campaign_id},
+        )
+        return [self._row_to_retrieval_audit(row) for row in rows or []]
+
+    def _row_to_retrieval_audit(
+        self, row: dict, fallback_id: str | None = None
+    ) -> RetrievalAuditRow:
+        audit_id = _record_id("retrieval_audit", row.get("id") or fallback_id)
         return RetrievalAuditRow(
-            id=_record_id("retrieval_audit", row.get("id", audit_id)),
+            id=audit_id,
             campaign_id=_record_id("campaign", row.get("campaign")),
             surface=row.get("surface", "designer"),
             query=str(row.get("query") or ""),
             top_k=int(row.get("top_k") or 0),
-            chunk_ids=[_record_id("knowledge_chunk", cid) for cid in (row.get("chunk_ids") or [])],
+            chunk_ids=[
+                _record_id("knowledge_chunk", cid)
+                for cid in (row.get("chunk_ids") or [])
+            ],
             scores=[float(s) for s in (row.get("scores") or [])],
             mode=row.get("mode") or "hybrid",
             cache_hit=bool(row.get("cache_hit") or False),
@@ -1484,7 +1507,7 @@ class SurrealRepository:
             if not frontier:
                 break
             frontier_things = [RecordID("concept", cid) for cid in frontier]
-            # SurrealQL has no UNION combiner; query each edge table
+            # SurrealQL 2.x has no set combiner; query each edge table
             # separately and merge in Python. Both queries share the same
             # frontier-filter shape so behavior matches the in-memory
             # depth-limited expansion.
@@ -1592,6 +1615,165 @@ class SurrealRepository:
             first_seen=_ensure_iso(row.get("first_seen")),
             is_new=False,
         )
+
+    def list_concepts_for_campaign(self, campaign_id: str) -> list[Concept]:
+        rows = self._query(
+            """
+            SELECT id, campaign, label, type, mention_count, first_seen
+            FROM concept
+            WHERE campaign = type::thing('campaign', $cid)
+            ORDER BY first_seen ASC;
+            """,
+            {"cid": campaign_id},
+        )
+        concepts: list[Concept] = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            concepts.append(
+                Concept(
+                    id=_record_id("concept", row.get("id")),
+                    campaign_id=_record_id("campaign", row.get("campaign")) or campaign_id,
+                    label=str(row.get("label") or ""),
+                    type=str(row.get("type") or ""),
+                    mention_count=int(row.get("mention_count") or 0),
+                    first_seen=_ensure_iso(row.get("first_seen")),
+                    is_new=False,
+                )
+            )
+        return concepts
+
+    def list_graph_edges_for_campaign(self, campaign_id: str) -> list[dict]:
+        """Merge of ``mentioned_with`` + ``contradicts`` for the campaign.
+
+        SurrealQL 2.x has no set combiner (reviewer caught the
+        regression in M5; kept), so the two tables are queried
+        separately and merged in Python. Returned rows are sorted by
+        ``created_at`` descending so the M6 export carries the newest
+        graph activity first.
+        """
+        mentioned_rows = self._query(
+            """
+            SELECT id, in, out, kind, confidence, session, turn, created_at
+            FROM mentioned_with
+            WHERE campaign = type::thing('campaign', $cid);
+            """,
+            {"cid": campaign_id},
+        )
+        contradicts_rows = self._query(
+            """
+            SELECT id, in, out, confidence, session, turn, created_at
+            FROM contradicts
+            WHERE campaign = type::thing('campaign', $cid);
+            """,
+            {"cid": campaign_id},
+        )
+        merged: list[dict] = []
+        for row in mentioned_rows or []:
+            if not isinstance(row, dict):
+                continue
+            merged.append(
+                {
+                    "edge_table": "mentioned_with",
+                    "from_id": _record_id("concept", row.get("in")),
+                    "to_id": _record_id("concept", row.get("out")),
+                    "kind": str(row.get("kind") or ""),
+                    "confidence": float(row.get("confidence") or 0.0),
+                    "session_id": _record_id("interview_session", row.get("session")),
+                    "turn_id": _record_id("interview_turn", row.get("turn")),
+                    "created_at": _ensure_iso(row.get("created_at")),
+                }
+            )
+        for row in contradicts_rows or []:
+            if not isinstance(row, dict):
+                continue
+            merged.append(
+                {
+                    "edge_table": "contradicts",
+                    "from_id": _record_id("concept", row.get("in")),
+                    "to_id": _record_id("concept", row.get("out")),
+                    "kind": "contradicts",
+                    "confidence": float(row.get("confidence") or 0.0),
+                    "session_id": _record_id("interview_session", row.get("session")),
+                    "turn_id": _record_id("interview_turn", row.get("turn")),
+                    "created_at": _ensure_iso(row.get("created_at")),
+                }
+            )
+        merged.sort(key=lambda edge: edge["created_at"], reverse=True)
+        return merged
+
+    # ------------------------------------------------------------------
+    # Campaign export (M6).
+    # ------------------------------------------------------------------
+
+    def create_campaign_export(
+        self,
+        *,
+        campaign_id: str,
+        manifest: dict,
+        export_path: str,
+    ) -> str:
+        export_id = f"cexport-{uuid4().hex[:12]}"
+        now_dt = _utcnow()
+        self._db().create(
+            RecordID("campaign_export", export_id),
+            {
+                "campaign": RecordID("campaign", campaign_id),
+                "manifest": dict(manifest),
+                "export_path": export_path,
+                "created_at": now_dt,
+            },
+        )
+        return export_id
+
+    def list_campaign_exports_for_campaign(self, campaign_id: str) -> list[dict]:
+        rows = self._query(
+            """
+            SELECT id, manifest, export_path, created_at
+            FROM campaign_export
+            WHERE campaign = type::thing('campaign', $cid)
+            ORDER BY created_at ASC;
+            """,
+            {"cid": campaign_id},
+        )
+        exports: list[dict] = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            exports.append(
+                {
+                    "id": _record_id("campaign_export", row.get("id")),
+                    "campaign_id": campaign_id,
+                    "manifest": dict(row.get("manifest") or {}),
+                    "export_path": row.get("export_path"),
+                    "created_at": _ensure_iso(row.get("created_at")),
+                }
+            )
+        return exports
+
+    def get_latest_campaign_export(self, campaign_id: str) -> dict | None:
+        rows = self._query(
+            """
+            SELECT id, manifest, export_path, created_at
+            FROM campaign_export
+            WHERE campaign = type::thing('campaign', $cid)
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """,
+            {"cid": campaign_id},
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        if not isinstance(row, dict):
+            return None
+        return {
+            "id": _record_id("campaign_export", row.get("id")),
+            "campaign_id": campaign_id,
+            "manifest": dict(row.get("manifest") or {}),
+            "export_path": row.get("export_path"),
+            "created_at": _ensure_iso(row.get("created_at")),
+        }
 
     def _row_to_knowledge_source(self, row: dict) -> KnowledgeSource:
         approved_at = row.get("approved_at")
