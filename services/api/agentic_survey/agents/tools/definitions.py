@@ -12,6 +12,7 @@ __all__ = [
     "list_grounding_sources_tool",
     "list_participant_faq_tool",
     "propose_outline_patch_tool",
+    "propose_search_queries_tool",
     "search_knowledge_tool",
 ]
 
@@ -20,6 +21,7 @@ OutlineProvider = Callable[[], OutlineArtifact]
 SourcesProvider = Callable[[], list[dict[str, Any]]]
 SignalsProvider = Callable[[], SessionSignals]
 PatchSink = Callable[[dict[str, Any]], None]
+SearchQueriesSink = Callable[[list[str]], list[str]]
 
 
 def search_knowledge_tool(*, search_fn: SearchKnowledgeFn) -> MiraTool:
@@ -161,6 +163,70 @@ def propose_outline_patch_tool(*, patch_sink: PatchSink) -> MiraTool:
                 },
             },
             "required": ["sections"],
+            "additionalProperties": False,
+        },
+        handler=handler,
+    )
+
+
+def propose_search_queries_tool(*, queue_sink: SearchQueriesSink) -> MiraTool:
+    """Design-time tool: Mira stages web-search queries for scientist review.
+
+    The handler does not run any HTTP call. Each query is persisted via
+    ``queue_sink`` as a ``knowledge_source(kind="searxng_suggestion")`` row
+    in ``pending_approval`` so the scientist can review and execute it from
+    the knowledge rail. NEVER register this tool on the Interviewer
+    surface; web search is design-time only and the invariant is enforced
+    at the registry level in ``agents/brain_b_interviewer.py``.
+    """
+
+    async def handler(args: dict[str, Any]) -> dict[str, Any]:
+        queries = args.get("queries")
+        if not isinstance(queries, list) or not queries:
+            raise ValueError("queries must be a non-empty list of strings")
+        cleaned: list[str] = []
+        for raw in queries:
+            if not isinstance(raw, str):
+                raise ValueError("each query must be a string")
+            text = raw.strip()
+            if not text:
+                continue
+            if len(text) > 240:
+                text = text[:240]
+            cleaned.append(text)
+        if not cleaned:
+            raise ValueError("queries list contained only blank strings")
+        created_ids = queue_sink(cleaned)
+        return {
+            "queued_count": len(created_ids),
+            "source_ids": list(created_ids),
+        }
+
+    return MiraTool(
+        name="propose_search_queries",
+        description=(
+            "Stage 1-5 web-search queries for the scientist to review. "
+            "Use only at design time when the outline has a weak-coverage axis "
+            "and no approved grounding source exists on that axis. The scientist "
+            "decides whether to execute each suggestion. Never available during "
+            "a live interview."
+        ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "queries": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "items": {
+                        "type": "string",
+                        "description": "Natural-language search query, 3-20 words.",
+                        "minLength": 1,
+                        "maxLength": 240,
+                    },
+                },
+            },
+            "required": ["queries"],
             "additionalProperties": False,
         },
         handler=handler,

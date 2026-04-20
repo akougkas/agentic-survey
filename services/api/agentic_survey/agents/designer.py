@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from agentic_survey.agents.brain_a import stream_brain_a
 from agentic_survey.agents.brain_b_designer import (
@@ -14,6 +14,10 @@ from agentic_survey.domain.outline import OutlineArtifact
 from agentic_survey.llm.router import LiteLLMRouter
 from agentic_survey.repository import Campaign, DesignerSession
 from agentic_survey.services.retrieval import build_search_knowledge
+from agentic_survey.services.web_search.suggestions import (
+    assert_design_time,
+    queue_proposed_queries,
+)
 
 __all__ = [
     "DESIGNER_BRAIN_A_PROMPT",
@@ -179,6 +183,20 @@ async def run_designer_turn(
         else _noop_search_knowledge
     )
     grounding_sources = _list_approved_grounding_sources(repository, campaign.id)
+    propose_queries_fn: Callable[[list[str]], list[str]] | None = None
+    if repository is not None:
+        def _queue_queries(queries: list[str]) -> list[str]:
+            # M3 invariant: design-time only. The closure re-reads the
+            # campaign state so a turn that starts in DESIGNING but races
+            # with a LIVE transition still rejects cleanly. Errors surface
+            # to Brain B as a tool-dispatch error per ``ToolRegistry``.
+            assert_design_time(campaign.state)
+            return queue_proposed_queries(
+                campaign_id=campaign.id,
+                queries=queries,
+                repository=repository,
+            )
+        propose_queries_fn = _queue_queries
     intent = await run_brain_b_designer(
         outline=outline,
         transcript_tail=transcript_tail,
@@ -186,6 +204,7 @@ async def run_designer_turn(
         search_knowledge=search_fn,
         list_grounding_sources=lambda: grounding_sources,
         propose_outline_patch=_propose,
+        propose_search_queries=propose_queries_fn,
     )
 
     working = (

@@ -12,6 +12,7 @@ from agentic_survey.agents.tools.definitions import (
     list_grounding_sources_tool,
     list_participant_faq_tool,
     propose_outline_patch_tool,
+    propose_search_queries_tool,
     search_knowledge_tool,
 )
 from agentic_survey.agents.tools.registry import ToolRegistry
@@ -21,11 +22,13 @@ from agentic_survey.domain.outline import OutlineArtifact
 __all__ = [
     "BrainBToolBudgetExceeded",
     "DesignerBrainBError",
+    "ProposeSearchQueries",
     "SearchKnowledge",
     "run_brain_b_designer",
 ]
 
 SearchKnowledge = Callable[[str, int], Awaitable[list[dict[str, Any]]]]
+ProposeSearchQueries = Callable[[list[str]], list[str]]
 
 # Back-compat alias: the shared loop raises BrainBLoopError. Existing callers
 # (and tests) that import DesignerBrainBError keep working.
@@ -40,26 +43,30 @@ async def run_brain_b_designer(
     search_knowledge: SearchKnowledge,
     list_grounding_sources: Callable[[], list[dict[str, Any]]],
     propose_outline_patch: Callable[[dict[str, Any]], None],
+    propose_search_queries: ProposeSearchQueries | None = None,
     max_tool_calls: int = 4,
 ) -> BrainBIntent:
     """Run Designer Brain B as a tool-calling agent.
 
-    The caller provides closures for retrieval, grounding lookup, and patch
-    capture. Brain B decides whether to invoke any of the registered tools
-    before emitting its terminal ``BrainBIntent``. The returned intent's
-    ``outline_patch`` is still the authoritative change set the caller
-    applies; ``propose_outline_patch`` is an additional audit channel that
-    captures mid-turn proposals.
+    The caller provides closures for retrieval, grounding lookup, patch
+    capture, and (optionally) search-query staging. Brain B decides whether
+    to invoke any of the registered tools before emitting its terminal
+    ``BrainBIntent``. The returned intent's ``outline_patch`` is still the
+    authoritative change set the caller applies; ``propose_outline_patch``
+    is an additional audit channel that captures mid-turn proposals.
+    ``propose_search_queries`` is design-time only; omit it to disable the
+    tool for callers that cannot accept scientist-gated writes.
     """
-    registry = ToolRegistry(
-        [
-            search_knowledge_tool(search_fn=search_knowledge),
-            get_outline_state_tool(outline_provider=lambda: outline),
-            list_grounding_sources_tool(sources_provider=list_grounding_sources),
-            list_participant_faq_tool(outline_provider=lambda: outline),
-            propose_outline_patch_tool(patch_sink=propose_outline_patch),
-        ]
-    )
+    tools = [
+        search_knowledge_tool(search_fn=search_knowledge),
+        get_outline_state_tool(outline_provider=lambda: outline),
+        list_grounding_sources_tool(sources_provider=list_grounding_sources),
+        list_participant_faq_tool(outline_provider=lambda: outline),
+        propose_outline_patch_tool(patch_sink=propose_outline_patch),
+    ]
+    if propose_search_queries is not None:
+        tools.append(propose_search_queries_tool(queue_sink=propose_search_queries))
+    registry = ToolRegistry(tools)
     system_context = [
         "Current outline (JSON):\n" + outline.model_dump_json(indent=2),
         "Approved grounding sources are available via list_grounding_sources.",

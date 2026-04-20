@@ -44,11 +44,11 @@ async def run_brain_b_interviewer(
 ) -> BrainBIntent:
     """Run Interviewer Brain B as a tool-calling agent.
 
-    The Interviewer registry deliberately omits ``propose_outline_patch`` (the
-    outline is locked by the time the campaign goes LIVE) and
-    ``propose_search_queries`` (web-search is design-time only). Close
-    authority stays with Brain B via ``should_close``; session signals are
-    advisory and exposed through ``get_session_signals``.
+    The Interviewer registry deliberately omits ``propose_outline_patch``
+    because the outline is locked once the campaign goes LIVE, and every
+    web-search surface because live interviews never call the network.
+    Close authority stays with Brain B via ``should_close``; session
+    signals are advisory and exposed through ``get_session_signals``.
     """
     sources_provider = list_grounding_sources or (lambda: [])
     registry = ToolRegistry(

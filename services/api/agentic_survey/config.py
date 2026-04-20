@@ -53,6 +53,11 @@ class Settings(BaseSettings):
 
     searxng_url: str = "http://searxng:8080"
 
+    # Web search (M3) -----------------------------------------------------
+    # Design-time only. SearXNG primary when ``searxng_url`` is set; the
+    # ``ddgs`` package provides fallback. Interview surface never calls web.
+    web_search_top_k: int = 10
+
     # Ingestion worker (M2) -----------------------------------------------
     freshness_poll_seconds: int = 30
     ingest_min_chars: int = 500
