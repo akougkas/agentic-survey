@@ -1,0 +1,193 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --page: #141614;
+    --panel: rgba(28, 32, 28, 0.86);
+    --line: rgba(232, 224, 207, 0.14);
+    --text: #e8e0cf;
+    --muted: rgba(232, 224, 207, 0.7);
+    --moss: #7eb88d;
+    --ember: #dc7d4e;
+    --brass: #a79252;
+  }
+
+  html {
+    background:
+      linear-gradient(rgba(232, 224, 207, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232, 224, 207, 0.03) 1px, transparent 1px),
+      var(--page);
+    background-size: 40px 40px, 40px 40px, auto;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-transparent font-body text-chalk antialiased;
+    line-height: 1.5;
+  }
+
+  a {
+    @apply text-inherit no-underline;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .shell {
+    @apply mx-auto w-full max-w-[78rem] px-5 py-8 md:px-8 md:py-10;
+  }
+
+  .band {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 20px 70px rgba(0, 0, 0, 0.18);
+  }
+
+  .band-soft {
+    background: rgba(20, 22, 20, 0.44);
+    border: 1px solid rgba(232, 224, 207, 0.1);
+    border-radius: 8px;
+  }
+
+  .eyebrow {
+    @apply font-mono text-xs uppercase tracking-[0.18em] text-moss;
+  }
+
+  .label {
+    @apply font-mono text-[11px] uppercase tracking-[0.16em] text-[color:var(--muted)];
+  }
+
+  .page-title {
+    @apply max-w-4xl font-display text-[2.8rem] leading-[1.02] md:text-[4.35rem];
+  }
+
+  .section-title {
+    @apply font-display text-[2rem] leading-tight md:text-[2.4rem];
+  }
+
+  .section-copy {
+    @apply m-0 max-w-3xl text-[15px] leading-7 text-[color:var(--muted)] md:text-base;
+  }
+
+  .nav-link {
+    @apply rounded-[8px] px-3 py-2 text-sm text-[color:var(--muted)] transition hover:bg-white/5 hover:text-chalk;
+  }
+
+  .field {
+    @apply w-full rounded-[8px] border border-[color:var(--line)] bg-[color:rgba(18,20,18,0.74)] px-4 py-3 text-sm text-chalk outline-none transition;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  .field:focus {
+    border-color: rgba(126, 184, 141, 0.48);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.03),
+      0 0 0 1px rgba(126, 184, 141, 0.24);
+  }
+
+  .button-primary {
+    @apply inline-flex items-center justify-center rounded-[8px] px-5 py-3 text-sm text-chalk transition disabled:cursor-not-allowed disabled:border-[color:var(--line)] disabled:text-[color:var(--muted)];
+    border: 1px solid rgba(126, 184, 141, 0.6);
+    background: rgba(126, 184, 141, 0.12);
+  }
+
+  .button-primary:hover:not(:disabled) {
+    background: rgba(126, 184, 141, 0.18);
+    border-color: rgba(126, 184, 141, 0.8);
+  }
+
+  .button-secondary {
+    @apply inline-flex items-center justify-center rounded-[8px] border border-[color:var(--line)] bg-transparent px-4 py-3 text-sm text-[color:var(--muted)] transition disabled:cursor-not-allowed disabled:text-[color:var(--muted)];
+  }
+
+  .button-secondary:hover:not(:disabled) {
+    border-color: rgba(232, 224, 207, 0.24);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .button-danger {
+    @apply inline-flex items-center justify-center rounded-[8px] px-4 py-3 text-sm text-chalk transition disabled:cursor-not-allowed disabled:border-[color:var(--line)] disabled:text-[color:var(--muted)];
+    border: 1px solid rgba(220, 125, 78, 0.5);
+    background: rgba(220, 125, 78, 0.1);
+  }
+
+  .button-danger:hover:not(:disabled) {
+    background: rgba(220, 125, 78, 0.16);
+    border-color: rgba(220, 125, 78, 0.72);
+  }
+
+  .stack-list {
+    @apply grid divide-y divide-[color:var(--line)];
+  }
+
+  .stack-row {
+    @apply grid gap-3 px-6 py-5;
+  }
+
+  .info-banner {
+    @apply rounded-[8px] border px-5 py-4;
+    background: rgba(126, 184, 141, 0.08);
+    border-color: rgba(126, 184, 141, 0.32);
+  }
+
+  .info-banner p {
+    @apply m-0;
+  }
+
+  .metric-grid {
+    @apply grid gap-3 md:grid-cols-2 xl:grid-cols-4;
+  }
+
+  .metric-card {
+    @apply grid gap-2 rounded-[8px] border border-[color:var(--line)] bg-[color:rgba(255,255,255,0.02)] px-4 py-4;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center rounded-[8px] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.14em];
+    border: 1px solid rgba(232, 224, 207, 0.16);
+    color: var(--text);
+    background: rgba(232, 224, 207, 0.05);
+  }
+
+  .status-badge[data-tone='moss'] {
+    border-color: rgba(126, 184, 141, 0.36);
+    background: rgba(126, 184, 141, 0.1);
+    color: #a6d5b2;
+  }
+
+  .status-badge[data-tone='ember'] {
+    border-color: rgba(220, 125, 78, 0.4);
+    background: rgba(220, 125, 78, 0.1);
+    color: #e8a17f;
+  }
+
+  .status-badge[data-tone='brass'] {
+    border-color: rgba(167, 146, 82, 0.38);
+    background: rgba(167, 146, 82, 0.1);
+    color: #cfbc82;
+  }
+
+  .status-badge[data-tone='neutral'] {
+    border-color: rgba(232, 224, 207, 0.16);
+    background: rgba(232, 224, 207, 0.05);
+    color: var(--muted);
+  }
+
+  .chip-list {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .chip {
+    @apply inline-flex items-center rounded-[8px] border border-[color:var(--line)] bg-[color:rgba(255,255,255,0.03)] px-3 py-1 text-xs text-[color:var(--muted)];
+  }
+}

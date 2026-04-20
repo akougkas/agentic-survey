@@ -1,0 +1,14 @@
+endpoints:
+  mini:
+    base_url: ${SURVEY_MINI_ENDPOINT_URL}
+    model: ${SURVEY_MINI_MODEL}
+    roles:
+      - designer
+      - interviewer
+  dynamo:
+    base_url: ${SURVEY_DYNAMO_ENDPOINT_URL}
+    model: ${SURVEY_DYNAMO_MODEL}
+    roles:
+      - validator
+      - analyst
+      - embeddings

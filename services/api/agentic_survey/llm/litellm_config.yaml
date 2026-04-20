@@ -1,0 +1,42 @@
+model_list:
+  - model_name: mira-chatter
+    litellm_params:
+      model: openai/${SURVEY_MINI_MODEL}
+      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+  - model_name: mira-scientist
+    litellm_params:
+      model: openai/gemma-4-26B-A4B-it-Q4_K_M
+      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+    model_info:
+      supports_response_schema: true
+  - model_name: validator
+    litellm_params:
+      model: openai/gemma-4-26B-A4B-it-Q4_K_M
+      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+    model_info:
+      supports_response_schema: true
+  - model_name: analyst
+    litellm_params:
+      model: openai/gemma-4-26B-A4B-it-Q4_K_M
+      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+    model_info:
+      supports_response_schema: true
+  - model_name: ingest
+    litellm_params:
+      model: openai/gemma-4-26B-A4B-it-Q4_K_M
+      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+    model_info:
+      supports_response_schema: true
+  - model_name: embeddings
+    litellm_params:
+      model: openai/${SURVEY_EMBEDDING_MODEL}
+      api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}
+router_settings:
+  routing_strategy: simple-shuffle
+  fallbacks:
+    - mira-scientist: [mira-chatter]
+    - mira-chatter: [mira-scientist]
+  retry_policy:
+    MaxRetries: 2
+    TimeoutBackoffMultiplier: 2
+  cooldown_time: 30

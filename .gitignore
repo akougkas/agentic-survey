@@ -1,0 +1,67 @@
+# OS and editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local agent/editor state
+.codex
+.claude/
+.planning/
+PLAN.md
+
+# Citadl bundle + seed — not part of the first commit
+citadl/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.env.local
+
+# JavaScript / frontend dependencies and build output
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+.vite/
+.svelte-kit/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Python environments, caches, and test output
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Runtime artifacts
+.attic/
+!.attic/.gitkeep
+*.log
+*.pid
+*.pid.lock
+campaigns/
+examples/product-bundles/*/artifacts/
+examples/product-bundles/*/scratch/
+citadl/.env
+citadl/.env.*
+!citadl/.env.example
+citadl/artifacts/
+citadl/scratch/
+tmp/
+temp/
+.cache/
+*.sqlite3
+*.db
