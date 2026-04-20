@@ -14,7 +14,11 @@ from agentic_survey.integrations.research_agent import (
 )
 from agentic_survey.repository import MicroFormField, OutlineArtifact, OutlineRubric, ParticipantFAQEntry
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+_MODULE_ANCESTORS = Path(__file__).resolve().parents
+# Dev tree: services/api/agentic_survey/bundles.py → parents[3] is the repo root.
+# Container (/app/agentic_survey/bundles.py): truncated, fall back to the
+# nearest ancestor that contains an examples/ dir, else to the module parent.
+REPO_ROOT = _MODULE_ANCESTORS[3] if len(_MODULE_ANCESTORS) > 3 else _MODULE_ANCESTORS[-1]
 DEFAULT_BUNDLE_RELATIVE_PATH = Path("examples") / "product-bundles" / "demo"
 
 

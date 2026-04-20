@@ -15,8 +15,12 @@ import yaml
 logger = logging.getLogger(__name__)
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
-_API_ROOT = Path(__file__).resolve().parents[2]
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+_MODULE_ANCESTORS = Path(__file__).resolve().parents
+_API_ROOT = _MODULE_ANCESTORS[2] if len(_MODULE_ANCESTORS) > 2 else Path.cwd()
+# _REPO_ROOT is used for dev-tree path resolution; in containers (where the
+# package sits at /app/agentic_survey) that ancestor is truncated, so fall
+# back to _API_ROOT.
+_REPO_ROOT = _MODULE_ANCESTORS[4] if len(_MODULE_ANCESTORS) > 4 else _API_ROOT
 
 
 class LiteLLMRouterError(RuntimeError):

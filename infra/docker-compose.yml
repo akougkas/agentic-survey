@@ -1,0 +1,119 @@
+# Generic production compose template for the agentic-survey runtime.
+#
+# The authoritative production stack for CITADEL lives at
+# citadl/deploy/coolify/docker-compose.yml (Coolify-managed). This file is a
+# generic template for mounting a different product bundle against the same
+# runtime. Point `SURVEY_PRODUCT_BUNDLE_HOST_PATH` at a local bundle dir,
+# supply the public hostname, and bring the stack up.
+#
+# Example:
+#   SURVEY_PRODUCT_BUNDLE_HOST_PATH=$(pwd)/examples/product-bundles/demo \
+#   SURVEY_PUBLIC_BASE_URL=http://localhost:5270 \
+#   SURVEY_ADMIN_PASSWORD=change-me \
+#   SURVEY_MINI_ENDPOINT_URL=http://host.docker.internal:8080/v1 \
+#   SURVEY_DYNAMO_ENDPOINT_URL=http://host.docker.internal:1234/v1 \
+#   docker compose -f infra/docker-compose.yml up
+#
+# Traefik labels are absent on purpose; this file targets a simple
+# single-host deploy without a reverse proxy. Use the Coolify file when
+# you need Traefik + cloudflared routing.
+
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v2
+    command:
+      - start
+      - --log
+      - info
+      - --user
+      - root
+      - --pass
+      - root
+      - file:/data/database.db
+    volumes:
+      - surreal_data:/data
+      - ./surrealdb/init.surql:/docker-entrypoint-initdb.d/init.surql:ro
+    ports:
+      - "8400:8000"
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    environment:
+      SURVEY_PUBLIC_BASE_URL: ${SURVEY_PUBLIC_BASE_URL:-http://localhost:5270}
+      SURVEY_FRONTEND_ORIGIN: ${SURVEY_FRONTEND_ORIGIN:-${SURVEY_PUBLIC_BASE_URL:-http://localhost:5270}}
+      SURVEY_PRODUCT_BUNDLE_DIR: /app/bundle
+      SURVEY_ADMIN_PASSWORD: ${SURVEY_ADMIN_PASSWORD:-change-me}
+      SURVEY_LLM_ENABLED: ${SURVEY_LLM_ENABLED:-true}
+      SURVEY_MINI_ENDPOINT_URL: ${SURVEY_MINI_ENDPOINT_URL}
+      SURVEY_DYNAMO_ENDPOINT_URL: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      SURVEY_LLM_TIMEOUT_SECONDS: ${SURVEY_LLM_TIMEOUT_SECONDS:-60}
+      SURVEY_REPOSITORY: ${SURVEY_REPOSITORY:-surreal}
+      SURVEY_SURREAL_URL: ws://surrealdb:8000/rpc
+      SURVEY_SURREAL_NS: ${SURVEY_SURREAL_NS:-agentic_survey}
+      SURVEY_SURREAL_DB: ${SURVEY_SURREAL_DB:-prod}
+      SURVEY_SURREAL_USER: ${SURVEY_SURREAL_USER:-root}
+      SURVEY_SURREAL_PASS: ${SURVEY_SURREAL_PASS:-root}
+      SURVEY_SEARXNG_URL: http://searxng:8080
+    volumes:
+      - ${SURVEY_PRODUCT_BUNDLE_HOST_PATH:-../examples/product-bundles/demo}:/app/bundle:ro
+    depends_on:
+      - surrealdb
+      - searxng
+    ports:
+      - "8100:8100"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    command: ["python", "-m", "agentic_survey.tools.freshness"]
+    environment:
+      SURVEY_PUBLIC_BASE_URL: ${SURVEY_PUBLIC_BASE_URL:-http://localhost:5270}
+      SURVEY_FRONTEND_ORIGIN: ${SURVEY_FRONTEND_ORIGIN:-${SURVEY_PUBLIC_BASE_URL:-http://localhost:5270}}
+      SURVEY_PRODUCT_BUNDLE_DIR: /app/bundle
+      SURVEY_ADMIN_PASSWORD: ${SURVEY_ADMIN_PASSWORD:-change-me}
+      SURVEY_LLM_ENABLED: ${SURVEY_LLM_ENABLED:-false}
+      SURVEY_MINI_ENDPOINT_URL: ${SURVEY_MINI_ENDPOINT_URL}
+      SURVEY_DYNAMO_ENDPOINT_URL: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      SURVEY_LLM_TIMEOUT_SECONDS: ${SURVEY_LLM_TIMEOUT_SECONDS:-60}
+      SURVEY_REPOSITORY: ${SURVEY_REPOSITORY:-surreal}
+      SURVEY_SURREAL_URL: ws://surrealdb:8000/rpc
+      SURVEY_SURREAL_NS: ${SURVEY_SURREAL_NS:-agentic_survey}
+      SURVEY_SURREAL_DB: ${SURVEY_SURREAL_DB:-prod}
+      SURVEY_SURREAL_USER: ${SURVEY_SURREAL_USER:-root}
+      SURVEY_SURREAL_PASS: ${SURVEY_SURREAL_PASS:-root}
+      SURVEY_SEARXNG_URL: http://searxng:8080
+    volumes:
+      - ${SURVEY_PRODUCT_BUNDLE_HOST_PATH:-../examples/product-bundles/demo}:/app/bundle:ro
+    depends_on:
+      - surrealdb
+      - searxng
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    environment:
+      HOST: 0.0.0.0
+      ORIGIN: ${SURVEY_PUBLIC_BASE_URL:-http://localhost:5270}
+      PORT: 3000
+      SURVEY_API_PROXY_TARGET: http://backend:8100
+    depends_on:
+      - backend
+    ports:
+      - "5270:3000"
+    restart: unless-stopped
+
+volumes:
+  surreal_data:
