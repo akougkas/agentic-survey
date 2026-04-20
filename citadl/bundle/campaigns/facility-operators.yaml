@@ -7,86 +7,70 @@ description: >
   would be required to deploy AI-assisted autonomous data management at scale.
 min_n: 8
 max_n: 30
-
-research_question: >
-  What capabilities, interfaces, and governance frameworks would a national
-  AI-assisted data management infrastructure need to support so that facility
-  operators and tool developers could integrate it into production systems
-  confidently and without eroding the ops-trust chain?
-
-sampling_frame: >
-  Operators of institutional or national computing and data facilities,
-  storage systems architects and engineers, developers of data management
-  libraries and services (I/O libraries, workflow tools, storage systems),
-  research software engineers supporting scientific applications at scale,
-  and platform leads for national cyberinfrastructure (ACCESS, NDP, NAIRR).
-  Include facility leadership as long as they retain hands-on awareness of
-  current ops reality.
-
-exclusion_criteria: >
-  Individual researchers without operational responsibility for infrastructure
-  belong in Survey A. Pure ML-methods researchers without applied
-  facility/tool work belong in Survey C.
-
-publication_intent: >
-  NSF IDSS planning grant deliverable. Expected outputs: a tool-and-gap
-  inventory mapped to lifecycle phases, a ranked list of technical and
-  governance barriers to production AI-agent deployment, and operator-voiced
-  requirements for a national AI-assisted data infrastructure.
-
-axes:
-  - Current toolchain and service maturity by lifecycle phase
-  - Operational challenges and the biggest day-to-day bottlenecks
-  - Tool and library gaps that hold the facility back
-  - AI/ML experiments already running in operational workflows
-  - Barriers to autonomous-agent deployment in production
-  - Integration, federation, and governance requirements
-
-probes:
-  - What's the hardest operational problem your facility is carrying right now?
-  - Walk me through a typical dataset's lifecycle in your facility — ingest to archive.
-  - Where do you already use automation? Where does it stop?
-  - What would a trustworthy autonomous agent need to demonstrate before you'd grant it production access?
-  - What federation or integration model would your facility actually accept, and what would you refuse?
-  - If a national AI-assisted data infrastructure existed tomorrow, what capability would make you adopt early?
-
-risk_register:
-  - risk: Operator optimism about their own toolchain ("ours works fine")
-    mitigation: Ask for specific recent incidents, capacity-plan surprises, or SLA near-misses, not general assessments.
-  - risk: Defensive framing about current tool choices
-    mitigation: Normalize "we'd rather have something else" answers; probe for desired-vs-actual gaps.
-  - risk: Over-indexing on large national facilities, under-indexing on university centers
-    mitigation: Track micro-form facility-type cell; surface advisory when any class is thin.
-  - risk: Leading questions about "AI" that bias toward enthusiasm or skepticism
-    mitigation: Let participants name the desired capability first; translate to AI framing only after they open it.
-
-grounding_sources_approved: []
-
-readiness_rationale: >
-  Outline is ready when research_question is specific about what a national
-  infrastructure would need (not just whether operators want one); axes cover
-  lifecycle phases plus governance and federation; probes anchor in recent
-  incidents and desired-vs-actual gaps; risk_register names operator-side
-  biases not scientist-side ones.
-
-decision_gate:
-  gate: scientist_approval
-  rationale: Scientist locks outline at launch; outline_snapshot preserves track integrity.
-
-suggested_search_queries:
-  - "HPC data facility operations challenges autonomous agents"
-  - "Globus parallel filesystem tiering automation policy"
-  - "federated identity national cyberinfrastructure AI governance"
-
 outline:
+  research_question: >
+    What capabilities, interfaces, and governance frameworks would a national
+    AI-assisted data management infrastructure need to support so that facility
+    operators and tool developers could integrate it into production systems
+    confidently and without eroding the ops-trust chain?
+  sampling_frame: >
+    Operators of institutional or national computing and data facilities,
+    storage systems architects and engineers, developers of data management
+    libraries and services (I/O libraries, workflow tools, storage systems),
+    research software engineers supporting scientific applications at scale,
+    and platform leads for national cyberinfrastructure (ACCESS, NDP, NAIRR).
+    Include facility leadership as long as they retain hands-on awareness of
+    current ops reality.
+  exclusion_criteria: >
+    Individual researchers without operational responsibility for infrastructure
+    belong in Survey A. Pure ML-methods researchers without applied
+    facility/tool work belong in Survey C.
+  publication_intent: >
+    NSF IDSS planning grant deliverable. Expected outputs: a tool-and-gap
+    inventory mapped to lifecycle phases, a ranked list of technical and
+    governance barriers to production AI-agent deployment, and operator-voiced
+    requirements for a national AI-assisted data infrastructure.
+  axes:
+    - Current toolchain and service maturity by lifecycle phase
+    - Operational challenges and the biggest day-to-day bottlenecks
+    - Tool and library gaps that hold the facility back
+    - AI/ML experiments already running in operational workflows
+    - Barriers to autonomous-agent deployment in production
+    - Integration, federation, and governance requirements
   objectives:
     - Inventory operational tools and gaps against each lifecycle phase.
     - Capture the governance and interface requirements for operator-accepted AI agents.
     - Surface the biggest real-world barriers to production autonomy.
   probes:
     - What's the hardest operational problem your facility is carrying right now?
-    - Where do you already use automation and where does it stop?
-    - What would an autonomous agent need to demonstrate before you'd grant production access?
+    - Walk me through a typical dataset's lifecycle in your facility — ingest to archive.
+    - Where do you already use automation? Where does it stop?
+    - What would a trustworthy autonomous agent need to demonstrate before you'd grant it production access?
+    - What federation or integration model would your facility actually accept, and what would you refuse?
+    - If a national AI-assisted data infrastructure existed tomorrow, what capability would make you adopt early?
+  risk_register:
+    - risk: Operator optimism about their own toolchain ("ours works fine")
+      mitigation: Ask for specific recent incidents, capacity-plan surprises, or SLA near-misses, not general assessments.
+    - risk: Defensive framing about current tool choices
+      mitigation: Normalize "we'd rather have something else" answers; probe for desired-vs-actual gaps.
+    - risk: Over-indexing on large national facilities, under-indexing on university centers
+      mitigation: Track micro-form facility-type cell; surface advisory when any class is thin.
+    - risk: Leading questions about "AI" that bias toward enthusiasm or skepticism
+      mitigation: Let participants name the desired capability first; translate to AI framing only after they open it.
+  grounding_sources_approved: []
+  readiness_rationale: >
+    Outline is ready when research_question is specific about what a national
+    infrastructure would need (not just whether operators want one); axes cover
+    lifecycle phases plus governance and federation; probes anchor in recent
+    incidents and desired-vs-actual gaps; risk_register names operator-side
+    biases not scientist-side ones.
+  decision_gate:
+    gate: scientist_approval
+    rationale: Scientist locks outline at launch; outline_snapshot preserves track integrity.
+  suggested_search_queries:
+    - "HPC data facility operations challenges autonomous agents"
+    - "Globus parallel filesystem tiering automation policy"
+    - "federated identity national cyberinfrastructure AI governance"
   rubric:
     coverage_dimensions:
       - Tool and service inventory across at least three lifecycle phases
@@ -169,7 +153,6 @@ outline:
     capabilities and governance would have to land for AI-agent autonomy to
     be integratable. Goal: a production-reality gap inventory plus an
     operator-accepted adoption profile.
-
 seed_sources:
   - kind: raw_text
     title: "CITADEL Survey B operations framing"

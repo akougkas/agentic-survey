@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_survey.domain.outline import OutlineArtifactV2
+from agentic_survey.domain.outline import OutlineArtifact
 
 __all__ = ["unmet_minimums"]
 
@@ -13,7 +13,7 @@ MAX_N_CEILING = 1000
 _INCLUSION_HINTS = ("inclus", "who count", "who belong", "eligible", "qualifie")
 
 
-def unmet_minimums(outline: OutlineArtifactV2) -> list[str]:
+def unmet_minimums(outline: OutlineArtifact) -> list[str]:
     """Return the list of unmet hard-floor minimums as English sentences.
 
     An empty list means the outline passes the hard floor. The checks stay

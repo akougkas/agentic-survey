@@ -6,10 +6,11 @@ from agentic_survey.domain.intent import (
 )
 from agentic_survey.domain.outline import (
     DecisionGate,
-    OutlineArtifactV2,
+    MicroFormField,
+    OutlineArtifact,
+    OutlineRubric,
+    ParticipantFAQEntry,
     RiskEntry,
-    from_v1,
-    to_v1,
 )
 from agentic_survey.domain.tools import GetUserInputOptions
 
@@ -18,10 +19,11 @@ __all__ = [
     "BrainBIntent",
     "DecisionGate",
     "GetUserInputOptions",
-    "OutlineArtifactV2",
+    "MicroFormField",
+    "OutlineArtifact",
     "OutlinePatch",
     "OutlinePatchSection",
+    "OutlineRubric",
+    "ParticipantFAQEntry",
     "RiskEntry",
-    "from_v1",
-    "to_v1",
 ]

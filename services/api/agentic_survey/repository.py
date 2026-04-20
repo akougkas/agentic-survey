@@ -9,6 +9,14 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from agentic_survey.domain.intent import BrainBIntent
+from agentic_survey.domain.outline import (
+    MicroFormField,
+    OutlineArtifact,
+    OutlineRubric,
+    ParticipantFAQEntry,
+)
+from agentic_survey.domain.tools import GetUserInputOptions
 from agentic_survey.engine.state_machine import CampaignState, transition_or_raise
 from agentic_survey.llm.catalog import AGENT_ROLES, AgentRole as CatalogRole, CatalogEntry, seed_entries
 
@@ -21,68 +29,12 @@ SharedContextKind = Literal[
 ]
 
 
-class MicroFormField(BaseModel):
-    key: str
-    label: str
-    field_type: str = "text"
-    required: bool = True
-
-
-class ParticipantFAQEntry(BaseModel):
-    key: str
-    question: str
-    answer: str
-    tags: list[str] = Field(default_factory=list)
-
-
-class GetUserInputPayload(BaseModel):
-    question: str = ""
-    options: list[str] = Field(default_factory=list)
-    allow_free_text: bool = True
-    participant_controls: list[ParticipantControl] = Field(default_factory=list)
-    suggested_control: ParticipantControl | None = None
-    sensitive_turn: bool = False
-
-
-class BrainIntentRecord(BaseModel):
-    response_mode: Literal["probe", "faq", "advice_refusal", "closing"] = "probe"
-    question_intent: str = ""
-    faq_key: str | None = None
-    shared_context_used: list[SharedContextKind] = Field(default_factory=list)
-    should_close: bool = False
-    close_reason: str = ""
-    get_user_input: GetUserInputPayload | None = None
-
-
-class OutlineRubric(BaseModel):
-    coverage_dimensions: list[str] = Field(default_factory=list)
-    risk_checks: list[str] = Field(default_factory=list)
-
-
-class OutlineArtifact(BaseModel):
-    objectives: list[str] = Field(default_factory=list)
-    probes: list[str] = Field(default_factory=list)
-    rubric: OutlineRubric
-    min_n: int
-    max_n: int
-    freshness_query: str
-    persona_hints: dict[str, str]
-    consent_language: str
-    micro_form_schema: list[MicroFormField]
-    scientist_summary: str = ""
-    study_context: str = ""
-    market_context: str = ""
-    technical_context: str = ""
-    aggregate_graph_context: str = ""
-    participant_faq: list[ParticipantFAQEntry] = Field(default_factory=list)
-
-
 class DesignerTurn(BaseModel):
     id: str
     role: Literal["designer", "scientist"]
     content: str
-    brain_b_intent: BrainIntentRecord | None = None
-    get_user_input: GetUserInputPayload | None = None
+    brain_b_intent: BrainBIntent | None = None
+    get_user_input: GetUserInputOptions | None = None
     created_at: str
 
 
@@ -206,9 +158,8 @@ class InterviewTurnRecord(BaseModel):
     content: str
     index: int
     validation: dict | None = None
-    brain_b_intent: BrainIntentRecord | None = None
-    brain_b_intent_v2: dict | None = None
-    get_user_input: GetUserInputPayload | None = None
+    brain_b_intent: BrainBIntent | None = None
+    get_user_input: GetUserInputOptions | None = None
     retrieval_audit_id: str | None = None
     created_at: str
 
@@ -578,8 +529,9 @@ class InMemoryRepository:
                     updated_at=_timestamp(),
                 )
                 self._designer_sessions[campaign_id] = session
-            if campaign.state == CampaignState.DRAFT:
+            if campaign.state in (CampaignState.DRAFT, CampaignState.REVIEWING):
                 campaign.state = transition_or_raise(campaign.state, CampaignState.DESIGNING)
+                campaign.outline_status = "collecting_brief"
             campaign.updated_at = _timestamp()
             if not session.turns:
                 session.turns.append(
@@ -600,8 +552,8 @@ class InMemoryRepository:
         role: Literal["designer", "scientist"],
         content: str,
         *,
-        brain_b_intent: BrainIntentRecord | None = None,
-        get_user_input: GetUserInputPayload | None = None,
+        brain_b_intent: BrainBIntent | None = None,
+        get_user_input: GetUserInputOptions | None = None,
     ) -> DesignerTurn:
         turn = DesignerTurn(
             id=f"turn-{uuid4().hex[:12]}",
@@ -765,9 +717,8 @@ class InMemoryRepository:
         role: Literal["agent", "participant"],
         content: str,
         validation: dict | None = None,
-        brain_b_intent: BrainIntentRecord | None = None,
-        brain_b_intent_v2: dict | None = None,
-        get_user_input: GetUserInputPayload | None = None,
+        brain_b_intent: BrainBIntent | None = None,
+        get_user_input: GetUserInputOptions | None = None,
         retrieval_audit_id: str | None = None,
     ) -> InterviewTurnRecord:
         with self._lock:
@@ -780,7 +731,6 @@ class InMemoryRepository:
                 index=len(session.turns),
                 validation=validation,
                 brain_b_intent=brain_b_intent.model_copy(deep=True) if brain_b_intent is not None else None,
-                brain_b_intent_v2=dict(brain_b_intent_v2) if brain_b_intent_v2 is not None else None,
                 get_user_input=get_user_input.model_copy(deep=True) if get_user_input is not None else None,
                 retrieval_audit_id=retrieval_audit_id,
                 created_at=_timestamp(),

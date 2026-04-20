@@ -6,10 +6,19 @@ description: >
 min_n: 1
 max_n: 1
 outline:
+  research_question: ""
+  sampling_frame: ""
+  exclusion_criteria: ""
+  publication_intent: ""
+  axes: []
   objectives:
     - Verify that seed_sources round-trip through the bundle loader.
   probes:
     - (not used in the fixture)
+  risk_register: []
+  grounding_sources_approved: []
+  readiness_rationale: ""
+  suggested_search_queries: []
   rubric:
     coverage_dimensions: []
     risk_checks: []

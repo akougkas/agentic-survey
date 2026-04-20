@@ -1,13 +1,30 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _env_file_candidates() -> tuple[str, ...]:
+    """Walk from cwd up to the git root, collecting every .env along the way.
+
+    Pydantic Settings loads the list in order, so later (repo-root) values
+    override earlier (per-service) ones. Stops at the first directory that
+    holds a `.git` entry so we do not read arbitrary files from $HOME.
+    """
+    seen: list[str] = []
+    current = Path.cwd().resolve()
+    for candidate in (current, *current.parents):
+        seen.append(str(candidate / ".env"))
+        if (candidate / ".git").exists():
+            break
+    return tuple(seen)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="SURVEY_",
-        env_file=".env",
+        env_file=_env_file_candidates(),
         extra="ignore",
     )
 
@@ -37,10 +54,10 @@ class Settings(BaseSettings):
     searxng_url: str = "http://searxng:8080"
 
     mini_endpoint_url: str = "http://mini:8080/v1"
-    mini_model: str = "Qwen35-Distilled-i1-Q4_K_M"
+    mini_model: str = "gemma-4-26B-A4B-it-Q4_K_M"
     dynamo_endpoint_url: str = "http://dynamo:1234/v1"
     dynamo_model: str = "nemotron-cascade-2-30b-a3b-i1"
-    embedding_model: str = "nomic-embed-text-v2-moe"
+    embedding_model: str = "text-embedding-nomic-embed-text-v2-moe"
     llm_enabled: bool = False
     llm_timeout_seconds: float = 60.0
 

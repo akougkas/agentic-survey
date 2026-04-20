@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_survey.agents.designer_v2 import is_ready_for_review
+from agentic_survey.agents.designer import is_ready_for_review
 from agentic_survey.agents.readiness import (
     MAX_N_CEILING,
     MIN_AXES,
@@ -9,11 +9,11 @@ from agentic_survey.agents.readiness import (
     RESEARCH_QUESTION_MIN_CHARS,
     unmet_minimums,
 )
-from agentic_survey.domain.outline import DecisionGate, OutlineArtifactV2, RiskEntry
+from agentic_survey.domain.outline import DecisionGate, OutlineArtifact, RiskEntry
 
 
-def _fully_populated() -> OutlineArtifactV2:
-    return OutlineArtifactV2(
+def _fully_populated() -> OutlineArtifact:
+    return OutlineArtifact(
         research_question=(
             "Does trust calibration separate durable AI adopters from churners across research workflows?"
         ),
@@ -43,7 +43,7 @@ def _fully_populated() -> OutlineArtifactV2:
 
 
 def test_empty_outline_flags_every_minimum() -> None:
-    unmet = unmet_minimums(OutlineArtifactV2())
+    unmet = unmet_minimums(OutlineArtifact())
     joined = " ".join(unmet)
     assert len(unmet) >= 7
     assert "Research question is missing" in joined
@@ -108,7 +108,7 @@ def test_designer_is_ready_for_review_combines_hard_floor_and_brain_b() -> None:
     assert ready is False
     assert unmet == []
 
-    empty = OutlineArtifactV2()
+    empty = OutlineArtifact()
     ready, unmet = is_ready_for_review(empty, brain_b_ready=True)
     assert ready is False
     assert len(unmet) >= 7

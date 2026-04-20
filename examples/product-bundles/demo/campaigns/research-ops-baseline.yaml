@@ -6,6 +6,23 @@ description: >
 min_n: 12
 max_n: 24
 outline:
+  research_question: >
+    Where does AI assistance produce durable leverage in research and knowledge
+    workflows today, and where does it inflate confidence beyond what the
+    evidence supports?
+  sampling_frame: >
+    Practitioners who regularly use AI assistance inside a research or
+    knowledge-work workflow and can speak to concrete episodes; include
+    individual contributors who count as hands-on users of the tools.
+  exclusion_criteria: >
+    None — intentional. Generic starter study keeps the frame open.
+  publication_intent: >
+    Internal baseline report for teams piloting Agentic Survey; informs
+    follow-on campaigns rather than a specific external publication.
+  axes:
+    - When AI assistance enters the workflow
+    - Whether the leverage is durable or fragile
+    - How participants validate and calibrate outputs
   objectives:
     - Identify where AI assistance enters day-to-day research or knowledge workflows.
     - Distinguish durable leverage from convenience and fragile confidence.
@@ -15,6 +32,18 @@ outline:
     - What parts of the process feel faster, clearer, or riskier because of the tool?
     - Where do you still stop to validate, reproduce, or sanity-check the result?
     - When does the tool sound more certain than the evidence warrants?
+  risk_register:
+    - risk: Leading prompts that nudge participants toward reported effectiveness
+      mitigation: Ask for specific episodes before naming themes; echo back rather than reframe.
+  grounding_sources_approved: []
+  readiness_rationale: >
+    Demo outline is ready when the starter research question, sampling frame,
+    and three axes give Mira a coherent opening without encoding any product
+    identity.
+  decision_gate:
+    gate: scientist_approval
+    rationale: Scientist locks outline at launch; starter study still goes through the same gate.
+  suggested_search_queries: []
   rubric:
     coverage_dimensions:
       - Concrete workflow stage or decision point where the tool appears

@@ -14,9 +14,9 @@ class CampaignState(StrEnum):
 ALLOWED_TRANSITIONS: dict[CampaignState, set[CampaignState]] = {
     CampaignState.DRAFT: {CampaignState.DESIGNING},
     CampaignState.DESIGNING: {CampaignState.REVIEWING},
-    CampaignState.REVIEWING: {CampaignState.LIVE},
-    CampaignState.LIVE: {CampaignState.MONITORING, CampaignState.CLOSING},
-    CampaignState.MONITORING: {CampaignState.CLOSING, CampaignState.LIVE},
+    CampaignState.REVIEWING: {CampaignState.DESIGNING, CampaignState.LIVE},
+    CampaignState.LIVE: {CampaignState.MONITORING, CampaignState.CLOSING, CampaignState.REVIEWING},
+    CampaignState.MONITORING: {CampaignState.CLOSING, CampaignState.LIVE, CampaignState.REVIEWING},
     CampaignState.CLOSING: {CampaignState.ARCHIVED},
     CampaignState.ARCHIVED: set(),
 }

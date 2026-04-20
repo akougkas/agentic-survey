@@ -7,7 +7,7 @@ from typing import Any, Awaitable, Callable
 from pydantic import ValidationError
 
 from agentic_survey.domain.intent import BrainBIntent
-from agentic_survey.domain.outline import OutlineArtifactV2
+from agentic_survey.domain.outline import OutlineArtifact
 from agentic_survey.engine.session_policy import SessionSignals
 
 __all__ = [
@@ -87,7 +87,7 @@ def _extract_message_content(response: object) -> str:
 
 async def run_brain_b_interviewer(
     *,
-    outline: OutlineArtifactV2,
+    outline: OutlineArtifact,
     transcript_tail: list[dict[str, Any]],
     session_signals: SessionSignals,
     router,
@@ -109,7 +109,7 @@ async def run_brain_b_interviewer(
 
     base_messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
-        {"role": "system", "content": f"Current outline (v2):\n{outline_blob}"},
+        {"role": "system", "content": f"Current outline:\n{outline_blob}"},
         {"role": "system", "content": f"Session signals (advisory, close is still yours):\n{signals_blob}"},
     ]
     base_messages.extend(transcript_tail)

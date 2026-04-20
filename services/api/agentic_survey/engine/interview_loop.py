@@ -11,7 +11,6 @@ from agentic_survey.agents.brain_b_interviewer import (
 )
 from agentic_survey.agents.validator import Validator
 from agentic_survey.domain.intent import BrainBIntent
-from agentic_survey.domain.outline import from_v1
 from agentic_survey.engine.retrieval_cache import RetrievalCache
 from agentic_survey.engine.session_policy import (
     SessionSignals,
@@ -20,9 +19,7 @@ from agentic_survey.engine.session_policy import (
 )
 from agentic_survey.llm.router import LiteLLMRouter
 from agentic_survey.repository import (
-    BrainIntentRecord,
     Campaign,
-    GetUserInputPayload,
     InMemoryRepository,
     InterviewSessionRecord,
     InterviewTurnRecord,
@@ -135,7 +132,7 @@ async def run_interview_turn(
        chips), persist the agent turn, mark the session finished with
        ``close_reason="brain_b_judgment"``.
     5. Else: stream Brain A's reply tokens, persist the agent turn with
-       both legacy and v2 intent projections plus the chip set.
+       the ``BrainBIntent`` and its chip set.
 
     Retrieval cache writes land in step 3 once B2-min wires real retrieval;
     the cache is passed through today so signatures stabilize.
@@ -217,7 +214,7 @@ async def run_interview_turn(
             role="agent",
             content=reply_text,
             brain_b_intent=None,
-            brain_b_intent_v2=None,
+            get_user_input=None,
             validation={
                 "closing": True,
                 "close_reason": close_reason,
@@ -239,7 +236,6 @@ async def run_interview_turn(
             events=events,
         )
 
-    outline_v2 = from_v1(campaign.outline)
     transcript_tail = _transcript_tail(refreshed)
 
     base_search = build_search_knowledge(
@@ -265,7 +261,7 @@ async def run_interview_turn(
         return results
 
     intent = await run_brain_b_interviewer(
-        outline=outline_v2,
+        outline=campaign.outline,
         transcript_tail=transcript_tail,
         session_signals=signals,
         router=router,
@@ -285,8 +281,8 @@ async def run_interview_turn(
             refreshed.id,
             role="agent",
             content=reply_text,
-            brain_b_intent=_to_legacy_intent(intent),
-            brain_b_intent_v2=intent.model_dump(),
+            brain_b_intent=intent,
+            get_user_input=intent.get_user_input,
             validation={
                 "closing": True,
                 "close_reason": close_reason,
@@ -324,14 +320,12 @@ async def run_interview_turn(
 
     reply_text = "".join(chunks).strip()
 
-    get_user_input = _brain_b_chip_payload(intent)
     agent_turn = repository.append_interview_turn(
         refreshed.id,
         role="agent",
         content=reply_text,
-        brain_b_intent=_to_legacy_intent(intent),
-        brain_b_intent_v2=intent.model_dump(),
-        get_user_input=get_user_input,
+        brain_b_intent=intent,
+        get_user_input=intent.get_user_input,
     )
     events.append(
         InterviewEvent(
@@ -438,31 +432,3 @@ def _compose_persona(persona_hints: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def _brain_b_chip_payload(intent: BrainBIntent) -> GetUserInputPayload:
-    return GetUserInputPayload(
-        question=intent.get_user_input.question,
-        options=list(intent.get_user_input.options),
-        allow_free_text=intent.get_user_input.allow_free_text,
-        participant_controls=[],
-        suggested_control=None,
-        sensitive_turn=False,
-    )
-
-
-def _to_legacy_intent(intent: BrainBIntent) -> BrainIntentRecord:
-    """Project a new-shape BrainBIntent onto the legacy BrainIntentRecord slot.
-
-    The legacy shape is what the web UI and the existing repository schema
-    still read. The full v2 payload is persisted alongside in
-    ``brain_b_intent_v2``; this projection keeps the legacy readers happy
-    without losing detail.
-    """
-    return BrainIntentRecord(
-        response_mode="closing" if intent.should_close else "probe",
-        question_intent=intent.question_intent,
-        faq_key=None,
-        shared_context_used=[],
-        should_close=intent.should_close,
-        close_reason="brain_b_judgment" if intent.should_close else "",
-        get_user_input=_brain_b_chip_payload(intent),
-    )

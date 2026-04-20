@@ -8,11 +8,18 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
+from agentic_survey.domain.outline import (
+    DecisionGate,
+    MicroFormField,
+    OutlineArtifact,
+    OutlineRubric,
+    ParticipantFAQEntry,
+    RiskEntry,
+)
 from agentic_survey.integrations.research_agent import (
     ResearchAgentHook,
     resolve_research_agent,
 )
-from agentic_survey.repository import MicroFormField, OutlineArtifact, OutlineRubric, ParticipantFAQEntry
 
 _MODULE_ANCESTORS = Path(__file__).resolve().parents
 # Dev tree: services/api/agentic_survey/bundles.py → parents[3] is the repo root.
@@ -97,18 +104,23 @@ class ProductBundleManifest(BaseModel):
     research_agent_hook: ResearchAgentHookConfig | None = None
 
 
-class CampaignSeedRubric(BaseModel):
-    coverage_dimensions: list[str] = Field(default_factory=list)
-    risk_checks: list[str] = Field(default_factory=list)
-
-
 class CampaignSeedOutline(BaseModel):
+    research_question: str = ""
+    sampling_frame: str = ""
+    exclusion_criteria: str = ""
+    publication_intent: str = ""
+    axes: list[str] = Field(default_factory=list)
     objectives: list[str] = Field(default_factory=list)
     probes: list[str] = Field(default_factory=list)
-    rubric: CampaignSeedRubric
-    freshness_query: str
+    risk_register: list[RiskEntry] = Field(default_factory=list)
+    grounding_sources_approved: list[str] = Field(default_factory=list)
+    readiness_rationale: str = ""
+    decision_gate: DecisionGate | None = None
+    suggested_search_queries: list[str] = Field(default_factory=list)
+    rubric: OutlineRubric = Field(default_factory=OutlineRubric)
+    freshness_query: str = ""
     persona_hints: dict[str, str] = Field(default_factory=dict)
-    consent_language: str
+    consent_language: str = ""
     micro_form_schema: list[MicroFormField] = Field(default_factory=list)
     scientist_summary: str = ""
     study_context: str = ""
@@ -152,7 +164,7 @@ class CampaignSeed(BaseModel):
     description: str = ""
     min_n: int = Field(ge=1)
     max_n: int = Field(ge=1)
-    outline: CampaignSeedOutline
+    outline: CampaignSeedOutline = Field(default_factory=CampaignSeedOutline)
     seed_sources: list[SeedSource] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -236,22 +248,33 @@ def list_campaign_seeds(bundle_dir: Path | None = None) -> list[CampaignSeed]:
 
 
 def materialize_outline(seed: CampaignSeed) -> OutlineArtifact:
+    outline = seed.outline
     return OutlineArtifact(
-        objectives=list(seed.outline.objectives),
-        probes=list(seed.outline.probes),
-        rubric=OutlineRubric.model_validate(seed.outline.rubric.model_dump()),
+        research_question=outline.research_question,
+        sampling_frame=outline.sampling_frame,
+        exclusion_criteria=outline.exclusion_criteria,
+        publication_intent=outline.publication_intent,
+        axes=list(outline.axes),
+        objectives=list(outline.objectives),
+        probes=list(outline.probes),
+        risk_register=[entry.model_copy(deep=True) for entry in outline.risk_register],
+        grounding_sources_approved=list(outline.grounding_sources_approved),
+        readiness_rationale=outline.readiness_rationale,
+        decision_gate=outline.decision_gate.model_copy(deep=True) if outline.decision_gate else None,
+        suggested_search_queries=list(outline.suggested_search_queries),
         min_n=seed.min_n,
         max_n=seed.max_n,
-        freshness_query=seed.outline.freshness_query,
-        persona_hints=dict(seed.outline.persona_hints),
-        consent_language=seed.outline.consent_language,
-        micro_form_schema=[field.model_copy(deep=True) for field in seed.outline.micro_form_schema],
-        scientist_summary=seed.outline.scientist_summary,
-        study_context=seed.outline.study_context,
-        market_context=seed.outline.market_context,
-        technical_context=seed.outline.technical_context,
-        aggregate_graph_context=seed.outline.aggregate_graph_context,
-        participant_faq=[entry.model_copy(deep=True) for entry in seed.outline.participant_faq],
+        rubric=outline.rubric.model_copy(deep=True),
+        freshness_query=outline.freshness_query,
+        persona_hints=dict(outline.persona_hints),
+        consent_language=outline.consent_language,
+        micro_form_schema=[field.model_copy(deep=True) for field in outline.micro_form_schema],
+        scientist_summary=outline.scientist_summary,
+        study_context=outline.study_context,
+        market_context=outline.market_context,
+        technical_context=outline.technical_context,
+        aggregate_graph_context=outline.aggregate_graph_context,
+        participant_faq=[entry.model_copy(deep=True) for entry in outline.participant_faq],
     )
 
 

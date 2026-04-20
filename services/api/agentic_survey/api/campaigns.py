@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from agentic_survey.agents.designer_v2 import (
+from agentic_survey.agents.designer import (
     opening_message as designer_opening_message,
     run_designer_turn,
 )
@@ -14,7 +14,6 @@ from agentic_survey.bundles import (
     materialize_outline,
 )
 from agentic_survey.auth import require_admin_session
-from agentic_survey.domain.outline import from_v1
 from agentic_survey.engine.state_machine import ALLOWED_TRANSITIONS, CampaignState, StateTransitionError
 from agentic_survey.llm.catalog import AgentRole as CatalogRole, CatalogEntry
 from agentic_survey.llm.router import get_litellm_router
@@ -361,7 +360,7 @@ async def advance_campaign(
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
     if payload.target_state == CampaignState.REVIEWING:
-        unmet = unmet_minimums(from_v1(campaign.outline))
+        unmet = unmet_minimums(campaign.outline)
         if unmet:
             raise HTTPException(
                 status_code=409,
@@ -437,7 +436,13 @@ async def submit_designer_turn(
         result.updated_outline,
         ready_for_review=result.ready,
     )
-    repository.append_designer_turn(campaign_id, "designer", result.reply_text)
+    repository.append_designer_turn(
+        campaign_id,
+        "designer",
+        result.reply_text,
+        brain_b_intent=result.brain_b_intent,
+        get_user_input=result.brain_b_intent.get_user_input,
+    )
 
     campaign = repository.get_campaign(campaign_id)
     session = repository.get_designer_session(campaign_id)

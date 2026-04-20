@@ -1,6 +1,6 @@
 <script lang="ts">
   import { afterUpdate, createEventDispatcher } from 'svelte';
-  import type { GetUserInputPayload, ParticipantControl } from '$lib/types';
+  import type { GetUserInputOptions } from '$lib/types';
 
   export let title: string;
   export let messages: Array<{ role: string; content: string }>;
@@ -12,7 +12,7 @@
   export let pending = false;
   export let emptyState = 'The conversation has not started yet.';
   export let footerNote = '';
-  export let activePrompt: GetUserInputPayload | null = null;
+  export let activePrompt: GetUserInputOptions | null = null;
   export let paused = false;
   export let resumePending = false;
 
@@ -24,12 +24,6 @@
   let draft = '';
   let transcriptEl: HTMLDivElement | null = null;
   let seenMessageCount = 0;
-  const controlLabels: Record<ParticipantControl, string> = {
-    continue: 'Keep going',
-    skip: "I'd rather skip this",
-    pause: 'Pause for now',
-    stop: 'Stop here'
-  };
 
   function isAgent(role: string): boolean {
     return role === 'agent' || role === 'designer';
@@ -112,14 +106,8 @@
       <p class="m-0 text-sm text-[color:var(--muted)]">{footerNote}</p>
     {/if}
 
-    {#if activePrompt && (activePrompt.options.length || activePrompt.participant_controls.length)}
+    {#if activePrompt && activePrompt.options.length}
       <div class="grid gap-3">
-        {#if activePrompt.sensitive_turn}
-          <p class="m-0 text-sm text-[color:var(--muted)]">
-            If this part feels too personal or not worth pushing on, you can change course here.
-          </p>
-        {/if}
-
         <div class="chip-list">
           {#each activePrompt.options as option}
             <button
@@ -129,17 +117,6 @@
               on:click={() => submitChip(option)}
             >
               {option}
-            </button>
-          {/each}
-
-          {#each activePrompt.participant_controls as control}
-            <button
-              type="button"
-              class="chip"
-              disabled={disabled || pending || paused}
-              on:click={() => submitChip(controlLabels[control])}
-            >
-              {controlLabels[control]}
             </button>
           {/each}
         </div>

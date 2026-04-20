@@ -29,7 +29,6 @@ class TurnAuditResponse(BaseModel):
     content: str
     created_at: str
     brain_b_intent: dict[str, Any] | None = None
-    brain_b_intent_v2: dict[str, Any] | None = None
     validation: dict[str, Any] | None = None
     retrieval: TurnRetrievalAudit
 
@@ -108,7 +107,9 @@ async def get_turn_audit(
     if turn is None:
         raise HTTPException(status_code=404, detail="Turn not found for this session")
 
-    legacy_intent = turn.brain_b_intent.model_dump() if turn.brain_b_intent is not None else None
+    brain_b_intent_payload = (
+        turn.brain_b_intent.model_dump() if turn.brain_b_intent is not None else None
+    )
     retrieval_rows: list[dict[str, Any]] = []
     retrieval_scores: list[float] = []
     retrieval_query = ""
@@ -134,8 +135,8 @@ async def get_turn_audit(
                         },
                     }
                 )
-    elif turn.brain_b_intent_v2 is not None:
-        for chunk_id in turn.brain_b_intent_v2.get("retrieval_chunks", []) or []:
+    elif turn.brain_b_intent is not None:
+        for chunk_id in turn.brain_b_intent.retrieval_chunks or []:
             chunk = repository.get_knowledge_chunk(chunk_id) if hasattr(repository, "get_knowledge_chunk") else None
             if chunk is None:
                 retrieval_rows.append({"id": chunk_id, "content": "", "source": {"title": "", "url": None}})
@@ -159,8 +160,7 @@ async def get_turn_audit(
         role=turn.role,
         content=turn.content,
         created_at=turn.created_at,
-        brain_b_intent=legacy_intent,
-        brain_b_intent_v2=turn.brain_b_intent_v2,
+        brain_b_intent=brain_b_intent_payload,
         validation=turn.validation,
         retrieval=TurnRetrievalAudit(
             retrieval_audit_id=turn.retrieval_audit_id,

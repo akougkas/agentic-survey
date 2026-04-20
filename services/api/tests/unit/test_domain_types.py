@@ -11,18 +11,13 @@ from agentic_survey.domain.intent import (
 )
 from agentic_survey.domain.outline import (
     DecisionGate,
-    OutlineArtifactV2,
+    MicroFormField,
+    OutlineArtifact,
+    OutlineRubric,
+    ParticipantFAQEntry,
     RiskEntry,
-    from_v1,
-    to_v1,
 )
 from agentic_survey.domain.tools import DISCUSS_MORE_OPTION, GetUserInputOptions
-from agentic_survey.repository import (
-    DEFAULT_MICRO_FORM_SCHEMA,
-    DEFAULT_PERSONA_HINTS,
-    DEFAULT_RUBRIC,
-    OutlineArtifact,
-)
 
 
 def _valid_chips() -> GetUserInputOptions:
@@ -60,41 +55,72 @@ def test_get_user_input_options_rejects_too_few_options() -> None:
         )
 
 
-def test_outline_artifact_v2_accepts_empty_defaults() -> None:
-    outline = OutlineArtifactV2()
+def test_outline_artifact_defaults_are_empty_and_permissive() -> None:
+    outline = OutlineArtifact()
     assert outline.research_question == ""
+    assert outline.sampling_frame == ""
     assert outline.axes == []
+    assert outline.objectives == []
     assert outline.probes == []
     assert outline.risk_register == []
+    assert outline.grounding_sources_approved == []
+    assert outline.suggested_search_queries == []
+    assert outline.micro_form_schema == []
+    assert outline.participant_faq == []
+    assert outline.persona_hints == {}
     assert outline.decision_gate is None
     assert outline.min_n == 6
     assert outline.max_n == 40
+    assert isinstance(outline.rubric, OutlineRubric)
+    assert outline.rubric.coverage_dimensions == []
+    assert outline.rubric.risk_checks == []
 
 
-def test_outline_artifact_v2_preserves_legacy_fields_additively() -> None:
-    legacy = OutlineArtifact(
+def test_outline_artifact_round_trips_rich_fields() -> None:
+    outline = OutlineArtifact(
+        research_question="Does trust calibration separate durable adopters from churners?",
+        sampling_frame="Adopters with inclusion criteria stipulating two years of hands-on use.",
+        exclusion_criteria="Vendors pitching the tools they build.",
+        publication_intent="hypothesis_test",
+        axes=["research_question", "sampling_frame", "risk_map"],
         objectives=["probe the axis"],
         probes=["walk me through a concrete moment"],
-        rubric=DEFAULT_RUBRIC,
+        risk_register=[
+            RiskEntry(
+                risk="leading prompt on effectiveness",
+                mitigation="ask for failures first",
+            )
+        ],
+        grounding_sources_approved=["ksrc-seed"],
+        readiness_rationale="all five axes are above 0.75",
+        decision_gate=DecisionGate(gate="launch", rationale="axes cleared"),
+        suggested_search_queries=["trust calibration research"],
         min_n=5,
         max_n=20,
+        rubric=OutlineRubric(
+            coverage_dimensions=["concrete workflow moment"],
+            risk_checks=["no leading prompts"],
+        ),
         freshness_query="trust calibration research",
-        persona_hints=dict(DEFAULT_PERSONA_HINTS),
+        persona_hints={"name": "Mira"},
         consent_language="named or anonymous",
-        micro_form_schema=list(DEFAULT_MICRO_FORM_SCHEMA),
+        micro_form_schema=[MicroFormField(key="discipline", label="Discipline")],
+        scientist_summary="quick brief",
+        study_context="context",
+        market_context="market",
+        technical_context="tech",
+        aggregate_graph_context="graph",
+        participant_faq=[
+            ParticipantFAQEntry(
+                key="scope",
+                question="what is this?",
+                answer="a study",
+                tags=["scope"],
+            )
+        ],
     )
-    lifted = from_v1(legacy)
-    assert lifted.suggested_search_queries == ["trust calibration research"]
-    assert lifted.probes == legacy.probes
-    assert lifted.persona_hints == DEFAULT_PERSONA_HINTS
-    assert lifted.min_n == 5
-    assert lifted.max_n == 20
-
-    restored = to_v1(lifted)
-    assert restored.objectives == legacy.objectives
-    assert restored.probes == legacy.probes
-    assert restored.freshness_query == legacy.freshness_query
-    assert restored.persona_hints == legacy.persona_hints
+    restored = OutlineArtifact.model_validate(outline.model_dump())
+    assert restored == outline
 
 
 def test_brain_b_intent_round_trips_through_json() -> None:
@@ -132,6 +158,6 @@ def test_brain_b_intent_round_trips_through_json() -> None:
 def test_decision_gate_and_risk_entry_shapes() -> None:
     gate = DecisionGate(gate="launch", rationale="all five axes cleared self-scoring floor")
     risk = RiskEntry(risk="leading prompt on effectiveness", mitigation="ask for failures first")
-    outline = OutlineArtifactV2(decision_gate=gate, risk_register=[risk])
+    outline = OutlineArtifact(decision_gate=gate, risk_register=[risk])
     assert outline.decision_gate == gate
     assert outline.risk_register[0].mitigation == "ask for failures first"

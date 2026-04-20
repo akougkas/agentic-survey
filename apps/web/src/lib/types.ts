@@ -10,6 +10,7 @@ export type CampaignState =
 export type AgentRole = 'chatter' | 'scientist' | 'validator' | 'analyst' | 'embedding' | 'ingest';
 export type Endpoint = 'mini' | 'dynamo';
 export type AgentModelSelections = Partial<Record<AgentRole, string>>;
+export type ParticipantControl = 'pause' | 'skip' | 'continue' | 'stop';
 
 export interface CatalogEntry {
   catalog_id: string;
@@ -35,14 +36,17 @@ export interface CatalogEntryPayload {
   is_default: boolean;
 }
 
+export interface OutlineRubric {
+  coverage_dimensions: string[];
+  risk_checks: string[];
+}
+
 export interface MicroFormField {
   key: string;
   label: string;
   field_type: string;
   required: boolean;
 }
-
-export type ParticipantControl = 'pause' | 'skip' | 'continue' | 'stop';
 
 export interface ParticipantFAQEntry {
   key: string;
@@ -51,36 +55,32 @@ export interface ParticipantFAQEntry {
   tags: string[];
 }
 
-export interface GetUserInputPayload {
-  question: string;
-  options: string[];
-  allow_free_text: boolean;
-  participant_controls: ParticipantControl[];
-  suggested_control: ParticipantControl | null;
-  sensitive_turn: boolean;
+export interface RiskEntry {
+  risk: string;
+  mitigation: string;
 }
 
-export interface BrainIntentRecord {
-  response_mode: 'probe' | 'faq' | 'advice_refusal' | 'closing';
-  question_intent: string;
-  faq_key: string | null;
-  shared_context_used: string[];
-  should_close: boolean;
-  close_reason: string;
-  get_user_input: GetUserInputPayload | null;
-}
-
-export interface OutlineRubric {
-  coverage_dimensions: string[];
-  risk_checks: string[];
+export interface DecisionGate {
+  gate: string;
+  rationale: string;
 }
 
 export interface OutlineArtifact {
+  research_question: string;
+  sampling_frame: string;
+  exclusion_criteria: string;
+  publication_intent: string;
+  axes: string[];
   objectives: string[];
   probes: string[];
-  rubric: OutlineRubric;
+  risk_register: RiskEntry[];
+  grounding_sources_approved: string[];
+  readiness_rationale: string;
+  decision_gate: DecisionGate | null;
+  suggested_search_queries: string[];
   min_n: number;
   max_n: number;
+  rubric: OutlineRubric;
   freshness_query: string;
   persona_hints: Record<string, string>;
   consent_language: string;
@@ -99,42 +99,10 @@ export interface GetUserInputOptions {
   allow_free_text: boolean;
 }
 
-export interface RiskEntry {
-  risk: string;
-  mitigation: string;
-}
-
-export interface DecisionGate {
-  gate: string;
-  rationale: string;
-}
-
-export interface OutlineArtifactV2 {
-  research_question: string;
-  sampling_frame: string;
-  exclusion_criteria: string;
-  publication_intent: string;
-  axes: string[];
-  probes: string[];
-  risk_register: RiskEntry[];
-  grounding_sources_approved: string[];
-  readiness_rationale: string;
-  decision_gate: DecisionGate | null;
-  suggested_search_queries: string[];
-  min_n: number;
-  max_n: number;
-  objectives: string[];
-  rubric: OutlineRubric | null;
-  freshness_query: string;
-  persona_hints: Record<string, string>;
-  consent_language: string;
-  micro_form_schema: MicroFormField[];
-  scientist_summary: string;
-  study_context: string;
-  market_context: string;
-  technical_context: string;
-  aggregate_graph_context: string;
-  participant_faq: ParticipantFAQEntry[];
+export interface AxisCoverage {
+  axis: string;
+  score: number;
+  gap: string;
 }
 
 export type OutlinePatchOp = 'replace' | 'append' | 'remove';
@@ -149,12 +117,6 @@ export interface OutlinePatch {
   sections: OutlinePatchSection[];
   provenance: string;
   summary: string;
-}
-
-export interface AxisCoverage {
-  axis: string;
-  score: number;
-  gap: string;
 }
 
 export interface BrainBIntent {
@@ -206,6 +168,29 @@ export interface BundleUiCopy {
   admin: BundleAdminCopy;
 }
 
+export interface ProductBundleManifest {
+  slug: string;
+  name: string;
+  runtime: string;
+  public_base_url: string;
+  branding: BundleBranding;
+  ui: BundleUiCopy;
+  campaigns: Array<{ slug: string; seed: string }>;
+}
+
+export interface CampaignSeedSummary {
+  slug: string;
+  title: string;
+  description: string;
+  min_n: number;
+  max_n: number;
+}
+
+export interface BundleCatalogResponse {
+  bundle: ProductBundleManifest;
+  seeds: CampaignSeedSummary[];
+}
+
 export interface Campaign {
   id: string;
   title: string;
@@ -224,6 +209,8 @@ export interface DesignerTurn {
   id: string;
   role: 'designer' | 'scientist';
   content: string;
+  brain_b_intent: BrainBIntent | null;
+  get_user_input: GetUserInputOptions | null;
   created_at: string;
 }
 
@@ -235,38 +222,14 @@ export interface DesignerSession {
   updated_at: string;
 }
 
-export interface CampaignBundleResponse {
-  campaign: Campaign;
-  designer_session: DesignerSession | null;
-  metrics: CampaignMetrics;
-  readiness: OutlineReadiness;
-  next_states: CampaignState[];
-  outline_revisions: OutlineRevision[];
-  invites?: Invite[];
-  sessions?: InterviewSessionRecord[];
-}
-
-export interface CampaignSeedSummary {
-  slug: string;
-  title: string;
-  description: string;
-  min_n: number;
-  max_n: number;
-}
-
-export interface ProductBundleManifest {
-  slug: string;
-  name: string;
-  runtime: string;
-  public_base_url: string;
-  branding: BundleBranding;
-  ui: BundleUiCopy;
-  campaigns: Array<{ slug: string; seed: string }>;
-}
-
-export interface BundleCatalogResponse {
-  bundle: ProductBundleManifest;
-  seeds: CampaignSeedSummary[];
+export interface OutlineRevision {
+  id: string;
+  campaign_id: string;
+  source: 'blank' | 'seed' | 'designer';
+  summary: string;
+  changed_sections: string[];
+  outline: OutlineArtifact;
+  created_at: string;
 }
 
 export interface OutlineReadinessCheck {
@@ -293,14 +256,72 @@ export interface CampaignMetrics {
   finished_session_count: number;
 }
 
-export interface OutlineRevision {
+export interface Invite {
   id: string;
   campaign_id: string;
-  source: 'blank' | 'seed' | 'designer';
-  summary: string;
-  changed_sections: string[];
-  outline: OutlineArtifact;
+  token: string;
+  label: string;
+  status: 'active' | 'used' | 'revoked';
   created_at: string;
+  used_at: string | null;
+  session_id: string | null;
+}
+
+export interface ValidationSnapshot {
+  coverage_score?: number;
+  quality_score?: number;
+  follow_up_needed?: boolean;
+  follow_up_reason?: string;
+  is_spam?: boolean;
+  extracted_concepts?: Array<{ label: string; type?: string }>;
+  extracted_relations?: Array<Record<string, unknown>>;
+  objective_tags?: string[];
+  closing?: boolean;
+  close_reason?: string;
+  control_signal?: ParticipantControl;
+}
+
+export interface InterviewTurnRecord {
+  id: string;
+  session_id: string;
+  role: 'agent' | 'participant';
+  content: string;
+  index: number;
+  validation: ValidationSnapshot | null;
+  brain_b_intent: BrainBIntent | null;
+  get_user_input: GetUserInputOptions | null;
+  retrieval_audit_id: string | null;
+  created_at: string;
+}
+
+export interface InterviewSessionRecord {
+  id: string;
+  campaign_id: string;
+  invite_id: string | null;
+  participant_token: string;
+  consent_mode: 'anonymous' | 'named';
+  identity_label: string;
+  persona_snapshot: Record<string, string>;
+  pinned_endpoint: string;
+  status: 'active' | 'paused' | 'finished' | 'abandoned';
+  started_at: string;
+  updated_at: string;
+  finished_at: string | null;
+  close_reason: string | null;
+  paused_reason: string | null;
+  abandoned_reason: string | null;
+  turns: InterviewTurnRecord[];
+}
+
+export interface CampaignBundleResponse {
+  campaign: Campaign;
+  designer_session: DesignerSession | null;
+  metrics: CampaignMetrics;
+  readiness: OutlineReadiness;
+  next_states: CampaignState[];
+  outline_revisions: OutlineRevision[];
+  invites?: Invite[];
+  sessions?: InterviewSessionRecord[];
 }
 
 export interface CampaignOverviewItem {
@@ -332,17 +353,6 @@ export interface AdminSessionResponse {
   expires_at: string | null;
 }
 
-export interface Invite {
-  id: string;
-  campaign_id: string;
-  token: string;
-  label: string;
-  status: 'active' | 'used' | 'revoked';
-  created_at: string;
-  used_at: string | null;
-  session_id: string | null;
-}
-
 export interface InviteInfoResponse {
   invite_id: string;
   campaign_id: string;
@@ -350,53 +360,6 @@ export interface InviteInfoResponse {
   consent_language: string;
   micro_form_schema: MicroFormField[];
   status: 'active' | 'used' | 'revoked';
-}
-
-export interface ValidationSnapshot {
-  coverage_score?: number;
-  quality_score?: number;
-  follow_up_needed?: boolean;
-  follow_up_reason?: string;
-  is_spam?: boolean;
-  extracted_concepts?: Array<{ label: string; type?: string }>;
-  extracted_relations?: Array<Record<string, unknown>>;
-  objective_tags?: string[];
-  closing?: boolean;
-  close_reason?: string;
-  control_signal?: ParticipantControl;
-}
-
-export interface InterviewTurnRecord {
-  id: string;
-  session_id: string;
-  role: 'agent' | 'participant';
-  content: string;
-  index: number;
-  validation: ValidationSnapshot | null;
-  brain_b_intent: BrainIntentRecord | null;
-  brain_b_intent_v2: BrainBIntent | null;
-  get_user_input: GetUserInputPayload | null;
-  retrieval_audit_id: string | null;
-  created_at: string;
-}
-
-export interface InterviewSessionRecord {
-  id: string;
-  campaign_id: string;
-  invite_id: string | null;
-  participant_token: string;
-  consent_mode: 'anonymous' | 'named';
-  identity_label: string;
-  persona_snapshot: Record<string, string>;
-  pinned_endpoint: string;
-  status: 'active' | 'paused' | 'finished' | 'abandoned';
-  started_at: string;
-  updated_at: string;
-  finished_at: string | null;
-  close_reason: string | null;
-  paused_reason: string | null;
-  abandoned_reason: string | null;
-  turns: InterviewTurnRecord[];
 }
 
 export interface SessionBundleResponse {

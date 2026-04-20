@@ -57,123 +57,76 @@ class CatalogResolution:
 
 
 def seed_entries() -> list[CatalogEntry]:
+    """Canonical three-model catalog.
+
+    Identity, endpoint routing, and model IDs all come from the Settings
+    object. Brain A (chatter) lives on mini; every other LLM role collapses
+    to the dynamo reasoning model; embeddings sit on dynamo too. Extend by
+    editing env vars, not this list.
+    """
+    from agentic_survey.config import get_settings
+
+    settings = get_settings()
+    mini_model = settings.mini_model
+    dynamo_model = settings.dynamo_model
+    embedding_model = settings.embedding_model
     return [
         CatalogEntry(
-            catalog_id="qwen-3.5-distilled",
+            catalog_id="mini-chatter",
             role="chatter",
             endpoint="mini",
-            model_id="Qwen35-Distilled-i1-Q4_K_M",
-            label="Qwen 3.5 Claude-distilled (reasoning, 262K)",
-            notes="Always reasons; clean JSON output.",
+            model_id=mini_model,
+            label=f"{mini_model} (Brain A on mini)",
             is_default=True,
         ),
         CatalogEntry(
-            catalog_id="qwen-3.6-35b-a3b",
-            role="chatter",
-            endpoint="mini",
-            model_id="Qwen3.6-35B-A3B-UD-Q4_K_XL",
-            label="Qwen 3.6 35B-A3B (MoE, toggleable thinking, 262K)",
-            notes="Native Qwen3 template; enable_thinking works.",
-        ),
-        CatalogEntry(
-            catalog_id="gemma-4-26b",
-            role="chatter",
-            endpoint="mini",
-            model_id="gemma-4-26B-A4B-it-Q4_K_M",
-            label="Gemma-4 26B-A4B (VLM, reasoning, 262K)",
-            notes="~23 GiB at 262K. Passed Designer flow in M1 driver test.",
-        ),
-        CatalogEntry(
-            catalog_id="gemma-4-scientist",
+            catalog_id="dynamo-scientist",
             role="scientist",
-            endpoint="mini",
-            model_id="gemma-4-26B-A4B-it-Q4_K_M",
-            label="Gemma-4 26B-A4B (scientist, reasoning on)",
+            endpoint="dynamo",
+            model_id=dynamo_model,
+            label=f"{dynamo_model} (Brain B on dynamo)",
             is_default=True,
             reasoning_mode="on",
             reasoning_kwarg="enable_thinking",
         ),
         CatalogEntry(
-            catalog_id="qwen-3.5-distilled-scientist",
-            role="scientist",
-            endpoint="mini",
-            model_id="Qwen35-Distilled-i1-Q4_K_M",
-            label="Qwen 3.5 Distilled (scientist on mini)",
-        ),
-        CatalogEntry(
-            catalog_id="nemotron-cascade",
-            role="scientist",
-            endpoint="dynamo",
-            model_id="nemotron-cascade-2-30b-a3b-i1",
-            label="Nemotron Cascade 2 30B-A3B (400K)",
-            notes="Reasoning, tool_use, 400K context.",
-        ),
-        CatalogEntry(
-            catalog_id="qwen-3.6-35b-a3b",
-            role="scientist",
-            endpoint="dynamo",
-            model_id="qwen3.6-35b-a3b",
-            label="Qwen 3.6 35B-A3B (on dynamo)",
-        ),
-        CatalogEntry(
-            catalog_id="gemma-4-validator",
+            catalog_id="dynamo-validator",
             role="validator",
-            endpoint="mini",
-            model_id="gemma-4-26B-A4B-it-Q4_K_M",
-            label="Gemma-4 26B-A4B (validator, reasoning budget 2048)",
+            endpoint="dynamo",
+            model_id=dynamo_model,
+            label=f"{dynamo_model} (Validator on dynamo, reasoning budget)",
             is_default=True,
             reasoning_mode="budget",
             reasoning_budget_tokens=2048,
             reasoning_kwarg="enable_thinking",
         ),
         CatalogEntry(
-            catalog_id="nemotron-cascade",
-            role="validator",
-            endpoint="dynamo",
-            model_id="nemotron-cascade-2-30b-a3b-i1",
-            label="Nemotron (validator)",
-        ),
-        CatalogEntry(
-            catalog_id="gemma-4-analyst",
+            catalog_id="dynamo-analyst",
             role="analyst",
-            endpoint="mini",
-            model_id="gemma-4-26B-A4B-it-Q4_K_M",
-            label="Gemma-4 26B-A4B (analyst, reasoning on)",
+            endpoint="dynamo",
+            model_id=dynamo_model,
+            label=f"{dynamo_model} (Analyst on dynamo)",
             is_default=True,
             reasoning_mode="on",
             reasoning_kwarg="enable_thinking",
         ),
         CatalogEntry(
-            catalog_id="nemotron-cascade",
-            role="analyst",
-            endpoint="dynamo",
-            model_id="nemotron-cascade-2-30b-a3b-i1",
-            label="Nemotron (analyst)",
-        ),
-        CatalogEntry(
-            catalog_id="nomic-v2-moe",
-            role="embedding",
-            endpoint="dynamo",
-            model_id="text-embedding-nomic-embed-text-v2-moe",
-            label="Nomic Embed v2 MoE (768-dim)",
-            is_default=True,
-        ),
-        CatalogEntry(
-            catalog_id="gemma-4-ingest",
+            catalog_id="dynamo-ingest",
             role="ingest",
-            endpoint="mini",
-            model_id="gemma-4-26B-A4B-it-Q4_K_M",
-            label="Gemma-4 26B-A4B (ingest, reasoning off)",
+            endpoint="dynamo",
+            model_id=dynamo_model,
+            label=f"{dynamo_model} (Ingest on dynamo)",
             is_default=True,
             reasoning_mode="off",
             reasoning_kwarg="enable_thinking",
         ),
         CatalogEntry(
-            catalog_id="nemotron-cascade",
-            role="ingest",
+            catalog_id="dynamo-embedding",
+            role="embedding",
             endpoint="dynamo",
-            model_id="nemotron-cascade-2-30b-a3b-i1",
-            label="Nemotron (ingest)",
+            model_id=embedding_model,
+            label=f"{embedding_model} (Embeddings on dynamo)",
+            is_default=True,
         ),
     ]
 

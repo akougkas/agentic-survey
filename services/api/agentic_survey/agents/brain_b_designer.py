@@ -7,7 +7,7 @@ from typing import Any, Awaitable, Callable
 from pydantic import ValidationError
 
 from agentic_survey.domain.intent import BrainBIntent
-from agentic_survey.domain.outline import OutlineArtifactV2
+from agentic_survey.domain.outline import OutlineArtifact
 
 __all__ = [
     "DesignerBrainBError",
@@ -22,7 +22,7 @@ _PROMPTS_DIR = Path(__file__).with_name("prompts")
 _DEFAULT_PROMPT_FILE = "designer_brain_b.md"
 
 SearchKnowledge = Callable[[str, int], Awaitable[list[dict[str, Any]]]]
-GetOutlineState = Callable[[], OutlineArtifactV2]
+GetOutlineState = Callable[[], OutlineArtifact]
 ListGroundingSources = Callable[[], list[dict[str, Any]]]
 ProposeOutlinePatch = Callable[[dict[str, Any]], None]
 
@@ -96,7 +96,7 @@ def _extract_message_content(response: object) -> str:
 
 async def run_brain_b_designer(
     *,
-    outline: OutlineArtifactV2,
+    outline: OutlineArtifact,
     transcript_tail: list[dict[str, Any]],
     router,
     search_knowledge: SearchKnowledge,
@@ -122,7 +122,7 @@ async def run_brain_b_designer(
 
     base_messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
-        {"role": "system", "content": f"Current outline (v2):\n{outline_blob}"},
+        {"role": "system", "content": f"Current outline:\n{outline_blob}"},
         {"role": "system", "content": f"Approved grounding sources:\n{grounding_blob}"},
     ]
     base_messages.extend(transcript_tail)

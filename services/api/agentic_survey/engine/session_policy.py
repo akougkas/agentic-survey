@@ -119,9 +119,9 @@ def derive_objective_tags(
 ) -> list[str]:
     """Map one participant turn onto the outline's objectives.
 
-    Pure function; same stemming + stop-list fallback as the legacy
-    version so callers preserve behavior. Prefers explicit
-    ``objective_tags`` in ``validation`` when the validator emitted them.
+    Pure function: stems tokens, applies a stop-list fallback, and prefers
+    explicit ``objective_tags`` in ``validation`` when the validator
+    emitted them.
     """
     if not outline.objectives:
         return []
@@ -242,4 +242,4 @@ def _unique(items: list[str]) -> list[str]:
     return seen
 
 
-_ = InterviewTurnRecord  # re-export module imports (used by type hints in legacy call sites)
+_ = InterviewTurnRecord  # re-exported so type hints on call sites resolve without a direct import

@@ -12,14 +12,15 @@ from surrealdb import RecordID, Surreal
 from agentic_survey.config import Settings
 from agentic_survey.engine.state_machine import CampaignState, transition_or_raise
 from agentic_survey.llm.catalog import AGENT_ROLES, AgentRole as CatalogRole, CatalogEntry, seed_entries
+from agentic_survey.domain.intent import BrainBIntent
+from agentic_survey.domain.outline import OutlineArtifact
+from agentic_survey.domain.tools import GetUserInputOptions
 from agentic_survey.repository import (
     AdminSession,
-    BrainIntentRecord,
     Campaign,
     ChunkHit,
     DesignerSession,
     DesignerTurn,
-    GetUserInputPayload,
     InMemoryRepository,
     InterviewSessionRecord,
     InterviewTurnRecord,
@@ -28,7 +29,6 @@ from agentic_survey.repository import (
     KnowledgeSource,
     KnowledgeSourceKind,
     KnowledgeSourceStatus,
-    OutlineArtifact,
     OutlineRevision,
     RetrievalAuditRow,
     _default_participant_faq,
@@ -455,10 +455,10 @@ class SurrealRepository:
                 "UPDATE type::thing('designer_session', $sid) MERGE { status: 'active', updated_at: $ts };",
                 {"sid": session_id, "ts": now_dt},
             )
-        if campaign.state == CampaignState.DRAFT:
+        if campaign.state in (CampaignState.DRAFT, CampaignState.REVIEWING):
             new_state = transition_or_raise(campaign.state, CampaignState.DESIGNING)
             self._query(
-                "UPDATE type::thing('campaign', $id) MERGE { state: $state, updated_at: $ts };",
+                "UPDATE type::thing('campaign', $id) MERGE { state: $state, outline_status: 'collecting_brief', updated_at: $ts };",
                 {"id": campaign_id, "state": new_state.value, "ts": now_dt},
             )
         else:
@@ -476,8 +476,8 @@ class SurrealRepository:
         role: Literal["designer", "scientist"],
         content: str,
         *,
-        brain_b_intent: BrainIntentRecord | None = None,
-        get_user_input: GetUserInputPayload | None = None,
+        brain_b_intent: BrainBIntent | None = None,
+        get_user_input: GetUserInputOptions | None = None,
     ) -> DesignerTurn:
         session = self.get_designer_session(campaign_id)
         if session is None:
@@ -509,8 +509,8 @@ class SurrealRepository:
         session_id: str,
         role: Literal["designer", "scientist"],
         content: str,
-        brain_b_intent: BrainIntentRecord | None,
-        get_user_input: GetUserInputPayload | None,
+        brain_b_intent: BrainBIntent | None,
+        get_user_input: GetUserInputOptions | None,
         created_at_dt: datetime,
         created_at: str,
     ) -> DesignerTurn:
@@ -758,9 +758,8 @@ class SurrealRepository:
         role: Literal["agent", "participant"],
         content: str,
         validation: dict | None = None,
-        brain_b_intent: BrainIntentRecord | None = None,
-        brain_b_intent_v2: dict | None = None,
-        get_user_input: GetUserInputPayload | None = None,
+        brain_b_intent: BrainBIntent | None = None,
+        get_user_input: GetUserInputOptions | None = None,
         retrieval_audit_id: str | None = None,
     ) -> InterviewTurnRecord:
         session = self.get_interview_session(session_id)
@@ -779,7 +778,6 @@ class SurrealRepository:
                 "index": index,
                 "validation": validation,
                 "brain_b_intent": brain_b_intent.model_dump() if brain_b_intent is not None else None,
-                "brain_b_intent_v2": dict(brain_b_intent_v2) if brain_b_intent_v2 is not None else None,
                 "get_user_input": get_user_input.model_dump() if get_user_input is not None else None,
                 "retrieval_audit_id": retrieval_audit_id,
                 "created_at": now_dt,
@@ -797,7 +795,6 @@ class SurrealRepository:
             index=index,
             validation=dict(validation) if validation is not None else None,
             brain_b_intent=brain_b_intent.model_copy(deep=True) if brain_b_intent is not None else None,
-            brain_b_intent_v2=dict(brain_b_intent_v2) if brain_b_intent_v2 is not None else None,
             get_user_input=get_user_input.model_copy(deep=True) if get_user_input is not None else None,
             retrieval_audit_id=retrieval_audit_id,
             created_at=now,
@@ -867,8 +864,8 @@ class SurrealRepository:
             id=_record_id("designer_turn", row["id"]),
             role=row["role"],
             content=row["content"],
-            brain_b_intent=BrainIntentRecord.model_validate(row["brain_b_intent"]) if row.get("brain_b_intent") else None,
-            get_user_input=GetUserInputPayload.model_validate(row["get_user_input"]) if row.get("get_user_input") else None,
+            brain_b_intent=BrainBIntent.model_validate(row["brain_b_intent"]) if row.get("brain_b_intent") else None,
+            get_user_input=GetUserInputOptions.model_validate(row["get_user_input"]) if row.get("get_user_input") else None,
             created_at=_ensure_iso(row["created_at"]),
         )
 
@@ -931,9 +928,8 @@ class SurrealRepository:
             content=row["content"],
             index=int(row.get("index", 0)),
             validation=dict(row["validation"]) if row.get("validation") else None,
-            brain_b_intent=BrainIntentRecord.model_validate(row["brain_b_intent"]) if row.get("brain_b_intent") else None,
-            brain_b_intent_v2=dict(row["brain_b_intent_v2"]) if row.get("brain_b_intent_v2") else None,
-            get_user_input=GetUserInputPayload.model_validate(row["get_user_input"]) if row.get("get_user_input") else None,
+            brain_b_intent=BrainBIntent.model_validate(row["brain_b_intent"]) if row.get("brain_b_intent") else None,
+            get_user_input=GetUserInputOptions.model_validate(row["get_user_input"]) if row.get("get_user_input") else None,
             retrieval_audit_id=row.get("retrieval_audit_id"),
             created_at=_ensure_iso(row["created_at"]),
         )
