@@ -13,6 +13,7 @@ from agentic_survey.domain.intent import BrainBIntent, OutlinePatch
 from agentic_survey.domain.outline import OutlineArtifact
 from agentic_survey.llm.router import LiteLLMRouter
 from agentic_survey.repository import Campaign, DesignerSession
+from agentic_survey.services.graph import build_neighborhood_provider
 from agentic_survey.services.retrieval import build_search_knowledge
 from agentic_survey.services.web_search.suggestions import (
     SearchSuggestionsRejected,
@@ -212,6 +213,11 @@ async def run_designer_turn(
                 repository=repository,
             )
         propose_queries_fn = _queue_queries
+    neighborhood_fn = (
+        build_neighborhood_provider(repository=repository, campaign_id=campaign.id)
+        if repository is not None
+        else None
+    )
     intent = await run_brain_b_designer(
         outline=outline,
         transcript_tail=transcript_tail,
@@ -220,6 +226,7 @@ async def run_designer_turn(
         list_grounding_sources=lambda: grounding_sources,
         propose_outline_patch=_propose,
         propose_search_queries=propose_queries_fn,
+        graph_neighborhood=neighborhood_fn,
     )
 
     working = (

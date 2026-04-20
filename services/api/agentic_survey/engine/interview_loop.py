@@ -11,6 +11,7 @@ from agentic_survey.agents.brain_b_interviewer import (
 )
 from agentic_survey.agents.validator import Validator
 from agentic_survey.domain.intent import BrainBIntent
+from agentic_survey.engine.graph_builder import apply_validator_to_graph
 from agentic_survey.engine.retrieval_cache import RetrievalCache
 from agentic_survey.engine.session_policy import (
     SessionSignals,
@@ -25,6 +26,7 @@ from agentic_survey.repository import (
     InterviewTurnRecord,
     ParticipantControl,
 )
+from agentic_survey.services.graph import build_neighborhood_provider
 from agentic_survey.services.retrieval import build_search_knowledge
 
 __all__ = [
@@ -185,6 +187,17 @@ async def run_interview_turn(
         validation=validation_payload,
     )
 
+    if control is None:
+        delta = await apply_validator_to_graph(
+            campaign_id=campaign.id,
+            session_id=session.id,
+            turn_id=participant_turn.id,
+            validation=validation_payload,
+            repository=repository,
+            router=router,
+        )
+        events.append(InterviewEvent(name="graph_delta", data=delta.to_dict()))
+
     if control == "pause":
         paused = repository.pause_interview_session(session.id, reason="participant_paused")
         events.append(InterviewEvent(name="session_paused", data={"session_id": paused.id, "reason": "participant_paused"}))
@@ -246,6 +259,10 @@ async def run_interview_turn(
         session_id=refreshed.id,
         cache=cache,
     )
+    neighborhood_fn = build_neighborhood_provider(
+        repository=repository,
+        campaign_id=campaign.id,
+    )
 
     grounding_snapshot = _list_approved_grounding_sources(repository, campaign.id)
     intent = await run_brain_b_interviewer(
@@ -255,6 +272,7 @@ async def run_interview_turn(
         router=router,
         search_knowledge=search_fn,
         list_grounding_sources=lambda: grounding_snapshot,
+        graph_neighborhood=neighborhood_fn,
     )
 
     if intent.should_close:

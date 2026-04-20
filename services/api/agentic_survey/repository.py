@@ -139,6 +139,26 @@ class ChunkHit(BaseModel):
     end_char: int
 
 
+class Concept(BaseModel):
+    """A unique (campaign, normalized-label) node in the knowledge graph.
+
+    ``label`` is stored in its normalized (casefolded) form so the
+    (campaign, label) uniqueness constraint is idempotent across
+    validator outputs that vary capitalization or trailing whitespace.
+    ``is_new`` is set only on the insert-path return from
+    ``merge_concept`` and is never persisted; callers use it to decide
+    whether a ``GraphDelta.add_nodes`` entry is warranted.
+    """
+
+    id: str
+    campaign_id: str
+    label: str
+    type: str = ""
+    mention_count: int = 0
+    first_seen: str
+    is_new: bool = False
+
+
 class AdminSession(BaseModel):
     token: str
     created_at: datetime
@@ -329,6 +349,11 @@ class InMemoryRepository:
         self._retrieval_audits: dict[str, RetrievalAuditRow] = {}
         self._retrieval_audits_by_campaign: dict[str, list[str]] = {}
         self._chunk_embeddings: dict[str, list[float]] = {}
+        self._concepts: dict[str, Concept] = {}
+        self._concept_by_label: dict[tuple[str, str], str] = {}
+        self._concepts_by_campaign: dict[str, list[str]] = {}
+        self._concept_embeddings: dict[str, list[float]] = {}
+        self._graph_edges: list[dict] = []
         self._seed_catalog_locked()
 
     def create_admin_session(self, ttl_hours: int) -> AdminSession:
@@ -1221,6 +1246,231 @@ class InMemoryRepository:
         with self._lock:
             audit = self._retrieval_audits.get(audit_id)
             return None if audit is None else audit.model_copy(deep=True)
+
+    # ------------------------------------------------------------------
+    # Knowledge graph (M5).
+    # ------------------------------------------------------------------
+
+    async def merge_concept(
+        self,
+        *,
+        campaign_id: str,
+        label: str,
+        type: str,
+        router,
+    ) -> Concept:
+        """Idempotent upsert of a (campaign, normalized-label) concept node.
+
+        First insert embeds the normalized label via :func:`embed_query`
+        on the dynamo endpoint and stores the 768-dim vector in the side
+        map. Re-mentions skip the embedding call and increment
+        ``mention_count``. ``type`` is captured on first insert only; later
+        mentions preserve the original type to keep the graph stable.
+        """
+        normalized = _normalize_concept_label(label)
+        with self._lock:
+            existing_id = self._concept_by_label.get((campaign_id, normalized))
+            if existing_id is not None:
+                concept = self._concepts[existing_id]
+                concept.mention_count += 1
+                return concept.model_copy(
+                    update={"is_new": False}, deep=True
+                )
+
+        # First insert: embed, then persist. Embedding happens outside the
+        # lock because it is an awaitable network call; the concurrent
+        # "same label at same time" collision is handled below.
+        from agentic_survey.services.retrieval_embed import embed_query
+
+        vector = await embed_query(normalized, router=router)
+        now = _timestamp()
+        concept_id = f"concept-{uuid4().hex[:12]}"
+        new_concept = Concept(
+            id=concept_id,
+            campaign_id=campaign_id,
+            label=normalized,
+            type=type or "",
+            mention_count=1,
+            first_seen=now,
+        )
+        with self._lock:
+            existing_id = self._concept_by_label.get((campaign_id, normalized))
+            if existing_id is not None:
+                # Another caller inserted the same concept while we were
+                # embedding. Drop our vector and bump the existing row.
+                concept = self._concepts[existing_id]
+                concept.mention_count += 1
+                return concept.model_copy(
+                    update={"is_new": False}, deep=True
+                )
+            self._concepts[concept_id] = new_concept
+            self._concept_by_label[(campaign_id, normalized)] = concept_id
+            self._concepts_by_campaign.setdefault(campaign_id, []).append(concept_id)
+            self._concept_embeddings[concept_id] = list(vector)
+        return new_concept.model_copy(update={"is_new": True}, deep=True)
+
+    def record_mentioned_with(
+        self,
+        *,
+        campaign_id: str,
+        session_id: str,
+        turn_id: str,
+        from_id: str,
+        to_id: str,
+        kind: str,
+        confidence: float,
+    ) -> None:
+        if kind not in ("co_occurrence", "explicit_relation"):
+            raise ValueError(
+                f"mentioned_with.kind must be co_occurrence or explicit_relation; got {kind!r}"
+            )
+        with self._lock:
+            self._graph_edges.append(
+                {
+                    "id": f"edge-{uuid4().hex[:12]}",
+                    "edge_table": "mentioned_with",
+                    "campaign_id": campaign_id,
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "from": from_id,
+                    "to": to_id,
+                    "kind": kind,
+                    "confidence": float(confidence),
+                    "created_at": _timestamp(),
+                }
+            )
+
+    def record_contradicts(
+        self,
+        *,
+        campaign_id: str,
+        session_id: str,
+        turn_id: str,
+        from_id: str,
+        to_id: str,
+        confidence: float,
+    ) -> None:
+        with self._lock:
+            self._graph_edges.append(
+                {
+                    "id": f"edge-{uuid4().hex[:12]}",
+                    "edge_table": "contradicts",
+                    "campaign_id": campaign_id,
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "from": from_id,
+                    "to": to_id,
+                    "confidence": float(confidence),
+                    "created_at": _timestamp(),
+                }
+            )
+
+    def list_concept_neighborhood(
+        self,
+        *,
+        campaign_id: str,
+        label: str,
+        k: int = 8,
+        depth: int = 1,
+    ) -> dict:
+        """Depth-limited expansion around the concept matching ``label``.
+
+        Returns ``{"center": concept|None, "nodes": [...], "edges": [...]}``.
+        ``depth`` is clamped to [0, 2]; ``k`` caps total edges returned
+        (newest first). Edges from both the ``mentioned_with`` and
+        ``contradicts`` tables are considered. Missing labels return an
+        empty response rather than raising so Brain B's tool call stays
+        non-fatal when it probes a term we have not yet seen.
+        """
+        normalized = _normalize_concept_label(label)
+        depth = max(0, min(int(depth), 2))
+        k_cap = max(1, int(k))
+        with self._lock:
+            center_id = self._concept_by_label.get((campaign_id, normalized))
+            if center_id is None:
+                return {"center": None, "nodes": [], "edges": []}
+            node_ids: set[str] = {center_id}
+            frontier: set[str] = {center_id}
+            collected_edges: list[dict] = []
+            seen_edge_ids: set[str] = set()
+            for _ in range(depth):
+                next_frontier: set[str] = set()
+                for edge in self._graph_edges:
+                    if edge["campaign_id"] != campaign_id:
+                        continue
+                    if edge["id"] in seen_edge_ids:
+                        continue
+                    if edge["from"] in frontier or edge["to"] in frontier:
+                        seen_edge_ids.add(edge["id"])
+                        collected_edges.append(edge)
+                        if edge["from"] not in node_ids:
+                            next_frontier.add(edge["from"])
+                        if edge["to"] not in node_ids:
+                            next_frontier.add(edge["to"])
+                node_ids.update(next_frontier)
+                frontier = next_frontier
+                if not frontier:
+                    break
+            collected_edges.sort(key=lambda e: e["created_at"], reverse=True)
+            capped_edges = collected_edges[:k_cap]
+            node_payload: list[dict] = []
+            for node_id in node_ids:
+                concept = self._concepts.get(node_id)
+                if concept is None:
+                    continue
+                node_payload.append(
+                    {
+                        "id": concept.id,
+                        "label": concept.label,
+                        "type": concept.type,
+                        "mention_count": concept.mention_count,
+                        "first_seen": concept.first_seen,
+                    }
+                )
+            edge_payload = [
+                {
+                    "from": edge["from"],
+                    "to": edge["to"],
+                    "kind": edge.get("kind", "contradicts" if edge["edge_table"] == "contradicts" else ""),
+                    "edge_table": edge["edge_table"],
+                    "confidence": edge["confidence"],
+                    "session_id": edge["session_id"],
+                    "turn_id": edge["turn_id"],
+                    "created_at": edge["created_at"],
+                }
+                for edge in capped_edges
+            ]
+            center = self._concepts[center_id]
+            return {
+                "center": {
+                    "id": center.id,
+                    "label": center.label,
+                    "type": center.type,
+                    "mention_count": center.mention_count,
+                    "first_seen": center.first_seen,
+                },
+                "nodes": node_payload,
+                "edges": edge_payload,
+            }
+
+    def get_concept(self, concept_id: str) -> Concept | None:
+        with self._lock:
+            concept = self._concepts.get(concept_id)
+            return None if concept is None else concept.model_copy(deep=True)
+
+    def get_concept_embedding(self, concept_id: str) -> list[float] | None:
+        with self._lock:
+            vec = self._concept_embeddings.get(concept_id)
+            return list(vec) if vec is not None else None
+
+
+def _normalize_concept_label(raw: str) -> str:
+    if raw is None:
+        raise ValueError("concept label must be a non-empty string")
+    normalized = raw.strip().casefold()
+    if not normalized:
+        raise ValueError("concept label must be a non-empty string")
+    return normalized
 
 
 def _tokenize_query(text: str) -> list[str]:

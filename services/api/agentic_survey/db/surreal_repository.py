@@ -19,6 +19,7 @@ from agentic_survey.repository import (
     AdminSession,
     Campaign,
     ChunkHit,
+    Concept,
     DesignerSession,
     DesignerTurn,
     InMemoryRepository,
@@ -33,6 +34,7 @@ from agentic_survey.repository import (
     RetrievalAuditRow,
     _default_participant_faq,
     _default_study_context,
+    _normalize_concept_label,
     DEFAULT_AGGREGATE_GRAPH_CONTEXT,
     DEFAULT_MICRO_FORM_SCHEMA,
     DEFAULT_PERSONA_HINTS,
@@ -1295,6 +1297,300 @@ class SurrealRepository:
             mode=row.get("mode") or "hybrid",
             cache_hit=bool(row.get("cache_hit") or False),
             created_at=_ensure_iso(row.get("created_at")),
+        )
+
+    # ------------------------------------------------------------------
+    # Knowledge graph (M5).
+    # ------------------------------------------------------------------
+
+    async def merge_concept(
+        self,
+        *,
+        campaign_id: str,
+        label: str,
+        type: str,
+        router,
+    ) -> Concept:
+        """Upsert a (campaign, normalized-label) concept row.
+
+        Reads the existing row first; on hit, bumps ``mention_count`` and
+        preserves the original ``type`` / ``first_seen`` / ``embedding``.
+        On miss, embeds the normalized label via ``embed_query`` (dynamo
+        endpoint, 768-dim) and CREATEs the row. Raises on embedding
+        failure; no zero-vector fallback.
+        """
+        normalized = _normalize_concept_label(label)
+        rows = self._query(
+            """
+            SELECT id, label, type, mention_count, first_seen
+            FROM concept
+            WHERE campaign = type::thing('campaign', $cid) AND label = $label
+            LIMIT 1;
+            """,
+            {"cid": campaign_id, "label": normalized},
+        )
+        if rows:
+            row = rows[0]
+            concept_id = _record_id("concept", row["id"])
+            self._query(
+                """
+                UPDATE type::thing('concept', $id)
+                SET mention_count = mention_count + 1;
+                """,
+                {"id": concept_id},
+            )
+            return Concept(
+                id=concept_id,
+                campaign_id=campaign_id,
+                label=normalized,
+                type=str(row.get("type") or ""),
+                mention_count=int(row.get("mention_count") or 0) + 1,
+                first_seen=_ensure_iso(row.get("first_seen")),
+                is_new=False,
+            )
+
+        from agentic_survey.services.retrieval_embed import embed_query
+
+        vector = await embed_query(normalized, router=router)
+        if len(vector) != 768:
+            raise ValueError(
+                f"concept embedding must be 768-dim, got {len(vector)}"
+            )
+        concept_id = f"concept-{uuid4().hex[:12]}"
+        now_dt = _utcnow()
+        self._db().create(
+            RecordID("concept", concept_id),
+            {
+                "campaign": RecordID("campaign", campaign_id),
+                "label": normalized,
+                "type": type or "",
+                "embedding": [float(x) for x in vector],
+                "first_seen": now_dt,
+                "mention_count": 1,
+            },
+        )
+        return Concept(
+            id=concept_id,
+            campaign_id=campaign_id,
+            label=normalized,
+            type=type or "",
+            mention_count=1,
+            first_seen=now_dt.isoformat(),
+            is_new=True,
+        )
+
+    def record_mentioned_with(
+        self,
+        *,
+        campaign_id: str,
+        session_id: str,
+        turn_id: str,
+        from_id: str,
+        to_id: str,
+        kind: str,
+        confidence: float,
+    ) -> None:
+        if kind not in ("co_occurrence", "explicit_relation"):
+            raise ValueError(
+                f"mentioned_with.kind must be co_occurrence or explicit_relation; got {kind!r}"
+            )
+        self._query(
+            """
+            RELATE (type::thing('concept', $from_id))
+                -> mentioned_with
+                -> (type::thing('concept', $to_id))
+            SET campaign = (type::thing('campaign', $cid)),
+                session  = (type::thing('interview_session', $sid)),
+                turn     = (type::thing('interview_turn', $tid)),
+                kind     = $kind,
+                confidence = $c;
+            """,
+            {
+                "from_id": from_id,
+                "to_id": to_id,
+                "cid": campaign_id,
+                "sid": session_id,
+                "tid": turn_id,
+                "kind": kind,
+                "c": float(confidence),
+            },
+        )
+
+    def record_contradicts(
+        self,
+        *,
+        campaign_id: str,
+        session_id: str,
+        turn_id: str,
+        from_id: str,
+        to_id: str,
+        confidence: float,
+    ) -> None:
+        self._query(
+            """
+            RELATE (type::thing('concept', $from_id))
+                -> contradicts
+                -> (type::thing('concept', $to_id))
+            SET campaign = (type::thing('campaign', $cid)),
+                session  = (type::thing('interview_session', $sid)),
+                turn     = (type::thing('interview_turn', $tid)),
+                confidence = $c;
+            """,
+            {
+                "from_id": from_id,
+                "to_id": to_id,
+                "cid": campaign_id,
+                "sid": session_id,
+                "tid": turn_id,
+                "c": float(confidence),
+            },
+        )
+
+    def list_concept_neighborhood(
+        self,
+        *,
+        campaign_id: str,
+        label: str,
+        k: int = 8,
+        depth: int = 1,
+    ) -> dict:
+        normalized = _normalize_concept_label(label)
+        depth = max(0, min(int(depth), 2))
+        k_cap = max(1, int(k))
+        center_rows = self._query(
+            """
+            SELECT id, label, type, mention_count, first_seen
+            FROM concept
+            WHERE campaign = type::thing('campaign', $cid) AND label = $label
+            LIMIT 1;
+            """,
+            {"cid": campaign_id, "label": normalized},
+        )
+        if not center_rows:
+            return {"center": None, "nodes": [], "edges": []}
+        center_row = center_rows[0]
+        center_id = _record_id("concept", center_row["id"])
+        center_payload = {
+            "id": center_id,
+            "label": str(center_row.get("label") or ""),
+            "type": str(center_row.get("type") or ""),
+            "mention_count": int(center_row.get("mention_count") or 0),
+            "first_seen": _ensure_iso(center_row.get("first_seen")),
+        }
+        node_ids: set[str] = {center_id}
+        frontier: set[str] = {center_id}
+        collected: list[dict] = []
+        for _ in range(depth):
+            if not frontier:
+                break
+            frontier_things = [RecordID("concept", cid) for cid in frontier]
+            # SurrealQL has no UNION combiner; query each edge table
+            # separately and merge in Python. Both queries share the same
+            # frontier-filter shape so behavior matches the in-memory
+            # depth-limited expansion.
+            mentioned_rows = self._query(
+                """
+                SELECT id, in, out, kind, confidence, created_at
+                FROM mentioned_with
+                WHERE campaign = type::thing('campaign', $cid)
+                  AND (in INSIDE $frontier OR out INSIDE $frontier);
+                """,
+                {"cid": campaign_id, "frontier": frontier_things},
+            )
+            contradicts_rows = self._query(
+                """
+                SELECT id, in, out, confidence, created_at
+                FROM contradicts
+                WHERE campaign = type::thing('campaign', $cid)
+                  AND (in INSIDE $frontier OR out INSIDE $frontier);
+                """,
+                {"cid": campaign_id, "frontier": frontier_things},
+            )
+            next_frontier: set[str] = set()
+            for row, edge_table, default_kind in (
+                *((r, "mentioned_with", None) for r in mentioned_rows or []),
+                *((r, "contradicts", "contradicts") for r in contradicts_rows or []),
+            ):
+                if not isinstance(row, dict):
+                    continue
+                from_id = _record_id("concept", row.get("in"))
+                to_id = _record_id("concept", row.get("out"))
+                edge_id = _record_id(edge_table, row.get("id"))
+                if any(edge["id"] == edge_id for edge in collected):
+                    continue
+                kind = default_kind if default_kind is not None else str(row.get("kind") or "")
+                collected.append(
+                    {
+                        "id": edge_id,
+                        "from": from_id,
+                        "to": to_id,
+                        "kind": kind,
+                        "edge_table": edge_table,
+                        "confidence": float(row.get("confidence") or 0.0),
+                        "created_at": _ensure_iso(row.get("created_at")),
+                    }
+                )
+                if from_id not in node_ids:
+                    next_frontier.add(from_id)
+                if to_id not in node_ids:
+                    next_frontier.add(to_id)
+            node_ids.update(next_frontier)
+            frontier = next_frontier
+        collected.sort(key=lambda edge: edge["created_at"], reverse=True)
+        capped = collected[:k_cap]
+        node_payload: list[dict] = [center_payload]
+        expanded_ids = [nid for nid in node_ids if nid != center_id]
+        if expanded_ids:
+            node_rows = self._query(
+                """
+                SELECT id, label, type, mention_count, first_seen
+                FROM concept
+                WHERE id INSIDE $ids;
+                """,
+                {"ids": [RecordID("concept", nid) for nid in expanded_ids]},
+            )
+            for row in node_rows or []:
+                if not isinstance(row, dict):
+                    continue
+                node_payload.append(
+                    {
+                        "id": _record_id("concept", row.get("id")),
+                        "label": str(row.get("label") or ""),
+                        "type": str(row.get("type") or ""),
+                        "mention_count": int(row.get("mention_count") or 0),
+                        "first_seen": _ensure_iso(row.get("first_seen")),
+                    }
+                )
+        edge_payload = [
+            {
+                "from": edge["from"],
+                "to": edge["to"],
+                "kind": edge["kind"],
+                "edge_table": edge["edge_table"],
+                "confidence": edge["confidence"],
+                "created_at": edge["created_at"],
+            }
+            for edge in capped
+        ]
+        return {
+            "center": center_payload,
+            "nodes": node_payload,
+            "edges": edge_payload,
+        }
+
+    def get_concept(self, concept_id: str) -> Concept | None:
+        rows = self._db().select(RecordID("concept", concept_id))
+        if not rows:
+            return None
+        row = rows if isinstance(rows, dict) else rows[0]
+        return Concept(
+            id=_record_id("concept", row.get("id", concept_id)),
+            campaign_id=_record_id("campaign", row.get("campaign")),
+            label=str(row.get("label") or ""),
+            type=str(row.get("type") or ""),
+            mention_count=int(row.get("mention_count") or 0),
+            first_seen=_ensure_iso(row.get("first_seen")),
+            is_new=False,
         )
 
     def _row_to_knowledge_source(self, row: dict) -> KnowledgeSource:

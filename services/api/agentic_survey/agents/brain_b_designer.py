@@ -8,6 +8,7 @@ from agentic_survey.agents.brain_b_loop import (
     run_brain_b_with_tools,
 )
 from agentic_survey.agents.tools.definitions import (
+    get_graph_neighborhood_tool,
     get_outline_state_tool,
     list_grounding_sources_tool,
     list_participant_faq_tool,
@@ -22,6 +23,7 @@ from agentic_survey.domain.outline import OutlineArtifact
 __all__ = [
     "BrainBToolBudgetExceeded",
     "DesignerBrainBError",
+    "GraphNeighborhood",
     "ProposeSearchQueries",
     "SearchKnowledge",
     "run_brain_b_designer",
@@ -29,6 +31,7 @@ __all__ = [
 
 SearchKnowledge = Callable[[str, int], Awaitable[list[dict[str, Any]]]]
 ProposeSearchQueries = Callable[[list[str]], list[str]]
+GraphNeighborhood = Callable[..., Awaitable[dict[str, Any]]]
 
 # Back-compat alias: the shared loop raises BrainBLoopError. Existing callers
 # (and tests) that import DesignerBrainBError keep working.
@@ -44,6 +47,7 @@ async def run_brain_b_designer(
     list_grounding_sources: Callable[[], list[dict[str, Any]]],
     propose_outline_patch: Callable[[dict[str, Any]], None],
     propose_search_queries: ProposeSearchQueries | None = None,
+    graph_neighborhood: GraphNeighborhood | None = None,
     max_tool_calls: int = 4,
 ) -> BrainBIntent:
     """Run Designer Brain B as a tool-calling agent.
@@ -66,6 +70,8 @@ async def run_brain_b_designer(
     ]
     if propose_search_queries is not None:
         tools.append(propose_search_queries_tool(queue_sink=propose_search_queries))
+    if graph_neighborhood is not None:
+        tools.append(get_graph_neighborhood_tool(neighborhood_fn=graph_neighborhood))
     registry = ToolRegistry(tools)
     system_context = [
         "Current outline (JSON):\n" + outline.model_dump_json(indent=2),

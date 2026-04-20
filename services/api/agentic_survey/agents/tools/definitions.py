@@ -7,6 +7,7 @@ from agentic_survey.domain.outline import OutlineArtifact
 from agentic_survey.engine.session_policy import SessionSignals
 
 __all__ = [
+    "get_graph_neighborhood_tool",
     "get_outline_state_tool",
     "get_session_signals_tool",
     "list_grounding_sources_tool",
@@ -22,6 +23,7 @@ SourcesProvider = Callable[[], list[dict[str, Any]]]
 SignalsProvider = Callable[[], SessionSignals]
 PatchSink = Callable[[dict[str, Any]], None]
 SearchQueriesSink = Callable[[list[str]], list[str]]
+NeighborhoodFn = Callable[..., Awaitable[dict[str, Any]]]
 
 
 def search_knowledge_tool(*, search_fn: SearchKnowledgeFn) -> MiraTool:
@@ -250,6 +252,73 @@ def propose_search_queries_tool(*, queue_sink: SearchQueriesSink) -> MiraTool:
                 },
             },
             "required": ["queries"],
+            "additionalProperties": False,
+        },
+        handler=handler,
+    )
+
+
+def get_graph_neighborhood_tool(*, neighborhood_fn: NeighborhoodFn) -> MiraTool:
+    """Brain-B read tool: depth-1/2 expansion around a participant-mentioned label.
+
+    The graph is campaign-scoped, aggregate, and non-identifying, so this
+    tool is safe on both the Designer and Interviewer surfaces. The
+    closure does the label normalization inside the repository; the
+    handler only coerces types.
+    """
+
+    async def handler(args: dict[str, Any]) -> dict[str, Any]:
+        label = str(args.get("label", "")).strip()
+        if not label:
+            raise ValueError("label is required and must be non-empty")
+        k_raw = args.get("k", 8)
+        try:
+            k = int(k_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"k must be an integer, got {k_raw!r}") from exc
+        if k <= 0 or k > 32:
+            raise ValueError("k must be in 1..32")
+        depth_raw = args.get("depth", 1)
+        try:
+            depth = int(depth_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"depth must be an integer, got {depth_raw!r}") from exc
+        if depth < 1 or depth > 2:
+            raise ValueError("depth must be 1 or 2")
+        return await neighborhood_fn(label, k, depth)
+
+    return MiraTool(
+        name="get_graph_neighborhood",
+        description=(
+            "Return concepts and edges connected to a participant-mentioned label "
+            "across the campaign graph. Use to spot recurring contradictions or "
+            "thin-coverage clusters. Graph is aggregate and non-identifying. "
+            "depth=1 returns direct neighbors; depth=2 expands one more level. "
+            "k caps total edges (newest first)."
+        ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "description": "Concept label to center the neighborhood on.",
+                },
+                "k": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 32,
+                    "default": 8,
+                    "description": "Maximum number of edges to return.",
+                },
+                "depth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2,
+                    "default": 1,
+                    "description": "Hop-distance from the center concept.",
+                },
+            },
+            "required": ["label"],
             "additionalProperties": False,
         },
         handler=handler,

@@ -8,6 +8,7 @@ from agentic_survey.agents.brain_b_loop import (
     run_brain_b_with_tools,
 )
 from agentic_survey.agents.tools.definitions import (
+    get_graph_neighborhood_tool,
     get_outline_state_tool,
     get_session_signals_tool,
     list_grounding_sources_tool,
@@ -21,12 +22,14 @@ from agentic_survey.engine.session_policy import SessionSignals
 
 __all__ = [
     "BrainBToolBudgetExceeded",
+    "GraphNeighborhood",
     "InterviewerBrainBError",
     "SearchKnowledge",
     "run_brain_b_interviewer",
 ]
 
 SearchKnowledge = Callable[[str, int], Awaitable[list[dict[str, Any]]]]
+GraphNeighborhood = Callable[..., Awaitable[dict[str, Any]]]
 
 # Back-compat alias; the shared loop raises BrainBLoopError.
 InterviewerBrainBError = BrainBLoopError
@@ -40,6 +43,7 @@ async def run_brain_b_interviewer(
     router,
     search_knowledge: SearchKnowledge,
     list_grounding_sources: Callable[[], list[dict[str, Any]]] | None = None,
+    graph_neighborhood: GraphNeighborhood | None = None,
     max_tool_calls: int = 4,
 ) -> BrainBIntent:
     """Run Interviewer Brain B as a tool-calling agent.
@@ -51,15 +55,16 @@ async def run_brain_b_interviewer(
     signals are advisory and exposed through ``get_session_signals``.
     """
     sources_provider = list_grounding_sources or (lambda: [])
-    registry = ToolRegistry(
-        [
-            search_knowledge_tool(search_fn=search_knowledge),
-            get_outline_state_tool(outline_provider=lambda: outline),
-            list_grounding_sources_tool(sources_provider=sources_provider),
-            list_participant_faq_tool(outline_provider=lambda: outline),
-            get_session_signals_tool(signals_provider=lambda: session_signals),
-        ]
-    )
+    tools = [
+        search_knowledge_tool(search_fn=search_knowledge),
+        get_outline_state_tool(outline_provider=lambda: outline),
+        list_grounding_sources_tool(sources_provider=sources_provider),
+        list_participant_faq_tool(outline_provider=lambda: outline),
+        get_session_signals_tool(signals_provider=lambda: session_signals),
+    ]
+    if graph_neighborhood is not None:
+        tools.append(get_graph_neighborhood_tool(neighborhood_fn=graph_neighborhood))
+    registry = ToolRegistry(tools)
     system_context = [
         "Current outline (JSON):\n" + outline.model_dump_json(indent=2),
         "Session signals (advisory; close is still your call):\n"
