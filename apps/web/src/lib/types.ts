@@ -93,6 +93,83 @@ export interface OutlineArtifact {
   participant_faq: ParticipantFAQEntry[];
 }
 
+export interface GetUserInputOptions {
+  question: string;
+  options: string[];
+  allow_free_text: boolean;
+}
+
+export interface RiskEntry {
+  risk: string;
+  mitigation: string;
+}
+
+export interface DecisionGate {
+  gate: string;
+  rationale: string;
+}
+
+export interface OutlineArtifactV2 {
+  research_question: string;
+  sampling_frame: string;
+  exclusion_criteria: string;
+  publication_intent: string;
+  axes: string[];
+  probes: string[];
+  risk_register: RiskEntry[];
+  grounding_sources_approved: string[];
+  readiness_rationale: string;
+  decision_gate: DecisionGate | null;
+  suggested_search_queries: string[];
+  min_n: number;
+  max_n: number;
+  objectives: string[];
+  rubric: OutlineRubric | null;
+  freshness_query: string;
+  persona_hints: Record<string, string>;
+  consent_language: string;
+  micro_form_schema: MicroFormField[];
+  scientist_summary: string;
+  study_context: string;
+  market_context: string;
+  technical_context: string;
+  aggregate_graph_context: string;
+  participant_faq: ParticipantFAQEntry[];
+}
+
+export type OutlinePatchOp = 'replace' | 'append' | 'remove';
+
+export interface OutlinePatchSection {
+  section: string;
+  op: OutlinePatchOp;
+  value: unknown;
+}
+
+export interface OutlinePatch {
+  sections: OutlinePatchSection[];
+  provenance: string;
+  summary: string;
+}
+
+export interface AxisCoverage {
+  axis: string;
+  score: number;
+  gap: string;
+}
+
+export interface BrainBIntent {
+  active_axis: string;
+  axes_coverage: AxisCoverage[];
+  question_intent: string;
+  get_user_input: GetUserInputOptions;
+  outline_patch: OutlinePatch | null;
+  ready_for_review: boolean;
+  should_close: boolean;
+  closing: boolean;
+  retrieval_used: boolean;
+  retrieval_chunks: string[];
+}
+
 export interface BundleBranding {
   eyebrow: string;
   title: string;

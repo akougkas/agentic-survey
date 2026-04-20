@@ -3,11 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
+from agentic_survey.integrations.research_agent import (
+    ResearchAgentHook,
+    resolve_research_agent,
+)
 from agentic_survey.repository import MicroFormField, OutlineArtifact, OutlineRubric, ParticipantFAQEntry
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -67,6 +71,17 @@ class BundleCopy(BaseModel):
     admin: BundleAdminCopy = Field(default_factory=BundleAdminCopy)
 
 
+class ResearchAgentHookConfig(BaseModel):
+    """Product-level research agent hook declaration.
+
+    `provider` is the adapter name (`null` ships today; real providers post-v1).
+    `config` passes through to the adapter verbatim; the loader does not read it.
+    """
+
+    provider: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
 class ProductBundleManifest(BaseModel):
     slug: str
     name: str
@@ -75,6 +90,7 @@ class ProductBundleManifest(BaseModel):
     branding: BundleBranding = Field(default_factory=BundleBranding)
     ui: BundleCopy = Field(default_factory=BundleCopy)
     campaigns: list[CampaignReference] = Field(default_factory=list)
+    research_agent_hook: ResearchAgentHookConfig | None = None
 
 
 class CampaignSeedRubric(BaseModel):
@@ -98,6 +114,34 @@ class CampaignSeedOutline(BaseModel):
     participant_faq: list[ParticipantFAQEntry] = Field(default_factory=list)
 
 
+SeedSourceKind = Literal["url", "pdf", "raw_text"]
+
+
+class SeedSource(BaseModel):
+    """Bundle-declared grounding source that M4 ingests as `knowledge_source`.
+
+    `url` is required for `kind=url|pdf`; `content_inline` is required for
+    `kind=raw_text`. The loader parses and surfaces the entries; the worker
+    pipeline (M4) will materialize them as `pending_approval` rows.
+    """
+
+    kind: SeedSourceKind
+    title: str
+    url: str | None = None
+    content_inline: str | None = None
+    rationale: str = ""
+
+    @model_validator(mode="after")
+    def validate_kind_fields(self) -> "SeedSource":
+        if self.kind in {"url", "pdf"}:
+            if not self.url:
+                raise ValueError(f"seed_source kind='{self.kind}' requires a url")
+        elif self.kind == "raw_text":
+            if not self.content_inline:
+                raise ValueError("seed_source kind='raw_text' requires content_inline")
+        return self
+
+
 class CampaignSeed(BaseModel):
     slug: str
     title: str
@@ -105,6 +149,7 @@ class CampaignSeed(BaseModel):
     min_n: int = Field(ge=1)
     max_n: int = Field(ge=1)
     outline: CampaignSeedOutline
+    seed_sources: list[SeedSource] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_bounds(self) -> "CampaignSeed":
@@ -204,6 +249,18 @@ def materialize_outline(seed: CampaignSeed) -> OutlineArtifact:
         aggregate_graph_context=seed.outline.aggregate_graph_context,
         participant_faq=[entry.model_copy(deep=True) for entry in seed.outline.participant_faq],
     )
+
+
+def get_research_agent(manifest: ProductBundleManifest) -> ResearchAgentHook:
+    """Resolve the bundle's research agent hook to a live adapter.
+
+    Unset or `provider: null` yields `NullResearchAgent`; any other provider
+    raises until an adapter ships.
+    """
+    hook = manifest.research_agent_hook
+    if hook is None:
+        return resolve_research_agent(None)
+    return resolve_research_agent(hook.provider, hook.config)
 
 
 def _main() -> None:

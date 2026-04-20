@@ -39,7 +39,7 @@ export async function getJson<TResponse>(path: string): Promise<TResponse> {
 
 export async function postJson<TResponse>(
   path: string,
-  payload: Record<string, unknown>
+  payload: unknown
 ): Promise<TResponse> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
@@ -59,7 +59,7 @@ export async function postJson<TResponse>(
 
 export async function patchJson<TResponse>(
   path: string,
-  payload: Record<string, unknown>
+  payload: unknown
 ): Promise<TResponse> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'PATCH',

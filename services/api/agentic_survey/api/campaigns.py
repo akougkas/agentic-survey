@@ -1,7 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from agentic_survey.agents.designer import CampaignDesigner
+from agentic_survey.agents.designer_v2 import (
+    opening_message as designer_opening_message,
+    run_designer_turn,
+)
+from agentic_survey.agents.readiness import unmet_minimums
 from agentic_survey.bundles import (
     ProductBundleManifest,
     list_campaign_seeds,
@@ -10,9 +14,10 @@ from agentic_survey.bundles import (
     materialize_outline,
 )
 from agentic_survey.auth import require_admin_session
+from agentic_survey.domain.outline import from_v1
 from agentic_survey.engine.state_machine import ALLOWED_TRANSITIONS, CampaignState, StateTransitionError
 from agentic_survey.llm.catalog import AgentRole as CatalogRole, CatalogEntry
-from agentic_survey.llm.client import get_llm_client
+from agentic_survey.llm.router import get_litellm_router
 from agentic_survey.repository import (
     Campaign,
     DesignerSession,
@@ -29,9 +34,6 @@ router = APIRouter(
     tags=["campaigns"],
     dependencies=[Depends(require_admin_session)],
 )
-designer = CampaignDesigner(llm=get_llm_client())
-
-
 class CreateCampaignRequest(BaseModel):
     title: str = Field(min_length=1)
     min_n: int = Field(default=12, ge=1)
@@ -162,7 +164,6 @@ def _campaign_metrics(repository: InMemoryRepository, campaign_id: str) -> Campa
 
 
 def _outline_readiness(campaign: Campaign, session: DesignerSession | None) -> OutlineReadiness:
-    scientist_turn_count = len([turn for turn in session.turns if turn.role == "scientist"]) if session else 0
     seed_backed = campaign.source == "seed"
     checks = [
         OutlineReadinessCheck(
@@ -195,16 +196,6 @@ def _outline_readiness(campaign: Campaign, session: DesignerSession | None) -> O
                 f"Query: {campaign.outline.freshness_query}"
                 if campaign.outline.freshness_query.strip()
                 else "Add the grounding query the runtime should use for design-time freshness."
-            ),
-        ),
-        OutlineReadinessCheck(
-            key="design_turns",
-            label="Design turns",
-            ready=seed_backed or scientist_turn_count >= 4,
-            detail=(
-                "Seed-backed campaign is already reviewable."
-                if seed_backed
-                else f"{scientist_turn_count}/4 operator turns captured."
             ),
         ),
     ]
@@ -364,11 +355,13 @@ async def advance_campaign(
     campaign = repository.get_campaign(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    if payload.target_state == CampaignState.REVIEWING and campaign.outline_status != "ready_for_review":
-        raise HTTPException(
-            status_code=409,
-            detail="Outline is still collecting the brief; finish the designer loop first.",
-        )
+    if payload.target_state == CampaignState.REVIEWING:
+        unmet = unmet_minimums(from_v1(campaign.outline))
+        if unmet:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "readiness_not_met", "unmet": unmet},
+            )
     try:
         repository.advance_campaign(campaign_id, payload.target_state)
     except StateTransitionError as exc:
@@ -398,7 +391,7 @@ async def start_designer(
 
     session = repository.start_designer_session(
         campaign_id=campaign_id,
-        opening_message=designer.opening_message(campaign),
+        opening_message=designer_opening_message(campaign),
     )
     bundle = _build_campaign_bundle(campaign_id, repository)
     bundle.designer_session = session
@@ -424,15 +417,22 @@ async def submit_designer_turn(
     if session is None:
         raise HTTPException(status_code=409, detail="Designer session has not started")
 
-    outline = await designer.build_outline(campaign, session)
-    repository.update_outline(
-        campaign_id,
-        outline,
-        ready_for_review=designer.is_ready_for_review(session, outline),
+    campaign = repository.get_campaign(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    result = await run_designer_turn(
+        campaign=campaign,
+        session=session,
+        router=get_litellm_router(),
     )
 
-    reply = await designer.next_reply(campaign, session, outline)
-    repository.append_designer_turn(campaign_id, "designer", reply)
+    repository.update_outline(
+        campaign_id,
+        result.updated_outline,
+        ready_for_review=result.ready,
+    )
+    repository.append_designer_turn(campaign_id, "designer", result.reply_text)
 
     campaign = repository.get_campaign(campaign_id)
     session = repository.get_designer_session(campaign_id)

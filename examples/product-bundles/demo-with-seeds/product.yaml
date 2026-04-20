@@ -1,0 +1,18 @@
+slug: demo-with-seeds
+name: Agentic Survey Seeded Demo
+runtime: agentic-survey
+branding:
+  eyebrow: Agentic Survey
+  title: Seeded bundle fixture.
+  description: >
+    Minimal fixture that exercises the seed_sources and research_agent_hook
+    bundle fields added in M4. Not a runnable product; used for loader tests.
+research_agent_hook:
+  provider: "null"
+  config:
+    defaults:
+      scope: standard
+      depth: 3
+campaigns:
+  - slug: seeded
+    seed: campaigns/seeded.yaml
