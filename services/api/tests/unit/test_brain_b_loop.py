@@ -98,7 +98,7 @@ def _outline() -> OutlineArtifact:
 def _registry_with_search(results: list[dict[str, Any]]) -> ToolRegistry:
     captured: list[tuple[str, int]] = []
 
-    async def search(query: str, k: int) -> list[dict[str, Any]]:
+    async def search(query: str, k: int, mode: str = "hybrid") -> list[dict[str, Any]]:
         captured.append((query, k))
         return results
 
@@ -273,7 +273,7 @@ def test_tool_registry_rejects_duplicate_names() -> None:
 
 
 def test_tool_dispatch_surfaces_handler_errors_as_tool_messages() -> None:
-    async def boom(query: str, k: int) -> list[dict[str, Any]]:
+    async def boom(query: str, k: int, mode: str = "hybrid") -> list[dict[str, Any]]:
         raise RuntimeError("retrieval backend unavailable")
 
     registry = ToolRegistry([search_knowledge_tool(search_fn=boom)])
@@ -313,7 +313,7 @@ def test_unknown_tool_name_raises_in_registry() -> None:
 
 
 def test_malformed_tool_arguments_raise_in_registry() -> None:
-    async def search(query: str, k: int) -> list[dict[str, Any]]:
+    async def search(query: str, k: int, mode: str = "hybrid") -> list[dict[str, Any]]:
         return []
 
     registry = ToolRegistry([search_knowledge_tool(search_fn=search)])

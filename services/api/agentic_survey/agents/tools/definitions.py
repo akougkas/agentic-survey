@@ -16,7 +16,7 @@ __all__ = [
     "search_knowledge_tool",
 ]
 
-SearchKnowledgeFn = Callable[[str, int], Awaitable[list[dict[str, Any]]]]
+SearchKnowledgeFn = Callable[..., Awaitable[list[dict[str, Any]]]]
 OutlineProvider = Callable[[], OutlineArtifact]
 SourcesProvider = Callable[[], list[dict[str, Any]]]
 SignalsProvider = Callable[[], SessionSignals]
@@ -36,14 +36,21 @@ def search_knowledge_tool(*, search_fn: SearchKnowledgeFn) -> MiraTool:
             raise ValueError(f"k must be an integer, got {k_raw!r}") from exc
         if k <= 0 or k > 20:
             raise ValueError("k must be in 1..20")
-        return await search_fn(query, k)
+        mode = args.get("mode", "hybrid")
+        if mode not in ("bm25", "vector", "hybrid"):
+            raise ValueError(
+                f"mode must be one of 'bm25', 'vector', 'hybrid'; got {mode!r}"
+            )
+        return await search_fn(query, k, mode)
 
     return MiraTool(
         name="search_knowledge",
         description=(
             "Retrieve up to k approved knowledge chunks relevant to the query. "
             "Call only when grounded facts materially improve your next design or interview move. "
-            "Never search to prove a participant wrong. Results are ranked by relevance."
+            "Never search to prove a participant wrong. Results are ranked by relevance. "
+            "Prefer mode='hybrid' (BM25 + vector RRF); use 'bm25' when exact keywords "
+            "matter and 'vector' when the participant's phrasing would miss on lexical match."
         ),
         parameters_schema={
             "type": "object",
@@ -58,6 +65,15 @@ def search_knowledge_tool(*, search_fn: SearchKnowledgeFn) -> MiraTool:
                     "maximum": 20,
                     "default": 5,
                     "description": "Number of chunks to return.",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["bm25", "vector", "hybrid"],
+                    "default": "hybrid",
+                    "description": (
+                        "Retrieval mode. Default 'hybrid' (BM25 + vector fused by RRF). "
+                        "'bm25' = keyword only; 'vector' = semantic only."
+                    ),
                 },
             },
             "required": ["query"],

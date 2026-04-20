@@ -123,7 +123,9 @@ def apply_outline_patch(outline: OutlineArtifact, patch: OutlinePatch) -> Outlin
     return working
 
 
-async def _noop_search_knowledge(query: str, k: int) -> list[dict[str, Any]]:
+async def _noop_search_knowledge(
+    query: str, k: int, mode: str = "hybrid"
+) -> list[dict[str, Any]]:
     return []
 
 
@@ -179,7 +181,12 @@ async def run_designer_turn(
         captured_patch.update(patch)
 
     search_fn = (
-        build_search_knowledge(repository=repository, campaign_id=campaign.id, surface="designer")
+        build_search_knowledge(
+            repository=repository,
+            campaign_id=campaign.id,
+            surface="designer",
+            router=router,
+        )
         if repository is not None
         else _noop_search_knowledge
     )

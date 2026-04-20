@@ -19,6 +19,8 @@ class RetrievalCacheEntry:
     chunk_ids: tuple[str, ...]
     scores: tuple[float, ...]
     created_at: float
+    mode: str = "hybrid"
+    query_vec_hash: str = ""
 
 
 @dataclass(slots=True)
@@ -31,9 +33,11 @@ class RetrievalCache:
 
     Each session tracks the most recent ``_RECENT_ENTRIES`` queries. ``get``
     returns one or more cached entries whose normalized-query edit distance
-    to the lookup falls within ``edit_distance_tolerance`` (default 2). The
-    cache exists so Brain B can reuse the same chunks across clarifying
-    turns without re-hitting SurrealDB. TTL is 10 minutes from creation.
+    to the lookup falls within ``edit_distance_tolerance`` (default 2) and
+    whose ``mode`` matches the lookup. The cache exists so Brain B can reuse
+    the same chunks across clarifying turns without re-hitting SurrealDB.
+    TTL is 10 minutes from creation. Vectors never ride in memory across
+    turns; ``query_vec_hash`` is stored for debugging only.
     """
 
     def __init__(self, *, ttl_seconds: float = _DEFAULT_TTL_SECONDS) -> None:
@@ -47,12 +51,17 @@ class RetrievalCache:
         query: str,
         chunk_ids: list[str],
         scores: list[float],
+        *,
+        mode: str = "hybrid",
+        query_vec_hash: str = "",
     ) -> None:
         entry = RetrievalCacheEntry(
             query=query,
             chunk_ids=tuple(chunk_ids),
             scores=tuple(scores),
             created_at=time.monotonic(),
+            mode=mode,
+            query_vec_hash=query_vec_hash,
         )
         with self._lock:
             bucket = self._buckets.setdefault(session_id, _SessionBucket())
@@ -63,6 +72,8 @@ class RetrievalCache:
         session_id: str,
         query: str,
         edit_distance_tolerance: int = 2,
+        *,
+        mode: str | None = None,
     ) -> list[RetrievalCacheEntry] | None:
         with self._lock:
             bucket = self._buckets.get(session_id)
@@ -82,7 +93,9 @@ class RetrievalCache:
             matches = [
                 entry
                 for entry in fresh
-                if _edit_distance(normalized_query, _normalize(entry.query)) <= edit_distance_tolerance
+                if (mode is None or entry.mode == mode)
+                and _edit_distance(normalized_query, _normalize(entry.query))
+                <= edit_distance_tolerance
             ]
             return matches or None
 

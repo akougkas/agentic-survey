@@ -113,6 +113,9 @@ class KnowledgeChunk(BaseModel):
     created_at: str
 
 
+RetrievalMode = Literal["bm25", "vector", "hybrid"]
+
+
 class RetrievalAuditRow(BaseModel):
     id: str
     campaign_id: str
@@ -121,6 +124,8 @@ class RetrievalAuditRow(BaseModel):
     top_k: int
     chunk_ids: list[str] = Field(default_factory=list)
     scores: list[float] = Field(default_factory=list)
+    mode: RetrievalMode = "hybrid"
+    cache_hit: bool = False
     created_at: str
 
 
@@ -1087,7 +1092,7 @@ class InMemoryRepository:
             chunk = self._knowledge_chunks.get(chunk_id)
             return None if chunk is None else chunk.model_copy(deep=True)
 
-    def search_knowledge_chunks(
+    def search_knowledge_chunks_bm25(
         self,
         *,
         campaign_id: str,
@@ -1099,15 +1104,18 @@ class InMemoryRepository:
         The Surreal path uses the real ``BM25`` index. This stub exists so
         the InMemory test harness can exercise the retrieval surface
         without SurrealDB; it is not a replacement for real ranking.
+        Iterates every chunk in the repository, filtered to
+        ``campaign_id`` + ``approved=true``; the ``_knowledge_chunks_by_source``
+        side map is keyed by ``source_id`` and cannot serve a
+        campaign-scoped lookup.
         """
         terms = [term for term in _tokenize_query(query) if term]
         if not terms:
             return []
         hits: list[tuple[float, KnowledgeChunk]] = []
         with self._lock:
-            for chunk_id in self._knowledge_chunks_by_source.get(campaign_id, []):  # kept empty in tests
-                chunk = self._knowledge_chunks.get(chunk_id)
-                if chunk is None or not chunk.approved:
+            for chunk in self._knowledge_chunks.values():
+                if chunk.campaign_id != campaign_id or not chunk.approved:
                     continue
                 tokens = _tokenize_query(chunk.content)
                 overlap = sum(1 for term in terms if term in tokens)
@@ -1116,6 +1124,56 @@ class InMemoryRepository:
             hits.sort(key=lambda pair: pair[0], reverse=True)
         results: list[ChunkHit] = []
         for score, chunk in hits[:k]:
+            source = self._knowledge_sources.get(chunk.source_id)
+            results.append(
+                ChunkHit(
+                    chunk_id=chunk.id,
+                    content=chunk.content,
+                    source_id=chunk.source_id,
+                    source_title=source.title if source else "",
+                    score=score,
+                    start_char=chunk.char_start,
+                    end_char=chunk.char_end,
+                )
+            )
+        return results
+
+    def search_knowledge_chunks_vector(
+        self,
+        *,
+        campaign_id: str,
+        vector: list[float],
+        k: int,
+    ) -> list[ChunkHit]:
+        """In-memory brute cosine KNN over stored chunk embeddings.
+
+        Iterates every chunk whose ``campaign_id`` matches and that is
+        ``approved=true``. Chunks without a stored embedding are skipped
+        (not counted as zero-similarity). Returns top-k by cosine
+        similarity in descending order. Exists so the hybrid retrieval
+        test harness can run without SurrealDB.
+        """
+        if k <= 0 or not vector:
+            return []
+        query_vec = [float(v) for v in vector]
+        query_norm = _vector_norm(query_vec)
+        if query_norm == 0.0:
+            return []
+        ranked: list[tuple[float, KnowledgeChunk]] = []
+        with self._lock:
+            for chunk in self._knowledge_chunks.values():
+                if chunk.campaign_id != campaign_id or not chunk.approved:
+                    continue
+                chunk_vec = self._chunk_embeddings.get(chunk.id)
+                if chunk_vec is None or not chunk_vec:
+                    continue
+                score = _cosine_similarity(
+                    query_vec, chunk_vec, query_norm=query_norm
+                )
+                ranked.append((score, chunk))
+        ranked.sort(key=lambda pair: pair[0], reverse=True)
+        results: list[ChunkHit] = []
+        for score, chunk in ranked[:k]:
             source = self._knowledge_sources.get(chunk.source_id)
             results.append(
                 ChunkHit(
@@ -1139,6 +1197,8 @@ class InMemoryRepository:
         top_k: int,
         chunk_ids: list[str],
         scores: list[float],
+        mode: str = "hybrid",
+        cache_hit: bool = False,
     ) -> RetrievalAuditRow:
         audit = RetrievalAuditRow(
             id=f"retaudit-{uuid4().hex[:12]}",
@@ -1148,6 +1208,8 @@ class InMemoryRepository:
             top_k=top_k,
             chunk_ids=list(chunk_ids),
             scores=list(scores),
+            mode=mode,
+            cache_hit=cache_hit,
             created_at=_timestamp(),
         )
         with self._lock:
@@ -1164,6 +1226,27 @@ class InMemoryRepository:
 def _tokenize_query(text: str) -> list[str]:
     import re as _re
     return [token.lower() for token in _re.findall(r"[A-Za-z0-9]+", text or "")]
+
+
+def _vector_norm(vector: list[float]) -> float:
+    import math as _math
+    return _math.sqrt(sum(value * value for value in vector))
+
+
+def _cosine_similarity(
+    left: list[float],
+    right: list[float],
+    *,
+    query_norm: float | None = None,
+) -> float:
+    if len(left) != len(right):
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = query_norm if query_norm is not None else _vector_norm(left)
+    right_norm = _vector_norm(right)
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return dot / (left_norm * right_norm)
 
 
 @lru_cache(maxsize=1)

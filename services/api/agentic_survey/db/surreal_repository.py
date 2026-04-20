@@ -1134,7 +1134,7 @@ class SurrealRepository:
         row = rows if isinstance(rows, dict) else rows[0]
         return self._row_to_knowledge_chunk(row)
 
-    def search_knowledge_chunks(
+    def search_knowledge_chunks_bm25(
         self,
         *,
         campaign_id: str,
@@ -1179,6 +1179,64 @@ class SurrealRepository:
             )
         return hits
 
+    def search_knowledge_chunks_vector(
+        self,
+        *,
+        campaign_id: str,
+        vector: list[float],
+        k: int,
+    ) -> list[ChunkHit]:
+        """Cosine-similarity KNN over ``knowledge_chunk.embedding``.
+
+        Uses ``vector::similarity::cosine`` in ORDER BY rather than the
+        MTREE ``<|K|>`` operator. SurrealDB 2.x defines MTREE without an
+        explicit DISTANCE clause in our schema, which would fall back to
+        Euclidean. Cosine is the semantic Nomic Embed v2 MoE is trained
+        for, and the full scan cost is acceptable at our per-campaign
+        corpus size; swap to MTREE + DIST COSINE if corpora grow past
+        ~50k chunks per campaign.
+        """
+        if k <= 0 or not vector:
+            return []
+        coerced = [float(v) for v in vector]
+        rows = self._query(
+            """
+            SELECT
+                id AS chunk_id,
+                content,
+                source AS source_ref,
+                source.title AS source_title,
+                char_start,
+                char_end,
+                vector::similarity::cosine(embedding, $vec) AS score
+            FROM knowledge_chunk
+            WHERE campaign = $cid AND approved = true
+            ORDER BY score DESC
+            LIMIT $k;
+            """,
+            {
+                "cid": RecordID("campaign", campaign_id),
+                "vec": coerced,
+                "k": k,
+            },
+        )
+        hits: list[ChunkHit] = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            hits.append(
+                ChunkHit(
+                    chunk_id=_record_id("knowledge_chunk", row.get("chunk_id")),
+                    content=str(row.get("content") or ""),
+                    source_id=_record_id("knowledge_source", row.get("source_ref")),
+                    source_title=str(row.get("source_title") or ""),
+                    score=float(row.get("score") or 0.0),
+                    start_char=int(row.get("char_start") or 0),
+                    end_char=int(row.get("char_end") or 0),
+                )
+            )
+        return hits
+
     def record_retrieval_audit(
         self,
         *,
@@ -1188,6 +1246,8 @@ class SurrealRepository:
         top_k: int,
         chunk_ids: list[str],
         scores: list[float],
+        mode: str = "hybrid",
+        cache_hit: bool = False,
     ) -> RetrievalAuditRow:
         audit_id = f"retaudit-{uuid4().hex[:12]}"
         now_dt = _utcnow()
@@ -1201,6 +1261,8 @@ class SurrealRepository:
                 "top_k": top_k,
                 "chunk_ids": [RecordID("knowledge_chunk", cid) for cid in chunk_ids],
                 "scores": list(scores),
+                "mode": mode,
+                "cache_hit": cache_hit,
                 "created_at": now_dt,
             },
         )
@@ -1212,6 +1274,8 @@ class SurrealRepository:
             top_k=top_k,
             chunk_ids=list(chunk_ids),
             scores=list(scores),
+            mode=mode,
+            cache_hit=cache_hit,
             created_at=now_dt.isoformat(),
         )
 
@@ -1228,6 +1292,8 @@ class SurrealRepository:
             top_k=int(row.get("top_k") or 0),
             chunk_ids=[_record_id("knowledge_chunk", cid) for cid in (row.get("chunk_ids") or [])],
             scores=[float(s) for s in (row.get("scores") or [])],
+            mode=row.get("mode") or "hybrid",
+            cache_hit=bool(row.get("cache_hit") or False),
             created_at=_ensure_iso(row.get("created_at")),
         )
 

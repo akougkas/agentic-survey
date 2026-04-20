@@ -238,27 +238,14 @@ async def run_interview_turn(
 
     transcript_tail = _transcript_tail(refreshed)
 
-    base_search = build_search_knowledge(
+    search_fn = build_search_knowledge(
         repository=repository,
         campaign_id=campaign.id,
         surface="interviewer",
+        router=router,
+        session_id=refreshed.id,
+        cache=cache,
     )
-
-    async def _cached_search(query: str, k: int) -> list[dict[str, Any]]:
-        cached = cache.get(refreshed.id, query)
-        if cached:
-            # Serve from cache; real chunk bodies are rehydrated by callers via repository.
-            return [
-                {"chunk_id": chunk_id, "score": score, "cached": True}
-                for entry in cached
-                for chunk_id, score in zip(entry.chunk_ids, entry.scores)
-            ][:k]
-        results = await base_search(query, k)
-        chunk_ids = [hit.get("chunk_id", "") for hit in results if isinstance(hit, dict)]
-        scores = [float(hit.get("score", 0.0)) for hit in results if isinstance(hit, dict)]
-        if chunk_ids:
-            cache.put(refreshed.id, query, chunk_ids, scores)
-        return results
 
     grounding_snapshot = _list_approved_grounding_sources(repository, campaign.id)
     intent = await run_brain_b_interviewer(
@@ -266,7 +253,7 @@ async def run_interview_turn(
         transcript_tail=transcript_tail,
         session_signals=signals,
         router=router,
-        search_knowledge=_cached_search,
+        search_knowledge=search_fn,
         list_grounding_sources=lambda: grounding_snapshot,
     )
 
