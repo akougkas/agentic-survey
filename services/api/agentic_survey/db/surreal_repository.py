@@ -771,6 +771,15 @@ class SurrealRepository:
         now_dt = _utcnow()
         now = now_dt.isoformat()
         index = len(session.turns)
+        # ``retrieval_audit_id`` is typed ``option<record<retrieval_audit>>``
+        # in the schema; the sync driver returns a string error instead of
+        # raising when a raw string lands here, so the row gets silently
+        # rejected. Wrap on the way in; unwrap on readback.
+        audit_ref = (
+            RecordID("retrieval_audit", retrieval_audit_id)
+            if retrieval_audit_id is not None
+            else None
+        )
         self._db().create(
             RecordID("interview_turn", turn_id),
             {
@@ -781,7 +790,7 @@ class SurrealRepository:
                 "validation": validation,
                 "brain_b_intent": brain_b_intent.model_dump() if brain_b_intent is not None else None,
                 "get_user_input": get_user_input.model_dump() if get_user_input is not None else None,
-                "retrieval_audit_id": retrieval_audit_id,
+                "retrieval_audit_id": audit_ref,
                 "created_at": now_dt,
             },
         )
@@ -923,6 +932,10 @@ class SurrealRepository:
         )
 
     def _row_to_interview_turn(self, session_id: str, row: dict) -> InterviewTurnRecord:
+        raw_audit = row.get("retrieval_audit_id")
+        audit_id = (
+            _record_id("retrieval_audit", raw_audit) if raw_audit is not None else None
+        )
         return InterviewTurnRecord(
             id=_record_id("interview_turn", row["id"]),
             session_id=session_id,
@@ -932,7 +945,7 @@ class SurrealRepository:
             validation=dict(row["validation"]) if row.get("validation") else None,
             brain_b_intent=BrainBIntent.model_validate(row["brain_b_intent"]) if row.get("brain_b_intent") else None,
             get_user_input=GetUserInputOptions.model_validate(row["get_user_input"]) if row.get("get_user_input") else None,
-            retrieval_audit_id=row.get("retrieval_audit_id"),
+            retrieval_audit_id=audit_id,
             created_at=_ensure_iso(row["created_at"]),
         )
 
