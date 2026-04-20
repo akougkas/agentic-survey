@@ -13,6 +13,7 @@ from agentic_survey.domain.intent import BrainBIntent, OutlinePatch
 from agentic_survey.domain.outline import OutlineArtifactV2, from_v1, to_v1
 from agentic_survey.llm.router import LiteLLMRouter
 from agentic_survey.repository import Campaign, DesignerSession, OutlineArtifact
+from agentic_survey.services.retrieval import build_search_knowledge
 
 __all__ = [
     "DESIGNER_BRAIN_A_PROMPT",
@@ -129,6 +130,7 @@ async def run_designer_turn(
     campaign: Campaign,
     session: DesignerSession | None,
     router: LiteLLMRouter,
+    repository=None,
 ) -> DesignerTurnResult:
     """Execute one Designer turn end-to-end.
 
@@ -148,11 +150,16 @@ async def run_designer_turn(
     def _propose(patch: dict[str, Any]) -> None:
         captured_patch.update(patch)
 
+    search_fn = (
+        build_search_knowledge(repository=repository, campaign_id=campaign.id, surface="designer")
+        if repository is not None
+        else _noop_search_knowledge
+    )
     intent = await run_brain_b_designer(
         outline=outline_v2,
         transcript_tail=transcript_tail,
         router=router,
-        search_knowledge=_noop_search_knowledge,
+        search_knowledge=search_fn,
         get_outline_state=lambda: outline_v2,
         list_grounding_sources=lambda: [],
         propose_outline_patch=_propose,

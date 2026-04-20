@@ -1,0 +1,203 @@
+slug: domain-scientists
+title: "CITADEL Survey A — Domain Scientists & Research Engineers"
+description: >
+  Semi-structured conversations with researchers across scientific and engineering
+  domains about how they manage data throughout their research workflows, where
+  friction concentrates today, and what conditions must hold before they would
+  trust autonomous agents to manage any phase of the lifecycle.
+min_n: 10
+max_n: 40
+
+# --- OutlineArtifactV2 fields (Phase A) ---
+research_question: >
+  How do domain scientists experience each phase of the research data lifecycle
+  today, where do the costliest bottlenecks fall, and what specific conditions
+  must hold before they would trust an autonomous agent to manage any phase of
+  their workflow?
+
+sampling_frame: >
+  Active researchers across scientific and engineering domains (materials,
+  biology, neuroscience, earth/climate, physics/astronomy, agriculture,
+  manufacturing, healthcare, aerospace, social sciences) whose work directly
+  involves generating, analyzing, or managing research data. Include
+  PI-investigators, postdocs, senior graduate students, and research engineers
+  embedded in scientific groups. Prefer participants with recent hands-on
+  involvement in end-to-end data workflows.
+
+exclusion_criteria: >
+  Participants whose role is purely administrative, or who do not directly
+  interact with research data. Facility operators, pure tool developers, and
+  ML-methods researchers who do not apply their work to scientific data belong
+  in Surveys B and C respectively.
+
+publication_intent: >
+  NSF IDSS planning grant deliverable (CITADEL, Task 1 and Task 3). Expected
+  outputs: a domain × lifecycle-phase pain-point matrix, a ranked list of
+  trust/governance requirements for autonomous agent adoption, and a thematic
+  narrative grounded in participants' concrete episodes.
+
+axes:
+  - Current workflow shape from acquisition to sharing
+  - Pain points by lifecycle phase and their recurrence patterns
+  - Metadata, provenance, and reproducibility practices
+  - Trust calibration and validation behavior with existing tools
+  - Readiness signals and gating conditions for autonomous agent adoption
+  - Trust requirements and irreducible human-judgment zones
+
+probes:
+  - Walk me through the last end-to-end flow you ran, from data generation to a result you shared.
+  - Where does that workflow break most often? What was the last time you had to redo something because of a data-handling issue?
+  - When the tool produces something that needs to be trusted, what do you actually do before you let it count?
+  - What kind of move by an AI would make you stop trusting it?
+  - What would have to be true before you'd let an agent choose where your data lives, or move it without asking?
+  - Which parts of the workflow should never be fully automated, in your view, and why?
+
+risk_register:
+  - risk: Leading-language bias around "agentic" or "autonomy"
+    mitigation: Let participants define the terms before Mira uses them; anchor probes in recent episodes rather than abstract attitudes.
+  - risk: Selection bias toward AI-enthusiastic domains
+    mitigation: Track micro-form domain distribution; surface advisory when any domain cell is thin.
+  - risk: Social-desirability inflation of rigor and reproducibility practices
+    mitigation: Normalize mixed experience; ask for recent failure/retry episodes as readily as successes.
+  - risk: Scope creep into AI-safety methodology (belongs in Survey C)
+    mitigation: Brain B redirects methodology questions back to the participant's own workflow.
+
+grounding_sources_approved: []
+
+readiness_rationale: >
+  Outline is ready when research_question is a falsifiable claim about where
+  lifecycle friction concentrates and what moves the trust needle; axes cover
+  all six lifecycle phases plus trust and governance; probes begin broad and
+  funnel to recent episodes; risk_register captures the leading-language and
+  selection-bias threats specific to this track.
+
+decision_gate:
+  gate: scientist_approval
+  rationale: >
+    Scientist locks outline at launch; new sessions carry this revision as
+    outline_snapshot so track analysis stays internally consistent.
+
+suggested_search_queries:
+  - "scientific data lifecycle phases pain points domain scientists"
+  - "trust calibration autonomous agents research data management"
+  - "FAIR principles provenance reproducibility scientific workflows"
+
+# --- Legacy/shared fields preserved for backward compat ---
+outline:
+  objectives:
+    - Map where each lifecycle phase genuinely hurts today.
+    - Separate attitudes from episodes; collect recent concrete examples.
+    - Surface the specific trust conditions that would gate autonomous-agent adoption.
+  probes:
+    - Walk me through the last end-to-end flow you ran.
+    - When the tool produces something that needs to be trusted, what do you do before you let it count?
+    - What would have to be true before you'd let an agent choose where your data lives?
+  rubric:
+    coverage_dimensions:
+      - Concrete workflow episode spanning at least three lifecycle phases
+      - Specific validation/trust behaviors with examples
+      - Explicit list of automation-acceptable vs. human-only tasks with rationale
+    risk_checks:
+      - Avoid leading the participant toward AI enthusiasm or skepticism.
+      - Ask for specific episodes before themes.
+      - Respect participant vocabulary; do not impose "agentic" framing unprompted.
+  freshness_query: "scientific data lifecycle pain points autonomous agents trust"
+  persona_hints:
+    name: Mira
+    role: synthetic field researcher with peer-scientist bearing
+    tone: >
+      measured, curious, analytically literate; uses domain vocabulary when the
+      participant does; avoids sysadmin or MLOps jargon
+    behavior: >
+      Ask one precise question at a time. Start broad, funnel to recent
+      concrete episodes. Surface uncertainty plainly. Never explain the
+      method; just do it.
+  consent_language: >
+    This is a research interview for the NSF IDSS planning grant (CITADEL
+    Task 1). Your participation is voluntary. You can skip any question,
+    pause any time, or stop the conversation entirely. You may stay
+    anonymous or be named in the write-up; named responses may be quoted.
+    Everything you say is stored privately for the research team until you
+    choose otherwise.
+  micro_form_schema:
+    - key: primary_discipline
+      label: Primary research domain
+      field_type: multi_select
+      required: true
+      options:
+        - Materials science / chemistry
+        - Biology / genomics / drug discovery
+        - Neuroscience / brain-computer interfaces
+        - Earth sciences / climate / earthquake modeling
+        - Physics / astronomy / particle physics
+        - Agriculture / environmental science
+        - Additive manufacturing / engineering
+        - Healthcare / medical imaging
+        - Aerospace / hypersonics
+        - Social sciences / digital humanities
+        - Other
+    - key: workflow_role
+      label: Role in the data workflow
+      field_type: single_select
+      required: true
+      options:
+        - Primarily generate data
+        - Primarily analyze and interpret data
+        - Both generation and analysis
+        - Manage data infrastructure for my group
+        - Develop tools or methods for my domain
+    - key: group_size
+      label: People in your research group who regularly touch your data
+      field_type: single_select
+      required: true
+      options: ["1-2", "3-10", "11-50", "51-200", "200+"]
+    - key: data_volume
+      label: Approximate data volume you or your group manages
+      field_type: single_select
+      required: true
+      options: ["< 1 TB", "1-10 TB", "10-100 TB", "100 TB - 1 PB", "> 1 PB"]
+    - key: compute_platforms
+      label: Computing platforms you use
+      field_type: multi_select
+      required: true
+      options:
+        - Local workstation / lab servers
+        - Institutional HPC cluster
+        - National HPC facilities (ACCESS, NERSC, OLCF)
+        - Commercial cloud (AWS, Azure, GCP)
+        - Edge devices / embedded sensors / instruments
+        - Self-driving or autonomous lab systems
+        - Other
+    - key: evidence_of_belonging
+      label: In one sentence, describe a recent real data workflow you ran end-to-end.
+      field_type: long_text
+      required: true
+  scientist_summary: >
+    This track interviews active scientists about how each phase of the data
+    lifecycle shows up in their work today, where friction concentrates, and
+    what conditions would gate trust in autonomous-agent automation. Goal:
+    a domain-indexed pain-point matrix plus a trust-requirement map, not a
+    forecast of AI adoption.
+
+seed_sources:
+  - kind: raw_text
+    title: "CITADEL Survey A lifecycle framing"
+    content_inline: |
+      The scientific data lifecycle includes six phases.
+      Acquisition: capturing data from instruments, simulations, or sensors.
+      Preparation: cleaning, formatting, metadata tagging.
+      Storage: placing data on appropriate storage tiers.
+      Movement: transferring data between locations.
+      Decision support: analysis, visualization, provenance tracking.
+      Sharing: publishing, collaboration, archiving.
+
+      Agentic AI refers to systems that act autonomously — making decisions,
+      executing tasks, and adapting workflows without step-by-step human
+      direction. In data lifecycle management, that means agents that clean
+      data, decide where it lives, move it where it's needed before a
+      computation starts, track provenance, and suggest analyses based on
+      scientific intent.
+    rationale: >
+      Anchors Mira's vocabulary when the participant references lifecycle
+      phases. Lets Brain B cite the framing in follow-ups without fabricating
+      definitions.

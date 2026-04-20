@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from agentic_survey.agents.interviewer import Interviewer, normalize_control_signal
 from agentic_survey.agents.validator import Validator
 from agentic_survey.auth import (
     get_admin_session_from_request,
@@ -11,8 +10,14 @@ from agentic_survey.auth import (
     require_admin_session,
 )
 from agentic_survey.config import Settings, get_settings
-from agentic_survey.engine.session_policy import derive_objective_tags, summarize_session_signals
+from agentic_survey.engine.interview_loop import (
+    normalize_control_signal,
+    opening_turn_message,
+    run_interview_turn,
+)
+from agentic_survey.engine.retrieval_cache import RetrievalCache
 from agentic_survey.llm.client import get_llm_client
+from agentic_survey.llm.router import get_litellm_router
 from agentic_survey.repository import (
     Campaign,
     InMemoryRepository,
@@ -24,12 +29,13 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 _llm_client = get_llm_client()
-_interviewer = Interviewer(llm=_llm_client)
 _validator = Validator(llm=_llm_client)
+_retrieval_cache = RetrievalCache()
 
 
 class ParticipantTurnRequest(BaseModel):
     content: str = Field(min_length=1)
+    chip_selected: str | None = None
 
 
 class SessionBundleResponse(BaseModel):
@@ -99,13 +105,10 @@ async def start_participant_loop(
     if session.turns:
         return SessionBundleResponse(session=session, campaign=campaign)
 
-    opening = _interviewer.opening_turn(campaign)
     repository.append_interview_turn(
         session.id,
         role="agent",
-        content=opening.reply,
-        brain_b_intent=opening.brain_b_intent,
-        get_user_input=opening.get_user_input,
+        content=opening_turn_message(campaign),
     )
     session = repository.get_interview_session(session.id)  # type: ignore[assignment]
     assert session is not None
@@ -144,117 +147,19 @@ async def submit_participant_turn(
     if session.status != "active":
         raise HTTPException(status_code=409, detail="Session is no longer active")
     campaign = _load_campaign(repository, session.campaign_id)
-    participant_content = payload.content.strip()
-    control_signal = normalize_control_signal(participant_content)
 
-    if control_signal in {"pause", "skip", "continue", "stop"}:
-        validation_payload = {
-            "control_signal": control_signal,
-            "objective_tags": [],
-        }
-    else:
-        last_agent = next(
-            (turn.content for turn in reversed(session.turns) if turn.role == "agent"),
-            "",
-        )
-        validation = await _validator.validate(
-            campaign=campaign,
-            content=participant_content,
-            outline=campaign.outline,
-            previous_agent_question=last_agent,
-        )
-        validation_payload = validation.to_dict()
-        validation_payload["objective_tags"] = derive_objective_tags(
-            content=participant_content,
-            outline=campaign.outline,
-            validation=validation_payload,
-        )
-
-    repository.append_interview_turn(
-        session.id,
-        role="participant",
-        content=participant_content,
-        validation=validation_payload,
+    result = await run_interview_turn(
+        session_id=session.id,
+        participant_content=payload.content,
+        chip_selected=payload.chip_selected,
+        repository=repository,
+        validator=_validator,
+        router=get_litellm_router(),
+        cache=_retrieval_cache,
     )
 
-    refreshed = repository.get_interview_session(session.id)
-    assert refreshed is not None
-
-    if control_signal == "pause":
-        refreshed = repository.pause_interview_session(refreshed.id, reason="participant_paused")
-        return SessionBundleResponse(session=refreshed, campaign=campaign)
-
-    participant_validations = [turn.validation for turn in refreshed.turns if turn.role == "participant"]
-    signals = summarize_session_signals(refreshed, campaign.outline, participant_validations)
-
-    if control_signal == "stop":
-        closing = await _interviewer.closing_message(
-            campaign=campaign,
-            session=refreshed,
-            outline=campaign.outline,
-            close_reason="participant_stop",
-        )
-        repository.append_interview_turn(
-            refreshed.id,
-            role="agent",
-            content=closing,
-            brain_b_intent=None,
-            validation={
-                "closing": True,
-                "close_reason": "participant_stop",
-                "participant_turn_count": signals.participant_turn_count,
-                "mean_recent_coverage": round(signals.mean_recent_coverage, 3),
-                "low_coverage_streak": signals.low_coverage_streak,
-                "objective_hits": signals.objective_hits,
-            },
-        )
-        repository.finish_interview_session(refreshed.id, close_reason="participant_stop")
-        refreshed = repository.get_interview_session(refreshed.id)
-        assert refreshed is not None
-        return SessionBundleResponse(session=refreshed, campaign=campaign)
-
-    plan = await _interviewer.next_turn(
-        campaign=campaign,
-        outline=campaign.outline,
-        session=refreshed,
-        session_signals=signals,
-    )
-
-    if plan.brain_b_intent is not None and plan.brain_b_intent.should_close:
-        close_reason = plan.brain_b_intent.close_reason or "brain_b_close"
-        closing = await _interviewer.closing_message(
-            campaign=campaign,
-            session=refreshed,
-            outline=campaign.outline,
-            close_reason=close_reason,
-        )
-        repository.append_interview_turn(
-            refreshed.id,
-            role="agent",
-            content=closing,
-            brain_b_intent=plan.brain_b_intent,
-            validation={
-                "closing": True,
-                "close_reason": close_reason,
-                "participant_turn_count": signals.participant_turn_count,
-                "mean_recent_coverage": round(signals.mean_recent_coverage, 3),
-                "low_coverage_streak": signals.low_coverage_streak,
-                "objective_hits": signals.objective_hits,
-            },
-        )
-        repository.finish_interview_session(refreshed.id, close_reason=close_reason)
-    else:
-        repository.append_interview_turn(
-            refreshed.id,
-            role="agent",
-            content=plan.reply,
-            brain_b_intent=plan.brain_b_intent,
-            get_user_input=plan.get_user_input,
-        )
-
-    refreshed = repository.get_interview_session(refreshed.id)
-    assert refreshed is not None
-    return SessionBundleResponse(session=refreshed, campaign=campaign)
+    _ = normalize_control_signal  # re-export kept for callers; unused here
+    return SessionBundleResponse(session=result.session, campaign=campaign)
 
 
 @router.post(

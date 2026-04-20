@@ -374,7 +374,9 @@ export interface InterviewTurnRecord {
   index: number;
   validation: ValidationSnapshot | null;
   brain_b_intent: BrainIntentRecord | null;
+  brain_b_intent_v2: BrainBIntent | null;
   get_user_input: GetUserInputPayload | null;
+  retrieval_audit_id: string | null;
   created_at: string;
 }
 

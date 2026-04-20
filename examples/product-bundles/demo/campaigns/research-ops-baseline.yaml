@@ -1,0 +1,51 @@
+slug: research-ops-baseline
+title: "Research Operations Baseline"
+description: >
+  Generic starter study for teams who want to understand how people introduce
+  AI assistance into research and knowledge-work workflows.
+min_n: 12
+max_n: 24
+outline:
+  objectives:
+    - Identify where AI assistance enters day-to-day research or knowledge workflows.
+    - Distinguish durable leverage from convenience and fragile confidence.
+    - Surface how participants validate outputs before using them in decisions or deliverables.
+  probes:
+    - Walk me through the last concrete moment an AI tool shaped your work.
+    - What parts of the process feel faster, clearer, or riskier because of the tool?
+    - Where do you still stop to validate, reproduce, or sanity-check the result?
+    - When does the tool sound more certain than the evidence warrants?
+  rubric:
+    coverage_dimensions:
+      - Concrete workflow stage or decision point where the tool appears
+      - Observed upside, friction, uncertainty, or risk
+      - Validation and trust-calibration behavior
+    risk_checks:
+      - Avoid leading prompts about effectiveness
+      - Ask for specific examples before naming themes
+      - Separate reported behavior from interpretation
+  freshness_query: research workflow interview operations tooling collaboration
+  persona_hints:
+    name: Mira
+    role: synthetic field researcher
+    tone: measured, lucid, slightly warm
+    behavior: Ask one precise question at a time, summarize signal before probing, and state uncertainty plainly.
+  consent_language: >
+    Participants choose anonymous or named participation at session start; named
+    responses may be quoted in later study outputs.
+  micro_form_schema:
+    - key: discipline
+      label: Primary discipline
+      field_type: text
+      required: true
+    - key: role
+      label: Research role
+      field_type: text
+      required: true
+    - key: team_context
+      label: Team or lab context
+      field_type: text
+      required: true
+  scientist_summary: >
+    This starter study focuses on when AI assistance changes the work, how
+    people validate it, and where confidence outpaces evidence.

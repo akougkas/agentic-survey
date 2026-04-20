@@ -1,0 +1,64 @@
+slug: citadl
+name: CITADEL Surveys
+runtime: agentic-survey
+public_base_url: https://citadl.gnosis.run
+
+branding:
+  eyebrow: CITADEL
+  title: Conversations that interrogate the scientific data lifecycle.
+  description: >
+    NSF IDSS planning-grant research on how scientists, facility operators,
+    and AI/ML practitioners experience data management today — and what
+    autonomous agents would have to do to earn production trust. Three
+    tracks, one conversational instrument.
+
+ui:
+  home:
+    eyebrow: CITADEL Surveys
+    operator_path_label: Operator path
+    operator_path_title: Design or launch a CITADEL track
+    operator_path_description: >
+      Pick one of the three tracks (Domain Scientists, Facility Operators,
+      AI/ML Practitioners). Mira designs the interview outline with you,
+      then holds the conversations with respondents across the cohort.
+    participant_path_label: Participant path
+    participant_path_title: Resume a CITADEL conversation
+    participant_path_description: >
+      If you received an invitation, you'll enter a short conversation with
+      Mira about your experience. Anonymous by default; named if you choose.
+    bundle_panel_title: CITADEL
+    persona_panel_title: Mira
+    persona_panel_description: >
+      Mira is a synthetic field researcher. She adapts her tone per track
+      (peer scientist, peer operator, peer ML researcher) while keeping one
+      methodological spine. She is not a form; she is a conversation.
+  admin:
+    nav_label: CITADEL Console
+    workspace_eyebrow: CITADEL Operator Workspace
+    workspace_title: CITADEL Survey Campaigns
+    login_eyebrow: CITADEL Access
+    login_description: >
+      Access stays behind the environment-variable password gate. Replace
+      the default before sharing any invite link externally.
+    boundary_eyebrow: Operator boundary
+    boundary_description: >
+      Admin access stays behind the runtime password gate. Track identity,
+      seed campaigns, and branding come from this bundle; the underlying
+      runtime (agentic-survey) stays generic.
+    current_path_label: CITADEL path
+    current_path_description: >
+      Design each track with Mira, seed the outlines from the CITADEL brief,
+      launch the campaigns, issue invitations, and monitor transcripts and
+      concept graphs as respondents come through.
+
+research_agent_hook:
+  provider: null
+  config: {}
+
+campaigns:
+  - slug: domain-scientists
+    seed: campaigns/domain-scientists.yaml
+  - slug: facility-operators
+    seed: campaigns/facility-operators.yaml
+  - slug: ml-practitioners
+    seed: campaigns/ml-practitioners.yaml

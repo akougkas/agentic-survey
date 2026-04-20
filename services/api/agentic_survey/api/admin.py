@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
@@ -11,6 +13,25 @@ from agentic_survey.config import Settings, get_settings
 from agentic_survey.repository import AdminSession, InMemoryRepository, get_repository
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+class TurnRetrievalAudit(BaseModel):
+    retrieval_audit_id: str | None = None
+    query: str = ""
+    chunks: list[dict[str, Any]] = []
+    scores: list[float] = []
+
+
+class TurnAuditResponse(BaseModel):
+    turn_id: str
+    session_id: str
+    role: str
+    content: str
+    created_at: str
+    brain_b_intent: dict[str, Any] | None = None
+    brain_b_intent_v2: dict[str, Any] | None = None
+    validation: dict[str, Any] | None = None
+    retrieval: TurnRetrievalAudit
 
 
 class AdminLoginRequest(BaseModel):
@@ -64,4 +85,87 @@ def _session_response(session: AdminSession) -> AdminSessionResponse:
     return AdminSessionResponse(
         authenticated=True,
         expires_at=session.expires_at.isoformat(),
+    )
+
+
+@router.get(
+    "/campaigns/{campaign_id}/sessions/{session_id}/turns/{turn_id}/audit",
+    dependencies=[Depends(require_admin_session)],
+)
+async def get_turn_audit(
+    campaign_id: str,
+    session_id: str,
+    turn_id: str,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> TurnAuditResponse:
+    campaign = repository.get_campaign(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    session = repository.get_interview_session(session_id)
+    if session is None or session.campaign_id != campaign_id:
+        raise HTTPException(status_code=404, detail="Session not found for this campaign")
+    turn = next((t for t in session.turns if t.id == turn_id), None)
+    if turn is None:
+        raise HTTPException(status_code=404, detail="Turn not found for this session")
+
+    legacy_intent = turn.brain_b_intent.model_dump() if turn.brain_b_intent is not None else None
+    retrieval_rows: list[dict[str, Any]] = []
+    retrieval_scores: list[float] = []
+    retrieval_query = ""
+    if turn.retrieval_audit_id is not None:
+        audit = repository.get_retrieval_audit(turn.retrieval_audit_id)
+        if audit is not None:
+            retrieval_query = audit.query
+            retrieval_scores = list(audit.scores)
+            for chunk_id in audit.chunk_ids:
+                chunk = repository.get_knowledge_chunk(chunk_id)
+                if chunk is None:
+                    retrieval_rows.append({"id": chunk_id, "content": "", "source": {"title": "", "url": None}})
+                    continue
+                source = repository.get_knowledge_source(chunk.source_id)
+                retrieval_rows.append(
+                    {
+                        "id": chunk.id,
+                        "content": chunk.content,
+                        "source": {
+                            "id": chunk.source_id,
+                            "title": source.title if source else "",
+                            "url": source.url if source else None,
+                        },
+                    }
+                )
+    elif turn.brain_b_intent_v2 is not None:
+        for chunk_id in turn.brain_b_intent_v2.get("retrieval_chunks", []) or []:
+            chunk = repository.get_knowledge_chunk(chunk_id) if hasattr(repository, "get_knowledge_chunk") else None
+            if chunk is None:
+                retrieval_rows.append({"id": chunk_id, "content": "", "source": {"title": "", "url": None}})
+                continue
+            source = repository.get_knowledge_source(chunk.source_id)
+            retrieval_rows.append(
+                {
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "source": {
+                        "id": chunk.source_id,
+                        "title": source.title if source else "",
+                        "url": source.url if source else None,
+                    },
+                }
+            )
+
+    return TurnAuditResponse(
+        turn_id=turn.id,
+        session_id=turn.session_id,
+        role=turn.role,
+        content=turn.content,
+        created_at=turn.created_at,
+        brain_b_intent=legacy_intent,
+        brain_b_intent_v2=turn.brain_b_intent_v2,
+        validation=turn.validation,
+        retrieval=TurnRetrievalAudit(
+            retrieval_audit_id=turn.retrieval_audit_id,
+            query=retrieval_query,
+            chunks=retrieval_rows,
+            scores=retrieval_scores,
+        ),
     )

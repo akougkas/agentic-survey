@@ -310,9 +310,11 @@ async def create_campaign_from_seed(
     payload: CreateSeededCampaignRequest,
     repository: InMemoryRepository = Depends(get_repository),
 ) -> Campaign:
+    from agentic_survey.services.knowledge_ingest import ingest_seed_sources
+
     seed = load_campaign_seed(payload.seed_slug.strip())
     outline = materialize_outline(seed)
-    return repository.create_campaign(
+    campaign = repository.create_campaign(
         title=seed.title,
         min_n=seed.min_n,
         max_n=seed.max_n,
@@ -321,6 +323,9 @@ async def create_campaign_from_seed(
         state=CampaignState.REVIEWING,
         outline_status="ready_for_review",
     )
+    if seed.seed_sources:
+        await ingest_seed_sources(campaign.id, list(seed.seed_sources), repository)
+    return campaign
 
 
 @router.patch("/{campaign_id}/models")

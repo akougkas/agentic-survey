@@ -1,0 +1,32 @@
+slug: seeded
+title: Seeded Fixture Campaign
+description: >
+  Fixture used to exercise the seed_sources loader. Uses kind=raw_text so no
+  network fetch is needed; the string payload is inline.
+min_n: 1
+max_n: 1
+outline:
+  objectives:
+    - Verify that seed_sources round-trip through the bundle loader.
+  probes:
+    - (not used in the fixture)
+  rubric:
+    coverage_dimensions: []
+    risk_checks: []
+  freshness_query: ""
+  persona_hints: {}
+  consent_language: >
+    Fixture bundle only; no participants are actually interviewed.
+  micro_form_schema: []
+seed_sources:
+  - kind: raw_text
+    title: Baseline framing
+    content_inline: |
+      Research operations teams adopt AI assistance unevenly across the
+      lifecycle. This inline text stands in for a real grounding document so
+      the loader can exercise the raw_text branch without network access.
+    rationale: Seed baseline framing for the fixture study.
+  - kind: url
+    title: Example reference paper
+    url: https://example.org/deep-research/reference.html
+    rationale: Exercise the url branch; the worker does not fetch at load time.

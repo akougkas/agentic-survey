@@ -118,6 +118,70 @@ class OutlineRevision(BaseModel):
     created_at: str
 
 
+KnowledgeSourceKind = Literal["url", "pdf", "raw_text", "searxng_suggestion", "bundle_seed"]
+KnowledgeSourceStatus = Literal[
+    "queued",
+    "fetching",
+    "extracting",
+    "chunking",
+    "embedding",
+    "pending_approval",
+    "approved",
+    "rejected",
+    "failed",
+    "retired",
+]
+
+
+class KnowledgeSource(BaseModel):
+    id: str
+    campaign_id: str
+    kind: KnowledgeSourceKind
+    title: str
+    url: str | None = None
+    hash: str
+    status: KnowledgeSourceStatus
+    rationale: str = ""
+    approved_at: str | None = None
+    approved_by: str | None = None
+    error_detail: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class KnowledgeChunk(BaseModel):
+    id: str
+    campaign_id: str
+    source_id: str
+    content: str
+    position: int
+    char_start: int
+    char_end: int
+    approved: bool = False
+    created_at: str
+
+
+class RetrievalAuditRow(BaseModel):
+    id: str
+    campaign_id: str
+    surface: Literal["designer", "interviewer"]
+    query: str
+    top_k: int
+    chunk_ids: list[str] = Field(default_factory=list)
+    scores: list[float] = Field(default_factory=list)
+    created_at: str
+
+
+class ChunkHit(BaseModel):
+    chunk_id: str
+    content: str
+    source_id: str
+    source_title: str
+    score: float
+    start_char: int
+    end_char: int
+
+
 class AdminSession(BaseModel):
     token: str
     created_at: datetime
@@ -143,7 +207,9 @@ class InterviewTurnRecord(BaseModel):
     index: int
     validation: dict | None = None
     brain_b_intent: BrainIntentRecord | None = None
+    brain_b_intent_v2: dict | None = None
     get_user_input: GetUserInputPayload | None = None
+    retrieval_audit_id: str | None = None
     created_at: str
 
 
@@ -300,6 +366,12 @@ class InMemoryRepository:
         self._interview_sessions: dict[str, InterviewSessionRecord] = {}
         self._interview_sessions_by_participant: dict[str, str] = {}
         self._interview_sessions_by_campaign: dict[str, list[str]] = {}
+        self._knowledge_sources: dict[str, KnowledgeSource] = {}
+        self._knowledge_sources_by_campaign: dict[str, list[str]] = {}
+        self._knowledge_chunks: dict[str, KnowledgeChunk] = {}
+        self._knowledge_chunks_by_source: dict[str, list[str]] = {}
+        self._retrieval_audits: dict[str, RetrievalAuditRow] = {}
+        self._retrieval_audits_by_campaign: dict[str, list[str]] = {}
         self._seed_catalog_locked()
 
     def create_admin_session(self, ttl_hours: int) -> AdminSession:
@@ -694,7 +766,9 @@ class InMemoryRepository:
         content: str,
         validation: dict | None = None,
         brain_b_intent: BrainIntentRecord | None = None,
+        brain_b_intent_v2: dict | None = None,
         get_user_input: GetUserInputPayload | None = None,
+        retrieval_audit_id: str | None = None,
     ) -> InterviewTurnRecord:
         with self._lock:
             session = self._interview_sessions[session_id]
@@ -706,7 +780,9 @@ class InMemoryRepository:
                 index=len(session.turns),
                 validation=validation,
                 brain_b_intent=brain_b_intent.model_copy(deep=True) if brain_b_intent is not None else None,
+                brain_b_intent_v2=dict(brain_b_intent_v2) if brain_b_intent_v2 is not None else None,
                 get_user_input=get_user_input.model_copy(deep=True) if get_user_input is not None else None,
+                retrieval_audit_id=retrieval_audit_id,
                 created_at=_timestamp(),
             )
             session.turns.append(turn)
@@ -899,6 +975,187 @@ class InMemoryRepository:
         if ready_for_review:
             return f"{label_text} updated. Outline is ready for review."
         return f"{label_text} updated."
+
+
+    def create_knowledge_source(
+        self,
+        *,
+        campaign_id: str,
+        kind: KnowledgeSourceKind,
+        title: str,
+        hash_value: str,
+        url: str | None = None,
+        rationale: str = "",
+        status: KnowledgeSourceStatus = "pending_approval",
+    ) -> KnowledgeSource:
+        now = _timestamp()
+        source = KnowledgeSource(
+            id=f"ksrc-{uuid4().hex[:12]}",
+            campaign_id=campaign_id,
+            kind=kind,
+            title=title,
+            url=url,
+            hash=hash_value,
+            status=status,
+            rationale=rationale,
+            created_at=now,
+            updated_at=now,
+        )
+        with self._lock:
+            self._knowledge_sources[source.id] = source
+            self._knowledge_sources_by_campaign.setdefault(campaign_id, []).append(source.id)
+        return source.model_copy(deep=True)
+
+    def get_knowledge_source(self, source_id: str) -> KnowledgeSource | None:
+        with self._lock:
+            source = self._knowledge_sources.get(source_id)
+            return None if source is None else source.model_copy(deep=True)
+
+    def list_knowledge_sources(self, campaign_id: str) -> list[KnowledgeSource]:
+        with self._lock:
+            ids = list(self._knowledge_sources_by_campaign.get(campaign_id, []))
+            return [self._knowledge_sources[sid].model_copy(deep=True) for sid in ids]
+
+    def update_knowledge_source_status(
+        self,
+        source_id: str,
+        *,
+        status: KnowledgeSourceStatus,
+        approved_by: str | None = None,
+    ) -> KnowledgeSource:
+        with self._lock:
+            source = self._knowledge_sources[source_id]
+            source.status = status
+            source.updated_at = _timestamp()
+            if status == "approved":
+                source.approved_at = source.updated_at
+                source.approved_by = approved_by or "scientist"
+                for chunk_id in self._knowledge_chunks_by_source.get(source_id, []):
+                    chunk = self._knowledge_chunks.get(chunk_id)
+                    if chunk is not None:
+                        chunk.approved = True
+            elif status == "rejected":
+                source.approved_at = None
+                source.approved_by = None
+                for chunk_id in self._knowledge_chunks_by_source.get(source_id, []):
+                    chunk = self._knowledge_chunks.get(chunk_id)
+                    if chunk is not None:
+                        chunk.approved = False
+            return source.model_copy(deep=True)
+
+    def create_knowledge_chunk(
+        self,
+        *,
+        campaign_id: str,
+        source_id: str,
+        content: str,
+        position: int,
+        char_start: int,
+        char_end: int,
+        approved: bool = False,
+    ) -> KnowledgeChunk:
+        chunk = KnowledgeChunk(
+            id=f"kchunk-{uuid4().hex[:12]}",
+            campaign_id=campaign_id,
+            source_id=source_id,
+            content=content,
+            position=position,
+            char_start=char_start,
+            char_end=char_end,
+            approved=approved,
+            created_at=_timestamp(),
+        )
+        with self._lock:
+            self._knowledge_chunks[chunk.id] = chunk
+            self._knowledge_chunks_by_source.setdefault(source_id, []).append(chunk.id)
+        return chunk.model_copy(deep=True)
+
+    def count_chunks_for_source(self, source_id: str) -> int:
+        with self._lock:
+            return len(self._knowledge_chunks_by_source.get(source_id, []))
+
+    def get_knowledge_chunk(self, chunk_id: str) -> KnowledgeChunk | None:
+        with self._lock:
+            chunk = self._knowledge_chunks.get(chunk_id)
+            return None if chunk is None else chunk.model_copy(deep=True)
+
+    def search_knowledge_chunks(
+        self,
+        *,
+        campaign_id: str,
+        query: str,
+        k: int,
+    ) -> list[ChunkHit]:
+        """Very small in-memory BM25 stand-in: ranks by normalized term overlap.
+
+        The Surreal path uses the real ``BM25`` index. This stub exists so
+        the InMemory test harness can exercise the retrieval surface
+        without SurrealDB; it is not a replacement for real ranking.
+        """
+        terms = [term for term in _tokenize_query(query) if term]
+        if not terms:
+            return []
+        hits: list[tuple[float, KnowledgeChunk]] = []
+        with self._lock:
+            for chunk_id in self._knowledge_chunks_by_source.get(campaign_id, []):  # kept empty in tests
+                chunk = self._knowledge_chunks.get(chunk_id)
+                if chunk is None or not chunk.approved:
+                    continue
+                tokens = _tokenize_query(chunk.content)
+                overlap = sum(1 for term in terms if term in tokens)
+                if overlap:
+                    hits.append((overlap / max(len(terms), 1), chunk))
+            hits.sort(key=lambda pair: pair[0], reverse=True)
+        results: list[ChunkHit] = []
+        for score, chunk in hits[:k]:
+            source = self._knowledge_sources.get(chunk.source_id)
+            results.append(
+                ChunkHit(
+                    chunk_id=chunk.id,
+                    content=chunk.content,
+                    source_id=chunk.source_id,
+                    source_title=source.title if source else "",
+                    score=score,
+                    start_char=chunk.char_start,
+                    end_char=chunk.char_end,
+                )
+            )
+        return results
+
+    def record_retrieval_audit(
+        self,
+        *,
+        campaign_id: str,
+        surface: Literal["designer", "interviewer"],
+        query: str,
+        top_k: int,
+        chunk_ids: list[str],
+        scores: list[float],
+    ) -> RetrievalAuditRow:
+        audit = RetrievalAuditRow(
+            id=f"retaudit-{uuid4().hex[:12]}",
+            campaign_id=campaign_id,
+            surface=surface,
+            query=query,
+            top_k=top_k,
+            chunk_ids=list(chunk_ids),
+            scores=list(scores),
+            created_at=_timestamp(),
+        )
+        with self._lock:
+            self._retrieval_audits[audit.id] = audit
+            self._retrieval_audits_by_campaign.setdefault(campaign_id, []).append(audit.id)
+        return audit.model_copy(deep=True)
+
+    def get_retrieval_audit(self, audit_id: str) -> RetrievalAuditRow | None:
+        with self._lock:
+            audit = self._retrieval_audits.get(audit_id)
+            return None if audit is None else audit.model_copy(deep=True)
+
+
+def _tokenize_query(text: str) -> list[str]:
+    import re as _re
+    return [token.lower() for token in _re.findall(r"[A-Za-z0-9]+", text or "")]
 
 
 @lru_cache(maxsize=1)

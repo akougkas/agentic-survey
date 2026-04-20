@@ -16,6 +16,7 @@ from agentic_survey.repository import (
     AdminSession,
     BrainIntentRecord,
     Campaign,
+    ChunkHit,
     DesignerSession,
     DesignerTurn,
     GetUserInputPayload,
@@ -23,8 +24,13 @@ from agentic_survey.repository import (
     InterviewSessionRecord,
     InterviewTurnRecord,
     Invite,
+    KnowledgeChunk,
+    KnowledgeSource,
+    KnowledgeSourceKind,
+    KnowledgeSourceStatus,
     OutlineArtifact,
     OutlineRevision,
+    RetrievalAuditRow,
     _default_participant_faq,
     _default_study_context,
     DEFAULT_AGGREGATE_GRAPH_CONTEXT,
@@ -753,7 +759,9 @@ class SurrealRepository:
         content: str,
         validation: dict | None = None,
         brain_b_intent: BrainIntentRecord | None = None,
+        brain_b_intent_v2: dict | None = None,
         get_user_input: GetUserInputPayload | None = None,
+        retrieval_audit_id: str | None = None,
     ) -> InterviewTurnRecord:
         session = self.get_interview_session(session_id)
         if session is None:
@@ -771,7 +779,9 @@ class SurrealRepository:
                 "index": index,
                 "validation": validation,
                 "brain_b_intent": brain_b_intent.model_dump() if brain_b_intent is not None else None,
+                "brain_b_intent_v2": dict(brain_b_intent_v2) if brain_b_intent_v2 is not None else None,
                 "get_user_input": get_user_input.model_dump() if get_user_input is not None else None,
+                "retrieval_audit_id": retrieval_audit_id,
                 "created_at": now_dt,
             },
         )
@@ -787,7 +797,9 @@ class SurrealRepository:
             index=index,
             validation=dict(validation) if validation is not None else None,
             brain_b_intent=brain_b_intent.model_copy(deep=True) if brain_b_intent is not None else None,
+            brain_b_intent_v2=dict(brain_b_intent_v2) if brain_b_intent_v2 is not None else None,
             get_user_input=get_user_input.model_copy(deep=True) if get_user_input is not None else None,
+            retrieval_audit_id=retrieval_audit_id,
             created_at=now,
         )
 
@@ -920,6 +932,295 @@ class SurrealRepository:
             index=int(row.get("index", 0)),
             validation=dict(row["validation"]) if row.get("validation") else None,
             brain_b_intent=BrainIntentRecord.model_validate(row["brain_b_intent"]) if row.get("brain_b_intent") else None,
+            brain_b_intent_v2=dict(row["brain_b_intent_v2"]) if row.get("brain_b_intent_v2") else None,
             get_user_input=GetUserInputPayload.model_validate(row["get_user_input"]) if row.get("get_user_input") else None,
+            retrieval_audit_id=row.get("retrieval_audit_id"),
             created_at=_ensure_iso(row["created_at"]),
+        )
+
+    # ------------------------------------------------------------------
+    # Knowledge ingestion + retrieval (B2-min: BM25 only, no embeddings).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _zero_vector() -> list[float]:
+        # The knowledge_chunk schema has a fixed MTREE index at DIMENSION 768.
+        # Until embeddings ship we persist a zero vector so writes succeed;
+        # BM25 never reads this field.
+        return [0.0] * 768
+
+    def create_knowledge_source(
+        self,
+        *,
+        campaign_id: str,
+        kind: KnowledgeSourceKind,
+        title: str,
+        hash_value: str,
+        url: str | None = None,
+        rationale: str = "",
+        status: KnowledgeSourceStatus = "pending_approval",
+    ) -> KnowledgeSource:
+        source_id = f"ksrc-{uuid4().hex[:12]}"
+        now_dt = _utcnow()
+        self._db().create(
+            RecordID("knowledge_source", source_id),
+            {
+                "campaign": RecordID("campaign", campaign_id),
+                "kind": kind,
+                "url": url,
+                "title": title,
+                "hash": hash_value,
+                "status": status,
+                "rationale": rationale,
+                "created_at": now_dt,
+                "updated_at": now_dt,
+            },
+        )
+        return KnowledgeSource(
+            id=source_id,
+            campaign_id=campaign_id,
+            kind=kind,
+            title=title,
+            url=url,
+            hash=hash_value,
+            status=status,
+            rationale=rationale,
+            created_at=now_dt.isoformat(),
+            updated_at=now_dt.isoformat(),
+        )
+
+    def get_knowledge_source(self, source_id: str) -> KnowledgeSource | None:
+        rows = self._db().select(RecordID("knowledge_source", source_id))
+        if not rows:
+            return None
+        return self._row_to_knowledge_source(rows if isinstance(rows, dict) else rows[0])
+
+    def list_knowledge_sources(self, campaign_id: str) -> list[KnowledgeSource]:
+        rows = self._query(
+            "SELECT * FROM knowledge_source WHERE campaign = $cid ORDER BY created_at;",
+            {"cid": RecordID("campaign", campaign_id)},
+        )
+        return [self._row_to_knowledge_source(row) for row in rows or []]
+
+    def update_knowledge_source_status(
+        self,
+        source_id: str,
+        *,
+        status: KnowledgeSourceStatus,
+        approved_by: str | None = None,
+    ) -> KnowledgeSource:
+        now_dt = _utcnow()
+        merge_payload: dict[str, Any] = {
+            "status": status,
+            "updated_at": now_dt,
+        }
+        if status == "approved":
+            merge_payload["approved_at"] = now_dt
+            merge_payload["approved_by"] = approved_by or "scientist"
+            chunk_approved = True
+        elif status == "rejected":
+            merge_payload["approved_at"] = None
+            merge_payload["approved_by"] = None
+            chunk_approved = False
+        else:
+            chunk_approved = None
+
+        self._query(
+            "UPDATE type::thing('knowledge_source', $sid) MERGE $payload;",
+            {"sid": source_id, "payload": merge_payload},
+        )
+        if chunk_approved is not None:
+            self._query(
+                "UPDATE knowledge_chunk SET approved = $approved WHERE source = $src;",
+                {"approved": chunk_approved, "src": RecordID("knowledge_source", source_id)},
+            )
+        source = self.get_knowledge_source(source_id)
+        if source is None:
+            raise KeyError(f"knowledge_source {source_id} disappeared after status update")
+        return source
+
+    def create_knowledge_chunk(
+        self,
+        *,
+        campaign_id: str,
+        source_id: str,
+        content: str,
+        position: int,
+        char_start: int,
+        char_end: int,
+        approved: bool = False,
+    ) -> KnowledgeChunk:
+        chunk_id = f"kchunk-{uuid4().hex[:12]}"
+        now_dt = _utcnow()
+        self._db().create(
+            RecordID("knowledge_chunk", chunk_id),
+            {
+                "campaign": RecordID("campaign", campaign_id),
+                "source": RecordID("knowledge_source", source_id),
+                "content": content,
+                "embedding": self._zero_vector(),
+                "approved": approved,
+                "position": position,
+                "char_start": char_start,
+                "char_end": char_end,
+                "created_at": now_dt,
+            },
+        )
+        return KnowledgeChunk(
+            id=chunk_id,
+            campaign_id=campaign_id,
+            source_id=source_id,
+            content=content,
+            position=position,
+            char_start=char_start,
+            char_end=char_end,
+            approved=approved,
+            created_at=now_dt.isoformat(),
+        )
+
+    def count_chunks_for_source(self, source_id: str) -> int:
+        rows = self._query(
+            "SELECT count() AS n FROM knowledge_chunk WHERE source = $src GROUP ALL;",
+            {"src": RecordID("knowledge_source", source_id)},
+        )
+        if not rows:
+            return 0
+        first = rows[0]
+        if isinstance(first, dict):
+            return int(first.get("n", 0))
+        return int(first)
+
+    def get_knowledge_chunk(self, chunk_id: str) -> KnowledgeChunk | None:
+        rows = self._db().select(RecordID("knowledge_chunk", chunk_id))
+        if not rows:
+            return None
+        row = rows if isinstance(rows, dict) else rows[0]
+        return self._row_to_knowledge_chunk(row)
+
+    def search_knowledge_chunks(
+        self,
+        *,
+        campaign_id: str,
+        query: str,
+        k: int,
+    ) -> list[ChunkHit]:
+        rows = self._query(
+            """
+            SELECT
+                id AS chunk_id,
+                content,
+                source AS source_ref,
+                source.title AS source_title,
+                char_start,
+                char_end,
+                search::score(0) AS score
+            FROM knowledge_chunk
+            WHERE campaign = $cid AND approved = true AND content @0@ $q
+            ORDER BY score DESC
+            LIMIT $k;
+            """,
+            {
+                "cid": RecordID("campaign", campaign_id),
+                "q": query,
+                "k": k,
+            },
+        )
+        hits: list[ChunkHit] = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            hits.append(
+                ChunkHit(
+                    chunk_id=_record_id("knowledge_chunk", row.get("chunk_id")),
+                    content=str(row.get("content") or ""),
+                    source_id=_record_id("knowledge_source", row.get("source_ref")),
+                    source_title=str(row.get("source_title") or ""),
+                    score=float(row.get("score") or 0.0),
+                    start_char=int(row.get("char_start") or 0),
+                    end_char=int(row.get("char_end") or 0),
+                )
+            )
+        return hits
+
+    def record_retrieval_audit(
+        self,
+        *,
+        campaign_id: str,
+        surface: Literal["designer", "interviewer"],
+        query: str,
+        top_k: int,
+        chunk_ids: list[str],
+        scores: list[float],
+    ) -> RetrievalAuditRow:
+        audit_id = f"retaudit-{uuid4().hex[:12]}"
+        now_dt = _utcnow()
+        self._db().create(
+            RecordID("retrieval_audit", audit_id),
+            {
+                "campaign": RecordID("campaign", campaign_id),
+                "surface": surface,
+                "brain": "B",
+                "query": query,
+                "top_k": top_k,
+                "chunk_ids": [RecordID("knowledge_chunk", cid) for cid in chunk_ids],
+                "scores": list(scores),
+                "created_at": now_dt,
+            },
+        )
+        return RetrievalAuditRow(
+            id=audit_id,
+            campaign_id=campaign_id,
+            surface=surface,
+            query=query,
+            top_k=top_k,
+            chunk_ids=list(chunk_ids),
+            scores=list(scores),
+            created_at=now_dt.isoformat(),
+        )
+
+    def get_retrieval_audit(self, audit_id: str) -> RetrievalAuditRow | None:
+        rows = self._db().select(RecordID("retrieval_audit", audit_id))
+        if not rows:
+            return None
+        row = rows if isinstance(rows, dict) else rows[0]
+        return RetrievalAuditRow(
+            id=_record_id("retrieval_audit", row.get("id", audit_id)),
+            campaign_id=_record_id("campaign", row.get("campaign")),
+            surface=row.get("surface", "designer"),
+            query=str(row.get("query") or ""),
+            top_k=int(row.get("top_k") or 0),
+            chunk_ids=[_record_id("knowledge_chunk", cid) for cid in (row.get("chunk_ids") or [])],
+            scores=[float(s) for s in (row.get("scores") or [])],
+            created_at=_ensure_iso(row.get("created_at")),
+        )
+
+    def _row_to_knowledge_source(self, row: dict) -> KnowledgeSource:
+        approved_at = row.get("approved_at")
+        return KnowledgeSource(
+            id=_record_id("knowledge_source", row.get("id")),
+            campaign_id=_record_id("campaign", row.get("campaign")),
+            kind=row.get("kind", "raw_text"),
+            title=str(row.get("title") or ""),
+            url=row.get("url"),
+            hash=str(row.get("hash") or ""),
+            status=row.get("status", "pending_approval"),
+            rationale=str(row.get("rationale") or ""),
+            approved_at=_ensure_iso(approved_at) if approved_at else None,
+            approved_by=row.get("approved_by"),
+            error_detail=row.get("error_detail"),
+            created_at=_ensure_iso(row.get("created_at")),
+            updated_at=_ensure_iso(row.get("updated_at")),
+        )
+
+    def _row_to_knowledge_chunk(self, row: dict) -> KnowledgeChunk:
+        return KnowledgeChunk(
+            id=_record_id("knowledge_chunk", row.get("id")),
+            campaign_id=_record_id("campaign", row.get("campaign")),
+            source_id=_record_id("knowledge_source", row.get("source")),
+            content=str(row.get("content") or ""),
+            position=int(row.get("position") or 0),
+            char_start=int(row.get("char_start") or 0),
+            char_end=int(row.get("char_end") or 0),
+            approved=bool(row.get("approved") or False),
+            created_at=_ensure_iso(row.get("created_at")),
         )

@@ -1,0 +1,196 @@
+slug: ml-practitioners
+title: "CITADEL Survey C — AI/ML Practitioners & Agentic AI Researchers"
+description: >
+  Semi-structured conversations with AI/ML researchers and practitioners about
+  the current maturity of agentic AI for scientific data lifecycle management,
+  the technical barriers that remain, and the trust and governance mechanisms
+  required for national-scale deployment.
+min_n: 8
+max_n: 30
+
+research_question: >
+  What is the honest current maturity of agentic AI for managing scientific
+  data lifecycle phases, what concrete technical and architectural barriers
+  must be cleared before production deployment is viable, and what trust and
+  governance mechanisms are realistically tractable rather than aspirational?
+
+sampling_frame: >
+  Researchers and practitioners working on AI/ML systems who have direct
+  experience with agentic behavior, multi-agent coordination, foundation
+  models for science, reinforcement learning, AI for scientific research,
+  knowledge graphs, or MLOps infrastructure. Include methods researchers
+  with deployment experience and applied practitioners with agent-system
+  experience.
+
+exclusion_criteria: >
+  Generalists without any agentic or autonomous AI experience. Scientific
+  domain researchers who do not build or deploy ML systems belong in
+  Survey A. Facility operators without ML/AI methods work belong in
+  Survey B.
+
+publication_intent: >
+  NSF IDSS planning grant deliverable. Expected outputs: a phase-by-phase
+  capability-maturity map for agentic AI in data management, a ranked list
+  of open research problems, and a practitioner-voiced breakdown of
+  tractable-vs-aspirational trust and governance mechanisms.
+
+axes:
+  - Current agentic AI maturity across data lifecycle phases
+  - Architectural patterns applicable to scientific data management
+  - Foundation model capabilities most critical to the problem
+  - Technical barriers and open research challenges
+  - Coordination mechanisms for multi-phase agent systems
+  - Trust, safety, and governance at national scale
+
+probes:
+  - Where is agentic AI genuinely production-ready today for data management, and where is it still research?
+  - Walk me through an agentic system you've built or closely studied — what worked, what broke?
+  - What's the single hardest research problem we have to solve for end-to-end lifecycle autonomy?
+  - Which trust and safety mechanisms do you think are actually tractable in the next 2–3 years, versus aspirational?
+  - How should responsibility be assigned when an agent makes a consequential error in production?
+  - What would you want from a national AI-assisted data infrastructure as a consumer of its APIs?
+
+risk_register:
+  - risk: Abstract-framework thinking without concrete system grounding
+    mitigation: Anchor every axis in a specific system the participant built, used, or studied closely.
+  - risk: Under-reporting failure modes (marketing reflex)
+    mitigation: Ask explicitly for what broke and what surprised them in their own systems.
+  - risk: Overestimation of current maturity because of hype context
+    mitigation: Probe for production deployment evidence; distinguish demo from production.
+  - risk: Confounding agentic AI with traditional ML
+    mitigation: Let the participant define what "agentic" means for them before Mira uses the term.
+
+grounding_sources_approved: []
+
+readiness_rationale: >
+  Outline is ready when research_question is specific about the maturity
+  question (not the "do agents help" question); axes cover both capabilities
+  and barriers; probes anchor in specific systems the participant knows;
+  risk_register names the failure modes a technical audience will
+  specifically notice.
+
+decision_gate:
+  gate: scientist_approval
+  rationale: Scientist locks outline at launch; outline_snapshot preserves track integrity.
+
+suggested_search_queries:
+  - "agentic AI multi-agent coordination production deployment scientific"
+  - "foundation model tool use scientific data management benchmarks"
+  - "AI safety governance autonomous agents national infrastructure"
+
+outline:
+  objectives:
+    - Calibrate honest current maturity per lifecycle phase.
+    - Collect specific agentic-system case studies with successes and failures.
+    - Separate tractable trust mechanisms from aspirational ones.
+  probes:
+    - Where is agentic AI production-ready today, and where is it still research?
+    - Walk me through an agentic system you've built or closely studied.
+    - Which trust and safety mechanisms do you think are actually tractable in 2–3 years?
+  rubric:
+    coverage_dimensions:
+      - Concrete agentic system with specific successes and specific failures
+      - Explicit maturity calibration per lifecycle phase (5+ phases covered)
+      - At least two trust mechanisms classified tractable vs. aspirational with reasoning
+    risk_checks:
+      - Ask for systems, not opinions.
+      - Distinguish demo from production.
+      - Respect the participant's own vocabulary for "agentic"; probe, don't assume.
+  freshness_query: "agentic AI multi-agent scientific data management trust governance"
+  persona_hints:
+    name: Mira
+    role: synthetic field researcher with peer-AI-researcher bearing
+    tone: >
+      precise, intellectually honest, comfortable with technical nuance;
+      appreciates uncertainty; avoids marketing language
+    behavior: >
+      Ask one specific question at a time. Anchor everything in systems the
+      participant knows firsthand. Distinguish demo from production rigorously.
+  consent_language: >
+    Research interview for the NSF IDSS planning grant (CITADEL Task 1).
+    Voluntary; skip, pause, or stop any time. Anonymous or named by your
+    choice; named responses may be quoted with attribution.
+  micro_form_schema:
+    - key: expertise_areas
+      label: Primary AI/ML expertise areas
+      field_type: multi_select
+      required: true
+      options:
+        - Foundation models (LLMs, VLMs, multi-modal)
+        - Multi-agent systems and coordination
+        - Reinforcement learning and decision-making
+        - AI for science (scientific ML, surrogate models, physics-informed)
+        - Knowledge graphs and reasoning
+        - Natural language processing and understanding
+        - Computer vision
+        - Robotics and cyber-physical systems
+        - AI safety, alignment, and trustworthiness
+        - MLOps / AI infrastructure / systems for ML
+        - Other
+    - key: agentic_experience
+      label: Experience level with agentic AI systems
+      field_type: single_select
+      required: true
+      options:
+        - I actively research or develop agentic AI systems
+        - I have built or deployed agentic systems in production
+        - I have experimented with agent frameworks
+        - I am familiar with the concepts but have not built agentic systems
+        - I am new to this area
+    - key: application_domains
+      label: Application domains where you've applied AI/ML
+      field_type: multi_select
+      required: true
+      options:
+        - Scientific research (physics, chemistry, biology, earth sciences)
+        - Healthcare / clinical / biomedical
+        - Manufacturing / engineering / robotics
+        - Software engineering / code generation
+        - Data management / databases / storage systems
+        - Cybersecurity
+        - Finance / business analytics
+        - General-purpose AI assistants
+        - Autonomous laboratories / self-driving labs
+        - None yet — methods research
+        - Other
+    - key: data_scale
+      label: Data scale your systems typically operate on
+      field_type: single_select
+      required: true
+      options:
+        - Small-scale (GB, curated datasets)
+        - Medium-scale (TB, institutional data)
+        - Large-scale (PB, multi-facility or cloud-native)
+        - Methods research (scale varies)
+        - Not applicable
+    - key: evidence_of_belonging
+      label: In one sentence, describe a specific agentic AI system you've built, deployed, or closely studied.
+      field_type: long_text
+      required: true
+  scientist_summary: >
+    This track interviews AI/ML practitioners about honest capability maturity
+    for agentic AI in scientific data management, the real technical barriers
+    that remain, and which trust and governance mechanisms are tractable in
+    the near-term. Goal: a phase-by-phase maturity map plus a tractable-vs-
+    aspirational trust mechanism inventory.
+
+seed_sources:
+  - kind: raw_text
+    title: "CITADEL Survey C agentic AI framing"
+    content_inline: |
+      Agentic AI patterns commonly referenced in this study:
+      Single-agent with tool use: one LLM-based agent calling APIs and tools.
+      Multi-agent collaboration: specialized agents coordinating.
+      Hierarchical agents: supervisors delegating to sub-agents.
+      Reactive agents: event-driven, responding to state changes.
+      Planning agents: goal-oriented, executing multi-step plans.
+      Human-in-the-loop: acting autonomously but requesting approval for
+      high-stakes decisions.
+
+      Lifecycle phases for scientific data management (CITADEL framing):
+      Acquisition, Preparation, Storage, Movement, Decision Support, Sharing,
+      plus Cross-phase coordination for end-to-end lifecycle management.
+    rationale: >
+      Gives Brain B shared vocabulary for the architectural patterns and
+      lifecycle phases that technical participants will reference, without
+      imposing specific named frameworks.

@@ -13,8 +13,8 @@ Thumbs.db
 .planning/
 PLAN.md
 
-# Citadl bundle + seed — not part of the first commit
-citadl/
+# Citadl bundle + seed — tracked from Phase A forward (2026-04-19).
+# Artifacts and scratch remain local-only (see below).
 
 # Environment and secrets
 .env
@@ -52,7 +52,7 @@ htmlcov/
 *.log
 *.pid
 *.pid.lock
-campaigns/
+/campaigns/
 examples/product-bundles/*/artifacts/
 examples/product-bundles/*/scratch/
 citadl/.env

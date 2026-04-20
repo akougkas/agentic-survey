@@ -1,0 +1,107 @@
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v2
+    command:
+      - start
+      - --log
+      - info
+      - --user
+      - root
+      - --pass
+      - root
+      - file:/data/database.db
+    volumes:
+      - surreal_data:/data
+      - ../../../infra/surrealdb/init.surql:/docker-entrypoint-initdb.d/init.surql:ro
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    volumes:
+      - ../../../infra/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../../..
+      dockerfile: docker/Dockerfile.api
+    environment:
+      SURVEY_PUBLIC_BASE_URL: https://citadl.gnosis.run
+      SURVEY_FRONTEND_ORIGIN: https://citadl.gnosis.run
+      SURVEY_PRODUCT_BUNDLE_DIR: /app/citadl/bundle
+      SURVEY_ADMIN_PASSWORD: ${SURVEY_ADMIN_PASSWORD}
+      SURVEY_LLM_ENABLED: ${SURVEY_LLM_ENABLED:-true}
+      SURVEY_MINI_ENDPOINT_URL: ${SURVEY_MINI_ENDPOINT_URL}
+      SURVEY_DYNAMO_ENDPOINT_URL: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      SURVEY_LLM_TIMEOUT_SECONDS: ${SURVEY_LLM_TIMEOUT_SECONDS:-60}
+      SURVEY_SURREAL_URL: ws://surrealdb:8000/rpc
+      SURVEY_SURREAL_NS: ${SURVEY_SURREAL_NS:-agentic}
+      SURVEY_SURREAL_DB: ${SURVEY_SURREAL_DB:-citadl}
+      SURVEY_SURREAL_USER: ${SURVEY_SURREAL_USER:-root}
+      SURVEY_SURREAL_PASS: ${SURVEY_SURREAL_PASS:-root}
+      SURVEY_SEARXNG_URL: http://searxng:8080
+    volumes:
+      - ../../bundle:/app/citadl/bundle:ro
+    depends_on:
+      - surrealdb
+      - searxng
+    expose:
+      - "8100"
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.citadl-surveys-api.rule=Host(`citadl.gnosis.run`) && PathPrefix(`/api`)
+      - traefik.http.routers.citadl-surveys-api.entrypoints=web
+      - traefik.http.routers.citadl-surveys-api.priority=100
+      - traefik.http.services.citadl-surveys-api.loadbalancer.server.port=8100
+
+  worker:
+    build:
+      context: ../../..
+      dockerfile: docker/Dockerfile.api
+    command: ["python", "-m", "agentic_survey.tools.freshness"]
+    environment:
+      SURVEY_PUBLIC_BASE_URL: https://citadl.gnosis.run
+      SURVEY_FRONTEND_ORIGIN: https://citadl.gnosis.run
+      SURVEY_PRODUCT_BUNDLE_DIR: /app/citadl/bundle
+      SURVEY_ADMIN_PASSWORD: ${SURVEY_ADMIN_PASSWORD}
+      SURVEY_LLM_ENABLED: ${SURVEY_LLM_ENABLED:-true}
+      SURVEY_MINI_ENDPOINT_URL: ${SURVEY_MINI_ENDPOINT_URL}
+      SURVEY_DYNAMO_ENDPOINT_URL: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      SURVEY_LLM_TIMEOUT_SECONDS: ${SURVEY_LLM_TIMEOUT_SECONDS:-60}
+      SURVEY_SURREAL_URL: ws://surrealdb:8000/rpc
+      SURVEY_SURREAL_NS: ${SURVEY_SURREAL_NS:-agentic}
+      SURVEY_SURREAL_DB: ${SURVEY_SURREAL_DB:-citadl}
+      SURVEY_SURREAL_USER: ${SURVEY_SURREAL_USER:-root}
+      SURVEY_SURREAL_PASS: ${SURVEY_SURREAL_PASS:-root}
+      SURVEY_SEARXNG_URL: http://searxng:8080
+    volumes:
+      - ../../bundle:/app/citadl/bundle:ro
+    depends_on:
+      - surrealdb
+      - searxng
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../../..
+      dockerfile: docker/Dockerfile.web
+    environment:
+      HOST: 0.0.0.0
+      ORIGIN: https://citadl.gnosis.run
+      PORT: 3000
+      SURVEY_API_PROXY_TARGET: http://backend:8100
+    depends_on:
+      - backend
+    expose:
+      - "3000"
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.citadl-surveys.rule=Host(`citadl.gnosis.run`)
+      - traefik.http.routers.citadl-surveys.entrypoints=web
+      - traefik.http.routers.citadl-surveys.priority=10
+      - traefik.http.services.citadl-surveys.loadbalancer.server.port=3000
+
+volumes:
+  surreal_data:
