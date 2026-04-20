@@ -10,6 +10,7 @@ from agentic_survey.auth import (
     set_admin_session_cookie,
 )
 from agentic_survey.config import Settings, get_settings
+from agentic_survey.engine.event_bus import get_event_bus
 from agentic_survey.repository import AdminSession, InMemoryRepository, get_repository
 from agentic_survey.services.rag_export import sync_campaign_rag_folder
 
@@ -210,4 +211,81 @@ async def sync_campaign_rag(
             "readme": str(rag_dir / "README.md"),
         },
         synced_at=synced_at,
+    )
+
+
+class GraphNode(BaseModel):
+    id: str
+    label: str
+    type: str = ""
+    first_seen: str
+    mention_count: int
+
+
+class GraphEdge(BaseModel):
+    from_id: str
+    to_id: str
+    edge_table: str
+    kind: str = ""
+    confidence: float
+    session_id: str
+    turn_id: str
+    created_at: str
+
+
+class GraphSnapshotResponse(BaseModel):
+    campaign_id: str
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    latest_event_seq: int
+
+
+@router.get(
+    "/campaigns/{campaign_id}/graph",
+    dependencies=[Depends(require_admin_session)],
+)
+async def get_campaign_graph_snapshot(
+    campaign_id: str,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> GraphSnapshotResponse:
+    """Static snapshot of the campaign knowledge graph.
+
+    The graph view fetches this on mount, then subscribes to
+    ``/api/campaigns/{id}/stream`` with ``?since=latest_event_seq`` so it
+    only receives events that landed after the snapshot was built. Edges
+    come back newest-first; nodes in insertion order.
+    """
+    if repository.get_campaign(campaign_id) is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    concepts = repository.list_concepts_for_campaign(campaign_id)
+    edges_raw = repository.list_graph_edges_for_campaign(campaign_id)
+    nodes = [
+        GraphNode(
+            id=c.id,
+            label=c.label,
+            type=c.type,
+            first_seen=c.first_seen,
+            mention_count=c.mention_count,
+        )
+        for c in concepts
+    ]
+    edges = [
+        GraphEdge(
+            from_id=e["from_id"],
+            to_id=e["to_id"],
+            edge_table=e["edge_table"],
+            kind=e.get("kind", ""),
+            confidence=float(e["confidence"]),
+            session_id=e["session_id"],
+            turn_id=e["turn_id"],
+            created_at=e["created_at"],
+        )
+        for e in edges_raw
+    ]
+    return GraphSnapshotResponse(
+        campaign_id=campaign_id,
+        nodes=nodes,
+        edges=edges,
+        latest_event_seq=get_event_bus().latest_seq(campaign_id),
     )

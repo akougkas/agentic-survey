@@ -384,3 +384,112 @@ export interface RuntimeContextResponse {
   ui: BundleUiCopy;
   campaign_seed_count: number;
 }
+
+// M8 -----------------------------------------------------------------
+
+export type KnowledgeSourceKind =
+  | 'url'
+  | 'pdf'
+  | 'raw_text'
+  | 'searxng_suggestion'
+  | 'bundle_seed';
+
+export type KnowledgeSourceStatus =
+  | 'queued'
+  | 'fetching'
+  | 'extracting'
+  | 'chunking'
+  | 'embedding'
+  | 'pending_approval'
+  | 'approved'
+  | 'rejected'
+  | 'failed'
+  | 'retired';
+
+export interface KnowledgeSource {
+  id: string;
+  campaign_id: string;
+  kind: KnowledgeSourceKind;
+  title: string;
+  url: string | null;
+  hash: string;
+  status: KnowledgeSourceStatus;
+  rationale: string;
+  approved_at: string | null;
+  approved_by: string | null;
+  error_detail: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeSourceSummary {
+  source: KnowledgeSource;
+  chunk_count: number;
+}
+
+export interface KnowledgeSourceTimeline {
+  campaign_id: string;
+  by_status: Partial<Record<KnowledgeSourceStatus, KnowledgeSourceSummary[]>>;
+  total: number;
+}
+
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+  source: string;
+}
+
+export interface KnowledgeSearchResponse {
+  campaign_id: string;
+  query: string;
+  results: WebSearchResult[];
+  created_source_ids: string[];
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: string;
+  first_seen: string;
+  mention_count: number;
+}
+
+export interface GraphEdge {
+  from_id: string;
+  to_id: string;
+  edge_table: 'mentioned_with' | 'contradicts';
+  kind: string;
+  confidence: number;
+  session_id: string;
+  turn_id: string;
+  created_at: string;
+}
+
+export interface GraphSnapshotResponse {
+  campaign_id: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  latest_event_seq: number;
+}
+
+export interface GraphDeltaNode {
+  id: string;
+  label: string;
+  type: string;
+  is_new: boolean;
+}
+
+export interface GraphDeltaEdge {
+  from: string;
+  to: string;
+  kind: string;
+  edge_table: 'mentioned_with' | 'contradicts';
+  confidence: number;
+}
+
+export interface GraphDelta {
+  add_nodes: GraphDeltaNode[];
+  add_edges: GraphDeltaEdge[];
+  light_up: string[];
+}

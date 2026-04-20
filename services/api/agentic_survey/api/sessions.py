@@ -10,10 +10,25 @@ from agentic_survey.auth import (
     require_admin_session,
 )
 from agentic_survey.config import Settings, get_settings
+from agentic_survey.engine.event_bus import get_event_bus
 from agentic_survey.engine.interview_loop import (
     opening_turn_message,
     run_interview_turn,
 )
+
+# Events worth keeping in the per-campaign ring buffer that operator clients
+# subscribe to. ``token`` events stream the agent's reply chunk-by-chunk for a
+# participant UI; bus subscribers (admin graph view) do not care about them and
+# keeping them in the ring would crowd out the turn/graph events that matter
+# for reconnect replay. Filter at the publish boundary so the ring stays dense.
+_BUS_EVENT_NAMES = {
+    "turn_start",
+    "turn_complete",
+    "graph_delta",
+    "get_user_input",
+    "session_paused",
+    "session_finished",
+}
 from agentic_survey.engine.retrieval_cache import RetrievalCache
 from agentic_survey.llm.client import get_llm_client
 from agentic_survey.llm.router import get_litellm_router
@@ -156,6 +171,9 @@ async def submit_participant_turn(
         router=get_litellm_router(),
         cache=_retrieval_cache,
     )
+
+    bus_events = [event for event in result.events if event.name in _BUS_EVENT_NAMES]
+    get_event_bus().publish_many(campaign.id, bus_events)
 
     return SessionBundleResponse(session=result.session, campaign=campaign)
 

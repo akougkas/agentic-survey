@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
   import { ApiError, getJson, patchJson, postJson } from '$lib/api';
   import {
@@ -25,7 +25,12 @@
     CatalogEntry,
     Invite,
     InterviewSessionRecord,
+    KnowledgeSearchResponse,
+    KnowledgeSourceStatus,
+    KnowledgeSourceSummary,
+    KnowledgeSourceTimeline,
     OutlineRevision,
+    WebSearchResult,
   } from '$lib/types';
 
   const transitionLabels: Partial<Record<CampaignState, string>> = {
@@ -49,6 +54,34 @@
   let chatterCatalog: CatalogEntry[] = [];
   let scientistCatalog: CatalogEntry[] = [];
   let modelPendingRole: AgentRole | '' = '';
+
+  // Knowledge rail (M8)
+  let knowledge: KnowledgeSourceTimeline | null = null;
+  let knowledgeError = '';
+  let searchQuery = '';
+  let searchPending = false;
+  let searchResults: WebSearchResult[] = [];
+  let searchStatus = '';
+  let sourceBusy: Record<string, boolean> = {};
+  let knowledgePollHandle: ReturnType<typeof setTimeout> | null = null;
+  let destroyed = false;
+  const IN_FLIGHT_STATUSES: KnowledgeSourceStatus[] = [
+    'queued',
+    'fetching',
+    'extracting',
+    'chunking',
+    'embedding',
+  ];
+
+  $: queueSources = knowledge
+    ? IN_FLIGHT_STATUSES.flatMap((status) => knowledge?.by_status?.[status] ?? [])
+    : [];
+  $: proposedQueries = knowledge
+    ? (knowledge.by_status?.pending_approval ?? []).filter(
+        (row) => row.source.kind === 'searxng_suggestion',
+      )
+    : [];
+  $: approvedSources = knowledge ? knowledge.by_status?.approved ?? [] : [];
 
   $: runtimeContext = $page.data.runtimeContext ?? null;
   $: campaignId = $page.params.id ?? '';
@@ -77,10 +110,22 @@
         await goto(loginPath);
         return;
       }
-      await Promise.all([loadModelCatalogs(), loadCampaign()]);
+      await Promise.all([loadModelCatalogs(), loadCampaign(), loadKnowledge()]);
+      schedulePoll();
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', onVisibilityChange);
+      }
     } catch (caught) {
       error = caught instanceof ApiError ? caught.message : 'Unable to load the campaign.';
       loading = false;
+    }
+  });
+
+  onDestroy(() => {
+    destroyed = true;
+    cancelPoll();
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     }
   });
 
@@ -203,6 +248,103 @@
 
   function modelRouteLabel(role: AgentRole): string {
     return bundle?.campaign.agent_models?.[role] ? 'Campaign override' : 'Role default';
+  }
+
+  async function loadKnowledge(): Promise<void> {
+    try {
+      knowledge = await getJson<KnowledgeSourceTimeline>(
+        `/admin/campaigns/${campaignId}/knowledge`,
+      );
+      knowledgeError = '';
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 401) {
+        cancelPoll();
+        await goto(loginPath);
+        return;
+      }
+      knowledgeError =
+        caught instanceof ApiError ? caught.message : 'Unable to load the knowledge rail.';
+    }
+  }
+
+  function schedulePoll(): void {
+    if (destroyed) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    cancelPoll();
+    knowledgePollHandle = setTimeout(async () => {
+      await loadKnowledge();
+      if (destroyed) return;
+      schedulePoll();
+    }, 3000);
+  }
+
+  function cancelPoll(): void {
+    if (knowledgePollHandle) {
+      clearTimeout(knowledgePollHandle);
+      knowledgePollHandle = null;
+    }
+  }
+
+  function onVisibilityChange(): void {
+    if (destroyed || typeof document === 'undefined') return;
+    if (document.hidden) {
+      cancelPoll();
+    } else {
+      void loadKnowledge().then(() => {
+        if (destroyed) return;
+        schedulePoll();
+      });
+    }
+  }
+
+  async function runKnowledgeSearch(): Promise<void> {
+    const query = searchQuery.trim();
+    if (!query || !bundle) return;
+    searchPending = true;
+    searchStatus = '';
+    try {
+      const response = await postJson<KnowledgeSearchResponse>(
+        `/admin/campaigns/${campaignId}/knowledge/search`,
+        { query, top_k: 10 },
+      );
+      searchResults = response.results;
+      searchStatus =
+        response.results.length === 0
+          ? 'No results returned.'
+          : `Queued ${response.created_source_ids.length} candidate(s) for approval.`;
+      await loadKnowledge();
+    } catch (caught) {
+      searchStatus =
+        caught instanceof ApiError ? caught.message : 'Web search failed.';
+    } finally {
+      searchPending = false;
+    }
+  }
+
+  async function approveSource(sourceId: string): Promise<void> {
+    sourceBusy = { ...sourceBusy, [sourceId]: true };
+    try {
+      await postJson(`/admin/campaigns/${campaignId}/knowledge/${sourceId}/approve`, {});
+      await loadKnowledge();
+    } catch (caught) {
+      knowledgeError =
+        caught instanceof ApiError ? caught.message : 'Approval failed.';
+    } finally {
+      sourceBusy = { ...sourceBusy, [sourceId]: false };
+    }
+  }
+
+  async function rejectSource(sourceId: string): Promise<void> {
+    sourceBusy = { ...sourceBusy, [sourceId]: true };
+    try {
+      await postJson(`/admin/campaigns/${campaignId}/knowledge/${sourceId}/reject`, {});
+      await loadKnowledge();
+    } catch (caught) {
+      knowledgeError =
+        caught instanceof ApiError ? caught.message : 'Rejection failed.';
+    } finally {
+      sourceBusy = { ...sourceBusy, [sourceId]: false };
+    }
   }
 
   async function updateCampaignModel(role: AgentRole, catalogId: string): Promise<void> {
@@ -401,6 +543,175 @@
               <p class="label m-0">Consent</p>
               <p class="m-0 text-[color:var(--text)]">{bundle.campaign.outline.consent_language}</p>
             </div>
+          </div>
+        </section>
+
+        <section class="band grid gap-5 px-6 py-6" data-testid="knowledge-panel">
+          <div class="grid gap-2">
+            <p class="eyebrow">Knowledge</p>
+            <h2 class="section-title">Grounding, ingestion, and proposed queries</h2>
+            <p class="section-copy">
+              Search the public web, watch the ingestion worker drain queued URLs and
+              PDFs, and approve the queries Mira would like to run on your behalf.
+              Nothing in this panel is visible to participants.
+            </p>
+          </div>
+
+          <div class="grid gap-3 border-t border-[color:var(--line)] pt-4" data-testid="knowledge-search">
+            <p class="label m-0">Search via SearXNG / DuckDuckGo</p>
+            <form class="grid gap-3 md:grid-cols-[1fr_auto]" on:submit|preventDefault={runKnowledgeSearch}>
+              <input
+                type="text"
+                class="field"
+                bind:value={searchQuery}
+                placeholder="e.g. qualitative interview saturation"
+                data-testid="knowledge-search-input"
+              />
+              <button
+                class="button-primary"
+                disabled={searchPending || !searchQuery.trim()}
+                data-testid="knowledge-search-submit"
+              >
+                {searchPending ? 'Searching...' : 'Search'}
+              </button>
+            </form>
+            {#if searchStatus}
+              <p class="m-0 text-sm text-[color:var(--muted)]" data-testid="knowledge-search-status">
+                {searchStatus}
+              </p>
+            {/if}
+            {#if searchResults.length > 0}
+              <div class="stack-list" data-testid="knowledge-search-results">
+                {#each searchResults as hit}
+                  <article class="stack-row grid gap-1" data-testid="knowledge-candidate">
+                    <a
+                      class="break-words font-medium text-moss"
+                      href={hit.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {hit.title || hit.url}
+                    </a>
+                    <p class="m-0 text-xs text-[color:var(--muted)]">{hit.source}</p>
+                    <p class="m-0 text-sm leading-6 text-[color:var(--text)]">{hit.snippet}</p>
+                  </article>
+                {/each}
+              </div>
+            {/if}
+          </div>
+
+          <div class="grid gap-3 border-t border-[color:var(--line)] pt-4" data-testid="knowledge-queue">
+            <div class="flex items-center justify-between">
+              <p class="label m-0">Ingestion queue</p>
+              {#if knowledge}
+                <p class="m-0 text-xs text-[color:var(--muted)]">{knowledge.total} total source(s)</p>
+              {/if}
+            </div>
+            {#if queueSources.length === 0}
+              <p class="m-0 text-sm text-[color:var(--muted)]" data-testid="knowledge-queue-empty">
+                No sources in flight.
+              </p>
+            {:else}
+              <div class="stack-list">
+                {#each queueSources as summary (summary.source.id)}
+                  <article class="stack-row grid gap-1" data-testid="knowledge-queue-row">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="status-badge" data-tone="neutral">{summary.source.status}</span>
+                      <span class="chip">{summary.source.kind}</span>
+                      <p class="label m-0 break-all">{summary.source.title}</p>
+                    </div>
+                    {#if summary.source.error_detail}
+                      <p class="m-0 text-sm text-ember">{summary.source.error_detail}</p>
+                    {/if}
+                  </article>
+                {/each}
+              </div>
+            {/if}
+          </div>
+
+          <div class="grid gap-3 border-t border-[color:var(--line)] pt-4" data-testid="knowledge-suggestions">
+            <p class="label m-0">Mira-proposed queries</p>
+            {#if proposedQueries.length === 0}
+              <p class="m-0 text-sm text-[color:var(--muted)]">
+                Mira has not proposed any queries yet.
+              </p>
+            {:else}
+              <div class="stack-list">
+                {#each proposedQueries as summary (summary.source.id)}
+                  <article class="stack-row grid gap-2" data-testid="knowledge-suggestion">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="status-badge" data-tone="neutral">{summary.source.status}</span>
+                      <p class="m-0 text-[color:var(--text)] break-words">{summary.source.title}</p>
+                    </div>
+                    {#if summary.source.url}
+                      <a
+                        class="m-0 break-all text-xs text-moss"
+                        href={summary.source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {summary.source.url}
+                      </a>
+                    {/if}
+                    {#if summary.source.rationale}
+                      <p class="m-0 text-sm text-[color:var(--muted)]">{summary.source.rationale}</p>
+                    {/if}
+                    <div class="flex gap-2">
+                      <button
+                        class="button-primary"
+                        disabled={sourceBusy[summary.source.id]}
+                        on:click={() => approveSource(summary.source.id)}
+                        data-testid="knowledge-approve"
+                      >
+                        {sourceBusy[summary.source.id] ? '...' : 'Approve'}
+                      </button>
+                      <button
+                        class="button-secondary"
+                        disabled={sourceBusy[summary.source.id]}
+                        on:click={() => rejectSource(summary.source.id)}
+                        data-testid="knowledge-reject"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </article>
+                {/each}
+              </div>
+            {/if}
+          </div>
+
+          {#if approvedSources.length > 0}
+            <div class="grid gap-3 border-t border-[color:var(--line)] pt-4">
+              <p class="label m-0">Approved grounding</p>
+              <div class="stack-list">
+                {#each approvedSources as summary (summary.source.id)}
+                  <article class="stack-row grid gap-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="status-badge" data-tone="moss">approved</span>
+                      <span class="chip">{summary.source.kind}</span>
+                      <p class="label m-0 break-all">{summary.source.title}</p>
+                    </div>
+                    <p class="m-0 text-xs text-[color:var(--muted)]">
+                      {summary.chunk_count} chunk(s)
+                    </p>
+                  </article>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if knowledgeError}
+            <p class="m-0 text-sm text-ember" data-testid="knowledge-error">{knowledgeError}</p>
+          {/if}
+
+          <div class="flex justify-end border-t border-[color:var(--line)] pt-4">
+            <a
+              class="text-sm text-moss"
+              href={`/admin/campaigns/${campaignId}/graph`}
+              data-testid="knowledge-graph-link"
+            >
+              View live knowledge graph →
+            </a>
           </div>
         </section>
       </div>

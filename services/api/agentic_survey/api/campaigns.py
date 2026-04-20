@@ -1,5 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+import asyncio
+import json
+from collections.abc import AsyncIterator
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
+
+from agentic_survey.engine.event_bus import EventEnvelope, get_event_bus
 
 from agentic_survey.agents.designer import (
     opening_message as designer_opening_message,
@@ -452,3 +459,74 @@ async def submit_designer_turn(
     bundle = _build_campaign_bundle(campaign_id, repository)
     bundle.designer_session = session
     return bundle
+
+
+_KEEPALIVE_SECONDS = 15.0
+
+
+def _sse_frame(envelope: EventEnvelope) -> bytes:
+    """Format one EventEnvelope as a single SSE frame."""
+    payload = json.dumps(envelope.data, default=str, sort_keys=True)
+    return f"id: {envelope.seq}\nevent: {envelope.name}\ndata: {payload}\n\n".encode("utf-8")
+
+
+async def _campaign_event_stream(
+    campaign_id: str,
+    request: Request,
+    since: int,
+) -> AsyncIterator[bytes]:
+    bus = get_event_bus()
+    queue = bus.subscribe(campaign_id)
+    try:
+        # Replay first: every envelope in the ring with a higher seq.
+        for envelope in bus.replay(campaign_id, since=since):
+            if await request.is_disconnected():
+                return
+            yield _sse_frame(envelope)
+        # Then live. Keepalive comments keep intermediaries from closing idle streams.
+        while True:
+            if await request.is_disconnected():
+                return
+            try:
+                envelope = await asyncio.wait_for(queue.get(), timeout=_KEEPALIVE_SECONDS)
+            except asyncio.TimeoutError:
+                yield b": keepalive\n\n"
+                continue
+            yield _sse_frame(envelope)
+    finally:
+        bus.unsubscribe(campaign_id, queue)
+
+
+@router.get("/{campaign_id}/stream")
+async def stream_campaign_events(
+    campaign_id: str,
+    request: Request,
+    since: int | None = Query(default=None, ge=-1),
+    repository: InMemoryRepository = Depends(get_repository),
+) -> StreamingResponse:
+    """Admin-gated SSE feed of per-campaign ``InterviewEvent``s.
+
+    Each frame carries a monotonic ``id`` (``seq``) so clients can reconnect
+    with ``?since=<seq>`` or the standard ``Last-Event-ID`` header and pick
+    up where they left off, bounded by the ring-buffer size. Keepalive
+    comments fire every 15s so reverse proxies keep the pipe open.
+    """
+    if repository.get_campaign(campaign_id) is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    cursor = since
+    if cursor is None:
+        last_event_id = request.headers.get("last-event-id")
+        if last_event_id is not None:
+            try:
+                cursor = int(last_event_id)
+            except ValueError:
+                cursor = None
+    if cursor is None:
+        cursor = -1
+
+    return StreamingResponse(
+        _campaign_event_stream(campaign_id, request, cursor),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
