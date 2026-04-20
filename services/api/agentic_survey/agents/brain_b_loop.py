@@ -210,16 +210,33 @@ async def run_brain_b_with_tools(
     raw_output = ""
     last_exc: Exception | None = None
 
-    max_iterations = max_tool_calls + max_parse_retries + 1
+    # LM Studio (and some other OpenAI-compatible backends) silently drop
+    # ``tool_calls`` when ``response_format=json_schema`` is set on the same
+    # request. We therefore keep the two separate: during tool-capable
+    # iterations we send ``tools`` with no ``response_format``. When the model
+    # returns content without tool_calls, we try to parse it as BrainBIntent
+    # directly. If it is not valid JSON, we escalate to a dedicated terminal
+    # call with ``tool_choice="none"`` and ``response_format=json_schema`` to
+    # force the structured output.
+    max_iterations = max_tool_calls + max_parse_retries + 2
     for iteration in range(max_iterations):
+        terminal_only = not tools_schema or parse_retries > 0
         completion_kwargs: dict[str, Any] = {
             "model": "mira-scientist",
             "messages": messages,
-            "response_format": _brain_b_response_format(),
             "stream": False,
-            "metadata": {"surface": surface, "brain": "B", "iteration": iteration},
+            "metadata": {
+                "surface": surface,
+                "brain": "B",
+                "iteration": iteration,
+                "terminal_only": terminal_only,
+            },
         }
-        if tools_schema:
+        if terminal_only:
+            completion_kwargs["response_format"] = _brain_b_response_format()
+            if tools_schema:
+                completion_kwargs["tool_choice"] = "none"
+        else:
             completion_kwargs["tools"] = tools_schema
             completion_kwargs["tool_choice"] = "auto"
 
@@ -308,13 +325,14 @@ async def run_brain_b_with_tools(
             continue
 
         observed_chunks = _observed_retrieval_chunks(tool_calls_made)
-        retrieval_used = bool(observed_chunks) or any(
-            call.name == "search_knowledge" for call in tool_calls_made
-        )
+        retrieval_used = any(call.name == "search_knowledge" for call in tool_calls_made)
+        # Override model self-report with observed tool-call history. If no
+        # search_knowledge call actually fired, retrieval_chunks must be empty;
+        # the model sometimes invents placeholders otherwise.
         intent = intent.model_copy(
             update={
                 "retrieval_used": retrieval_used,
-                "retrieval_chunks": observed_chunks or list(intent.retrieval_chunks),
+                "retrieval_chunks": observed_chunks if retrieval_used else [],
             }
         )
         return BrainBLoopResult(intent=intent, tool_calls=tool_calls_made, raw_output=raw_output)

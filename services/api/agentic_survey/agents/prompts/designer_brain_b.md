@@ -24,3 +24,5 @@ Tool use:
 Output rules:
 - Final response must be one JSON object matching the provided schema.
 - No markdown, no prose outside the schema, no chain-of-thought.
+- All axes_coverage[*].score values are fractions in the closed interval [0.0, 1.0]. Never use a 0-5 or 0-10 scale. 0.75 means "mostly covered", 0.3 means "thin".
+- get_user_input.options must contain exactly 3-5 strings; the last string must be literally "Discuss this more." (the orchestrator enforces this but do not depend on it).

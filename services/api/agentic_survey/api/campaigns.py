@@ -429,6 +429,7 @@ async def submit_designer_turn(
         campaign=campaign,
         session=session,
         router=get_litellm_router(),
+        repository=repository,
     )
 
     repository.update_outline(
