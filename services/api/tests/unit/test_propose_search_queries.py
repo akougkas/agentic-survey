@@ -98,6 +98,15 @@ def test_tool_handler_rejects_non_string_query() -> None:
         asyncio.run(tool.handler({"queries": ["ok", 42]}))
 
 
+def test_tool_handler_rejects_more_than_five_queries() -> None:
+    """Schema ``maxItems=5`` is advisory; handler enforces the cap."""
+    tool = propose_search_queries_tool(queue_sink=lambda q: [f"ksrc-{i}" for i in range(len(q))])
+
+    with pytest.raises(ValueError) as exc:
+        asyncio.run(tool.handler({"queries": [f"q{i}" for i in range(6)]}))
+    assert "maximum is 5" in str(exc.value)
+
+
 def test_tool_handler_propagates_rejection_via_registry() -> None:
     """When the queue_sink raises (e.g. campaign is LIVE), the registry
     surfaces a ``ToolDispatchError`` so Brain B sees the failure on the
@@ -112,6 +121,38 @@ def test_tool_handler_propagates_rejection_via_registry() -> None:
     with pytest.raises(ToolDispatchError) as exc:
         asyncio.run(registry.dispatch("propose_search_queries", {"queries": ["q"]}))
     assert "campaign is live" in str(exc.value)
+
+
+def test_queue_sink_closure_rereads_campaign_state_on_live_transition() -> None:
+    """Regression for the stale-snapshot race: a turn starts in DESIGNING,
+    another request transitions the campaign to LIVE, and the next
+    in-flight tool call must reject. The closure-builder in
+    ``agents/designer.py`` re-reads ``campaign.state`` via
+    ``repository.get_campaign`` to keep the check honest; this test
+    mirrors that pattern so a refactor cannot silently drop it.
+    """
+    repo, campaign = _setup_campaign(state=CampaignState.DESIGNING)
+
+    def _queue(queries: list[str]) -> list[str]:
+        fresh = repo.get_campaign(campaign.id)
+        assert fresh is not None
+        assert_design_time(fresh.state)
+        return queue_proposed_queries(
+            campaign_id=campaign.id,
+            queries=queries,
+            repository=repo,
+        )
+
+    _queue(["first while designing"])
+    repo.advance_campaign(campaign.id, CampaignState.REVIEWING)
+    repo.advance_campaign(campaign.id, CampaignState.LIVE)
+
+    with pytest.raises(SearchSuggestionsRejected):
+        _queue(["second should reject"])
+
+    rows = repo.list_knowledge_sources(campaign.id)
+    assert len(rows) == 1
+    assert rows[0].title == "first while designing"
 
 
 def test_interviewer_registry_does_not_include_propose_search_queries() -> None:

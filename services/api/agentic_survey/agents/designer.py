@@ -15,6 +15,7 @@ from agentic_survey.llm.router import LiteLLMRouter
 from agentic_survey.repository import Campaign, DesignerSession
 from agentic_survey.services.retrieval import build_search_knowledge
 from agentic_survey.services.web_search.suggestions import (
+    SearchSuggestionsRejected,
     assert_design_time,
     queue_proposed_queries,
 )
@@ -186,11 +187,18 @@ async def run_designer_turn(
     propose_queries_fn: Callable[[list[str]], list[str]] | None = None
     if repository is not None:
         def _queue_queries(queries: list[str]) -> list[str]:
-            # M3 invariant: design-time only. The closure re-reads the
-            # campaign state so a turn that starts in DESIGNING but races
-            # with a LIVE transition still rejects cleanly. Errors surface
-            # to Brain B as a tool-dispatch error per ``ToolRegistry``.
-            assert_design_time(campaign.state)
+            # M3 invariant: design-time only. Re-fetch the campaign so a
+            # turn that started in DESIGNING but raced with a LIVE
+            # transition (another admin request) still rejects cleanly.
+            # Using the captured ``campaign`` snapshot would read stale
+            # state. Errors surface to Brain B as a tool-dispatch error
+            # per ``ToolRegistry``.
+            fresh = repository.get_campaign(campaign.id)
+            if fresh is None:
+                raise SearchSuggestionsRejected(
+                    f"Campaign {campaign.id} not found"
+                )
+            assert_design_time(fresh.state)
             return queue_proposed_queries(
                 campaign_id=campaign.id,
                 queries=queries,

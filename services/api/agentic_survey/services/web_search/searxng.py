@@ -30,16 +30,30 @@ class SearxngBackend:
     async def search(self, query: str, top_k: int = 10) -> list[WebSearchResult]:
         params = {"q": query, "format": "json"}
         url = f"{self.base_url}/search"
+        # Always bind the timeout to the request so a reused injected
+        # client cannot hang the caller. httpx treats a request-level
+        # timeout as an override of the client-level default.
         if self._client is not None:
-            response = await self._client.get(url, params=params)
+            response = await self._client.get(
+                url,
+                params=params,
+                timeout=self.timeout_seconds,
+            )
         else:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.get(url, params=params)
         response.raise_for_status()
         payload = response.json()
-        raw_results = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(payload, dict) or "results" not in payload:
+            # Treat a malformed response as a backend failure so the
+            # router can fall back to DDG instead of returning an empty
+            # list that terminates the chain.
+            raise RuntimeError("searxng: response missing 'results' key")
+        raw_results = payload.get("results")
         if not isinstance(raw_results, list):
-            return []
+            raise RuntimeError(
+                f"searxng: 'results' is {type(raw_results).__name__}, expected list"
+            )
         out: list[WebSearchResult] = []
         for item in raw_results:
             if not isinstance(item, dict):

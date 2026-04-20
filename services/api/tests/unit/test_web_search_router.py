@@ -100,3 +100,18 @@ def test_router_rejects_non_positive_top_k() -> None:
 def test_router_raises_when_no_backends_configured() -> None:
     with pytest.raises(WebSearchError):
         asyncio.run(search("ok", top_k=5, backends=[]))
+
+
+def test_router_treats_ddg_importerror_as_backend_failure() -> None:
+    """If ``ddgs`` is missing, the DDG backend raises ImportError. The
+    router must treat that as a standard backend failure so the final
+    WebSearchError lists both entries, not swallow it."""
+    searxng = _FakeBackend("searxng", error=RuntimeError("searxng down"))
+    ddg = _FakeBackend("ddg", error=ImportError("No module named 'ddgs'"))
+
+    with pytest.raises(WebSearchError) as exc_info:
+        asyncio.run(search("anything", top_k=3, backends=[searxng, ddg]))
+
+    err = exc_info.value
+    assert [name for name, _ in err.errors] == ["searxng", "ddg"]
+    assert "No module named 'ddgs'" in str(err)

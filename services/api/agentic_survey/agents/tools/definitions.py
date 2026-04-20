@@ -196,6 +196,13 @@ def propose_search_queries_tool(*, queue_sink: SearchQueriesSink) -> MiraTool:
             cleaned.append(text)
         if not cleaned:
             raise ValueError("queries list contained only blank strings")
+        # Schema `maxItems=5` is advisory for the LLM; the registry does
+        # not validate against it. Enforce explicitly so a chatty Brain B
+        # cannot flood the scientist's inbox.
+        if len(cleaned) > 5:
+            raise ValueError(
+                f"queries list has {len(cleaned)} entries; maximum is 5"
+            )
         created_ids = queue_sink(cleaned)
         return {
             "queued_count": len(created_ids),
