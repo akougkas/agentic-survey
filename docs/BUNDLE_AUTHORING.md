@@ -45,35 +45,6 @@ seed_sources:
     rationale: Internal framing that is not publicly hosted.
 ```
 
-## Product-level `research_agent_hook`
-
-`product.yaml` may declare `research_agent_hook:` to wire an external deep-research service into Designer Brain B. When configured, Brain B gains a `request_deep_research` tool; results land as `knowledge_source(kind="deep_research_result", status="pending_approval")` awaiting scientist approval.
-
-Fields:
-
-| Field      | Type                 | Required | Notes                                                     |
-| ---------- | -------------------- | -------- | --------------------------------------------------------- |
-| `provider` | string \| null       | yes      | Adapter name. Only `null` ships in v1.                    |
-| `config`   | mapping (opaque)     | no       | Passed through to the adapter verbatim; loader ignores.  |
-
-Example:
-
-```yaml
-research_agent_hook:
-  provider: "null"
-  config:
-    defaults:
-      scope: standard
-      depth: 3
-```
-
-### Resolver behavior
-
-- Unset, or `provider: null` / `provider: "null"` resolves to `NullResearchAgent`: `dispatch` returns a typed handle, `status` returns `completed`, `fetch` returns an empty result with `rationale="No research agent configured"`.
-- Any other provider string raises `NotImplementedError`. Adapters (OpenAI Deep Research, Perplexity, Exa, local agents) land post-v1 behind the same `ResearchAgentHook` Protocol.
-
-The Protocol and types live in `services/api/agentic_survey/integrations/research_agent.py`.
-
 ## Backward compatibility
 
-Both fields are optional. Bundles authored before M4 load unchanged. The shipped demo bundle at `examples/product-bundles/demo/` declares neither; the fixture at `examples/product-bundles/demo-with-seeds/` exercises both for loader tests.
+`seed_sources` is optional. Bundles authored before M4 load unchanged. The shipped demo bundle at `examples/product-bundles/demo/` declares none; seeded bundles such as `citadl/bundle/` exercise the field.

@@ -51,10 +51,6 @@ ui:
       launch the campaigns, issue invitations, and monitor transcripts and
       concept graphs as respondents come through.
 
-research_agent_hook:
-  provider: null
-  config: {}
-
 campaigns:
   - slug: domain-scientists
     seed: campaigns/domain-scientists.yaml

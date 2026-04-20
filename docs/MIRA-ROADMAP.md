@@ -88,6 +88,23 @@ SearXNG primary + DuckDuckGo fallback. Mira's `propose_search_queries` tool queu
 
 Shared `mira_persona.md` preamble. Full rewrite of the four Brain A/B prompts. Tool-aware, warm, evidence-led.
 
+### M7.5 — SurrealRepository integration tests (next)
+
+**Motivation.** The unit suite exercises `InMemoryRepository` in 17 of 17 test files; `SurrealRepository` has zero coverage. The CLAUDE.md invariant says "SurrealDB is truth; InMemoryRepository is for tests only" — so the tests today validate the non-truth path. Every Surreal bug we have hit (gotchas #15–18: hyphenated record ids, missing `array::slice`, `GROUP BY` aggregation quirks, embedding route) was caught in live smoke, not in CI.
+
+**Scope.** A new `services/api/tests/integration/` tier that spins up the local `surrealdb` container (docker compose fixture) and exercises `SurrealRepository` directly against it. Happy-path coverage on the hot queries:
+
+- `search_knowledge_chunks_bm25` + `search_knowledge_chunks_vector` + RRF fuse
+- `merge_concept`, `record_mentioned_with`, `record_contradicts`, `list_concept_neighborhood`
+- `update_knowledge_source_status` + `error_detail` preservation
+- `update_knowledge_chunk_embedding` (768-dim write + readback)
+- `append_interview_turn` + `get_retrieval_audit` round-trip
+- Schema migrations apply cleanly on a cold container
+
+**Why before M8.** Catching a Surreal regression costs one stalled interview today. It will cost a botched UI demo tomorrow.
+
+**Estimated effort:** ~1 day. ~200 LOC of tests + a `conftest.py` fixture that boots/tears down the container via `docker compose`.
+
 ### M8 — UI affordances
 
 Knowledge tab on `/admin/campaigns/[id]` (web search, ingestion queue, Mira-proposed queries). New `/admin/campaigns/[id]/graph` page with live force-directed view via `graph_delta` SSE.
@@ -388,4 +405,3 @@ Functions to reuse across milestones:
 - `engine/retrieval_cache.py::RetrievalCache`
 - `llm/router.py::LiteLLMRouter.aembedding`
 - `services/retrieval.py::build_search_knowledge` (keep the binding closure, swap the impl underneath)
-- `integrations/research_agent.py::ResearchAgentHook` (bundle hook pattern)

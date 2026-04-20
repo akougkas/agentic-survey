@@ -73,9 +73,16 @@ knowledge="$(json "$BASE/admin/campaigns/${campaign_id}/knowledge" || true)"
 echo "$knowledge" | jq '{total, status_keys: (.by_status | keys)}' 2>/dev/null \
     || echo "  (no knowledge endpoint response; B2-min path may be disabled)"
 
+step "advance campaign to live"
+advanced="$(json -X POST "$BASE/campaigns/${campaign_id}/advance" \
+                  -d '{"target_state":"live"}')"
+advanced_state="$(echo "$advanced" | jq -r '.campaign.state // empty')"
+echo "campaign_state=${advanced_state:-unknown}"
+[[ "$advanced_state" == "live" ]] || fail "campaign did not advance to live (state=${advanced_state})"
+
 step "create invite"
-invite="$(json -X POST "$BASE/campaigns/${campaign_id}/invites" \
-                -d '{"label":"smoke invite"}')"
+invite="$(json -X POST "$BASE/invites" \
+                -d "{\"campaign_id\":\"${campaign_id}\",\"label\":\"smoke invite\"}")"
 echo "$invite" | jq '{id, token: (.token | .[0:12] + "...")}'
 invite_token="$(echo "$invite" | jq -r '.token')"
 [[ -n "$invite_token" && "$invite_token" != "null" ]] || fail "invite creation failed"

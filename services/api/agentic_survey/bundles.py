@@ -16,10 +16,6 @@ from agentic_survey.domain.outline import (
     ParticipantFAQEntry,
     RiskEntry,
 )
-from agentic_survey.integrations.research_agent import (
-    ResearchAgentHook,
-    resolve_research_agent,
-)
 
 _MODULE_ANCESTORS = Path(__file__).resolve().parents
 # Dev tree: services/api/agentic_survey/bundles.py → parents[3] is the repo root.
@@ -82,17 +78,6 @@ class BundleCopy(BaseModel):
     admin: BundleAdminCopy = Field(default_factory=BundleAdminCopy)
 
 
-class ResearchAgentHookConfig(BaseModel):
-    """Product-level research agent hook declaration.
-
-    `provider` is the adapter name (`null` ships today; real providers post-v1).
-    `config` passes through to the adapter verbatim; the loader does not read it.
-    """
-
-    provider: str | None = None
-    config: dict[str, Any] = Field(default_factory=dict)
-
-
 class ProductBundleManifest(BaseModel):
     slug: str
     name: str
@@ -101,7 +86,6 @@ class ProductBundleManifest(BaseModel):
     branding: BundleBranding = Field(default_factory=BundleBranding)
     ui: BundleCopy = Field(default_factory=BundleCopy)
     campaigns: list[CampaignReference] = Field(default_factory=list)
-    research_agent_hook: ResearchAgentHookConfig | None = None
 
 
 class CampaignSeedOutline(BaseModel):
@@ -276,18 +260,6 @@ def materialize_outline(seed: CampaignSeed) -> OutlineArtifact:
         aggregate_graph_context=outline.aggregate_graph_context,
         participant_faq=[entry.model_copy(deep=True) for entry in outline.participant_faq],
     )
-
-
-def get_research_agent(manifest: ProductBundleManifest) -> ResearchAgentHook:
-    """Resolve the bundle's research agent hook to a live adapter.
-
-    Unset or `provider: null` yields `NullResearchAgent`; any other provider
-    raises until an adapter ships.
-    """
-    hook = manifest.research_agent_hook
-    if hook is None:
-        return resolve_research_agent(None)
-    return resolve_research_agent(hook.provider, hook.config)
 
 
 def _main() -> None:

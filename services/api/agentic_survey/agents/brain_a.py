@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -8,6 +9,12 @@ from agentic_survey.domain.intent import BrainBIntent
 __all__ = ["stream_brain_a"]
 
 _PROMPTS_DIR = Path(__file__).with_name("prompts")
+_PERSONA_PATH = _PROMPTS_DIR / "mira_persona.md"
+
+
+@lru_cache(maxsize=1)
+def _persona_preamble() -> str:
+    return _PERSONA_PATH.read_text(encoding="utf-8").strip()
 
 
 def _load_prompt(prompt_md_path: str) -> str:
@@ -15,6 +22,10 @@ def _load_prompt(prompt_md_path: str) -> str:
     if not candidate.is_absolute():
         candidate = _PROMPTS_DIR / prompt_md_path
     return candidate.read_text(encoding="utf-8").strip()
+
+
+def _load_chatter_prompt(prompt_md_path: str) -> str:
+    return f"{_persona_preamble()}\n\n{_load_prompt(prompt_md_path)}"
 
 
 def _extract_chunk_text(chunk: object) -> str:
@@ -53,7 +64,7 @@ async def stream_brain_a(
     caller assembles yielded tokens; if the assembled reply lacks the chip
     rendering, the orchestrator raises rather than fabricating it.
     """
-    system_prompt = _load_prompt(prompt_md_path)
+    system_prompt = _load_chatter_prompt(prompt_md_path)
     persona_blob = persona.strip()
     intent_blob = brain_b_intent.model_dump_json(indent=2)
 

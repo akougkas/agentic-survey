@@ -11,7 +11,6 @@ from agentic_survey.auth import (
 )
 from agentic_survey.config import Settings, get_settings
 from agentic_survey.engine.interview_loop import (
-    normalize_control_signal,
     opening_turn_message,
     run_interview_turn,
 )
@@ -158,7 +157,6 @@ async def submit_participant_turn(
         cache=_retrieval_cache,
     )
 
-    _ = normalize_control_signal  # re-export kept for callers; unused here
     return SessionBundleResponse(session=result.session, campaign=campaign)
 
 
