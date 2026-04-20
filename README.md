@@ -57,7 +57,7 @@ docker compose -f infra/docker-compose.local.yml up -d surrealdb
 
 # 2. Apply schema
 cd services/api
-uv run python -m agentic_survey.db.migrations.runner
+uv run python -m agentic_survey.db.schema
 
 # 3. Backend
 SURVEY_REPOSITORY=surreal SURVEY_LLM_ENABLED=true \
@@ -77,7 +77,7 @@ services/api/              FastAPI backend
     agents/                Designer, Interviewer, Validator, Analyst
       prompts/             Brain-A and Brain-B prompts per surface
     api/                   HTTP routes (campaigns, invites, sessions, admin, models)
-    db/                    SurrealDB wrapper, schema, migrations
+    db/                    SurrealDB wrapper + canonical schema
     engine/                State machine, session policy, saturation signals
     llm/                   LiteLLM router, catalog, reasoning resolver, callbacks
     repository.py          InMemoryRepository (test path)

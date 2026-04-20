@@ -99,7 +99,7 @@ Shared `mira_persona.md` preamble. Full rewrite of the four Brain A/B prompts. T
 - `update_knowledge_source_status` + `error_detail` preservation
 - `update_knowledge_chunk_embedding` (768-dim write + readback)
 - `append_interview_turn` + `get_retrieval_audit` round-trip
-- Schema migrations apply cleanly on a cold container
+- Canonical schema applies cleanly on a cold container
 
 **Why before M8.** Catching a Surreal regression costs one stalled interview today. It will cost a botched UI demo tomorrow.
 
@@ -167,7 +167,7 @@ Between milestones, run this protocol to keep the live stack honest. All command
 ```bash
 # 1. SurrealDB up + schema current
 docker compose -f infra/docker-compose.local.yml up -d surrealdb
-cd services/api && uv run python -m agentic_survey.db.migrations.runner && cd -
+cd services/api && uv run python -m agentic_survey.db.schema && cd -
 
 # 2. Backend in background with reload and log capture
 (cd services/api && nohup uv run uvicorn agentic_survey.main:app \
@@ -256,7 +256,7 @@ SQL
 ## M2 smoke-test protocol (executable)
 
 ```bash
-# Preconditions: SurrealDB up, migrations applied, api-dev running in surreal mode.
+# Preconditions: SurrealDB up, schema applied, api-dev running in surreal mode.
 rm -f /tmp/cj
 curl -sS -c /tmp/cj -X POST http://localhost:8100/api/admin/login \
   -H 'content-type: application/json' -d '{"password":"change-me"}'
@@ -348,8 +348,8 @@ Sequencing: **M2 → M3 → (M4 ∥ M5) → M6 → M7 → M8**.
 - M2: `crawl4ai>=0.4` (lazy-imported in `services/ingestion/fetchers/crawl4ai.py`).
 - M3: `ddgs>=9`.
 
-**Migrations:**
-- M4: `db/migrations/0002_retrieval_audit_mode.surql` adds `mode` field.
+**Schema:**
+- Single canonical file at `db/schema.surql`; no migrations pre-1.0. Any change = drop DB, re-apply.
 
 **Invariants preserved throughout:**
 - No silent errors. Every fetcher, embedder, tool dispatch raises on failure; the route returns the error.

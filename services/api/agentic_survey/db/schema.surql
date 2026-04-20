@@ -1,3 +1,14 @@
+-- Canonical SurrealDB schema for the Agentic Survey runtime.
+--
+-- Every definition is guarded by IF NOT EXISTS so apply is idempotent.
+-- Pre-1.0: there are no migrations. When the schema changes, drop the
+-- database and re-apply. ``apply_schema`` is the only entry point.
+--
+-- Workflow:
+--   docker compose -f infra/docker-compose.local.yml down -v
+--   docker compose -f infra/docker-compose.local.yml up -d surrealdb
+--   cd services/api && uv run python -m agentic_survey.db.schema
+
 DEFINE TABLE IF NOT EXISTS campaign SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS title ON TABLE campaign TYPE string;
 DEFINE FIELD IF NOT EXISTS source ON TABLE campaign TYPE string
@@ -192,11 +203,15 @@ DEFINE FIELD IF NOT EXISTS top_k ON TABLE retrieval_audit TYPE int
     ASSERT $value > 0;
 DEFINE FIELD IF NOT EXISTS chunk_ids ON TABLE retrieval_audit TYPE array<record<knowledge_chunk>>;
 DEFINE FIELD IF NOT EXISTS scores ON TABLE retrieval_audit TYPE array<float>;
+DEFINE FIELD IF NOT EXISTS mode ON TABLE retrieval_audit TYPE string DEFAULT 'hybrid'
+    ASSERT $value IN ['bm25', 'vector', 'hybrid'];
+DEFINE FIELD IF NOT EXISTS cache_hit ON TABLE retrieval_audit TYPE bool DEFAULT false;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE retrieval_audit TYPE datetime DEFAULT time::now();
 
 DEFINE TABLE IF NOT EXISTS concept SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS campaign ON TABLE concept TYPE record<campaign>;
 DEFINE FIELD IF NOT EXISTS label ON TABLE concept TYPE string;
+DEFINE FIELD IF NOT EXISTS type ON TABLE concept TYPE string DEFAULT "";
 DEFINE FIELD IF NOT EXISTS embedding ON TABLE concept TYPE array<float>;
 DEFINE FIELD IF NOT EXISTS first_seen ON TABLE concept TYPE datetime;
 DEFINE FIELD IF NOT EXISTS mention_count ON TABLE concept TYPE int
@@ -221,12 +236,14 @@ DEFINE FIELD IF NOT EXISTS turn ON TABLE mentioned_with TYPE record<interview_tu
 DEFINE FIELD IF NOT EXISTS kind ON TABLE mentioned_with TYPE string
     ASSERT $value IN ["co_occurrence","explicit_relation"];
 DEFINE FIELD IF NOT EXISTS confidence ON TABLE mentioned_with TYPE float;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE mentioned_with TYPE datetime DEFAULT time::now();
 
 DEFINE TABLE IF NOT EXISTS contradicts SCHEMAFULL TYPE RELATION FROM concept TO concept;
 DEFINE FIELD IF NOT EXISTS campaign ON TABLE contradicts TYPE record<campaign>;
 DEFINE FIELD IF NOT EXISTS session ON TABLE contradicts TYPE record<interview_session>;
 DEFINE FIELD IF NOT EXISTS turn ON TABLE contradicts TYPE record<interview_turn>;
 DEFINE FIELD IF NOT EXISTS confidence ON TABLE contradicts TYPE float;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE contradicts TYPE datetime DEFAULT time::now();
 
 DEFINE TABLE IF NOT EXISTS part_of_cluster SCHEMAFULL TYPE RELATION FROM concept TO theme_cluster;
 DEFINE FIELD IF NOT EXISTS cluster ON TABLE part_of_cluster TYPE record<theme_cluster>;

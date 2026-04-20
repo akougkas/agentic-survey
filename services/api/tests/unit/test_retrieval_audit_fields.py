@@ -199,14 +199,14 @@ def test_cache_hit_returns_hydrated_chunk_content() -> None:
 def test_audit_raises_when_repository_write_fails() -> None:
     """Invariant: audit write failure surfaces, never hidden.
 
-    Operator rolled out M4 code but forgot to apply 0002 migration? The
-    route must return 500, not silently drop the audit.
+    If the Surreal write raises (schema drift, transient failure, quota),
+    the route must return 500, not silently drop the audit row.
     """
     repo = InMemoryRepository()
     campaign_id = _seed(repo)
 
     def _boom(**_kwargs):
-        raise RuntimeError("schema_migration 0002 not applied")
+        raise RuntimeError("surreal write failed")
 
     repo.record_retrieval_audit = _boom  # type: ignore[method-assign]
 
@@ -224,7 +224,7 @@ def test_audit_raises_when_repository_write_fails() -> None:
                 router=_Router(),
             )
         )
-    assert "schema_migration 0002" in str(exc.value)
+    assert "surreal write failed" in str(exc.value)
 
 
 def test_audit_row_written_exactly_once_per_call() -> None:

@@ -11,8 +11,8 @@ production uses Coolify, Traefik, and an existing cloudflared tunnel.
 # 1. SurrealDB up
 docker compose -f infra/docker-compose.local.yml up -d surrealdb
 
-# 2. Apply the schema (idempotent; tracked via schema_migration table)
-cd services/api && uv run python -m agentic_survey.db.migrations.runner
+# 2. Apply the schema (idempotent; every DEFINE is IF NOT EXISTS)
+cd services/api && uv run python -m agentic_survey.db.schema
 
 # 3. Boot the backend (demo bundle + in-memory repo)
 make api-dev
@@ -32,7 +32,7 @@ Reset local Surreal state:
 ```bash
 docker compose -f infra/docker-compose.local.yml down -v
 docker compose -f infra/docker-compose.local.yml up -d surrealdb
-cd services/api && uv run python -m agentic_survey.db.migrations.runner
+cd services/api && uv run python -m agentic_survey.db.schema
 ```
 
 LiteLLM live smoke against the configured mini endpoint:
@@ -61,8 +61,9 @@ Compose handles it via `depends_on` in
 
 1. `surrealdb` comes up first.
 2. `searxng` in parallel.
-3. `backend` waits for both; applies migrations on first run (schema is
-   idempotent).
+3. `backend` waits for both. Apply the canonical schema separately via
+   `python -m agentic_survey.db.schema` (idempotent; every `DEFINE` has
+   `IF NOT EXISTS`). Typically run once per Coolify deploy.
 4. `worker` (freshness heartbeat; no real work in v1) and `frontend`
    follow `backend`.
 

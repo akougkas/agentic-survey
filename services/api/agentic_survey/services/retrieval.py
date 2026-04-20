@@ -253,9 +253,7 @@ def _write_audit(
     """Write the per-call audit row.
 
     Invariant: exactly one audit row per ``search_knowledge`` call. We do
-    NOT swallow failures here, because a silent audit failure after a
-    missed migration (e.g. operator rolled out M4 code but forgot to run
-    `python -m agentic_survey.db.migrations.runner`) would mean the
+    not swallow failures here; a silent audit failure would mean the
     admin drawer shows no record of what Mira saw, with no visible
     signal that anything is wrong. The route propagates the error.
     """

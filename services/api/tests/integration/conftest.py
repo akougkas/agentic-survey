@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from agentic_survey.config import Settings
-from agentic_survey.db.migrations.runner import apply_migrations
+from agentic_survey.db.schema import apply_schema
 from agentic_survey.db.surreal import SurrealClient
 from agentic_survey.db.surreal_repository import SurrealRepository
 
@@ -155,7 +155,7 @@ async def _apply(settings: Settings) -> None:
         password=settings.surreal_pass,
     )
     try:
-        await apply_migrations(client)
+        await apply_schema(client)
     finally:
         await client.close()
 
@@ -167,8 +167,8 @@ def drop_namespace(settings: Settings) -> None:
     )
 
 
-def apply_migrations_sync(settings: Settings) -> None:
-    """Apply all migrations to the configured namespace."""
+def apply_schema_sync(settings: Settings) -> None:
+    """Apply the canonical schema to the configured namespace."""
     asyncio.run(_apply(settings))
 
 
@@ -185,7 +185,7 @@ def surreal_repository(
     surreal_settings: Settings,
 ) -> Generator[SurrealRepository, None, None]:
     drop_namespace(surreal_settings)
-    apply_migrations_sync(surreal_settings)
+    apply_schema_sync(surreal_settings)
     repo = SurrealRepository(surreal_settings)
     try:
         yield repo
