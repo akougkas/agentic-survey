@@ -141,17 +141,6 @@ DEFINE FIELD IF NOT EXISTS payload ON TABLE interview_event TYPE object;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE interview_event TYPE datetime DEFAULT time::now();
 DEFINE INDEX IF NOT EXISTS interview_event_session_idx ON TABLE interview_event COLUMNS session, created_at;
 
-DEFINE TABLE IF NOT EXISTS knowledge_blob SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS campaign ON TABLE knowledge_blob TYPE record<campaign>;
-DEFINE FIELD IF NOT EXISTS source ON TABLE knowledge_blob TYPE record<knowledge_source>;
-DEFINE FIELD IF NOT EXISTS sha256 ON TABLE knowledge_blob TYPE string;
-DEFINE FIELD IF NOT EXISTS content_type ON TABLE knowledge_blob TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS content ON TABLE knowledge_blob TYPE bytes;
-DEFINE FIELD IF NOT EXISTS size_bytes ON TABLE knowledge_blob TYPE int
-    ASSERT $value >= 0;
-DEFINE FIELD IF NOT EXISTS created_at ON TABLE knowledge_blob TYPE datetime DEFAULT time::now();
-DEFINE INDEX IF NOT EXISTS knowledge_blob_campaign_sha256 ON TABLE knowledge_blob COLUMNS campaign, sha256 UNIQUE;
-
 DEFINE TABLE IF NOT EXISTS knowledge_source SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS campaign ON TABLE knowledge_source TYPE record<campaign>;
 DEFINE FIELD IF NOT EXISTS kind ON TABLE knowledge_source TYPE string
@@ -219,16 +208,6 @@ DEFINE FIELD IF NOT EXISTS mention_count ON TABLE concept TYPE int
 DEFINE INDEX IF NOT EXISTS concept_campaign_label ON TABLE concept COLUMNS campaign, label UNIQUE;
 DEFINE INDEX IF NOT EXISTS concept_campaign_embedding ON TABLE concept FIELDS embedding MTREE DIMENSION 768;
 
-DEFINE TABLE IF NOT EXISTS theme_cluster SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS campaign ON TABLE theme_cluster TYPE record<campaign>;
-DEFINE FIELD IF NOT EXISTS label ON TABLE theme_cluster TYPE string;
-DEFINE FIELD IF NOT EXISTS summary ON TABLE theme_cluster TYPE string DEFAULT "";
-DEFINE FIELD IF NOT EXISTS centroid ON TABLE theme_cluster TYPE array<float>;
-DEFINE FIELD IF NOT EXISTS concept_count ON TABLE theme_cluster TYPE int
-    ASSERT $value >= 0;
-DEFINE FIELD IF NOT EXISTS created_at ON TABLE theme_cluster TYPE datetime DEFAULT time::now();
-DEFINE FIELD IF NOT EXISTS updated_at ON TABLE theme_cluster TYPE datetime DEFAULT time::now();
-
 DEFINE TABLE IF NOT EXISTS mentioned_with SCHEMAFULL TYPE RELATION FROM concept TO concept;
 DEFINE FIELD IF NOT EXISTS campaign ON TABLE mentioned_with TYPE record<campaign>;
 DEFINE FIELD IF NOT EXISTS session ON TABLE mentioned_with TYPE record<interview_session>;
@@ -244,49 +223,6 @@ DEFINE FIELD IF NOT EXISTS session ON TABLE contradicts TYPE record<interview_se
 DEFINE FIELD IF NOT EXISTS turn ON TABLE contradicts TYPE record<interview_turn>;
 DEFINE FIELD IF NOT EXISTS confidence ON TABLE contradicts TYPE float;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE contradicts TYPE datetime DEFAULT time::now();
-
-DEFINE TABLE IF NOT EXISTS part_of_cluster SCHEMAFULL TYPE RELATION FROM concept TO theme_cluster;
-DEFINE FIELD IF NOT EXISTS cluster ON TABLE part_of_cluster TYPE record<theme_cluster>;
-DEFINE FIELD IF NOT EXISTS weight ON TABLE part_of_cluster TYPE float;
-
-DEFINE TABLE IF NOT EXISTS llm_call_audit SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS campaign ON TABLE llm_call_audit TYPE option<record<campaign>>;
-DEFINE FIELD IF NOT EXISTS surface ON TABLE llm_call_audit TYPE string
-    ASSERT $value IN ["designer","interviewer","validator","analyst","ingest"];
-DEFINE FIELD IF NOT EXISTS model ON TABLE llm_call_audit TYPE string;
-DEFINE FIELD IF NOT EXISTS endpoint_used ON TABLE llm_call_audit TYPE string;
-DEFINE FIELD IF NOT EXISTS brain ON TABLE llm_call_audit TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS session_id ON TABLE llm_call_audit TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS turn_id ON TABLE llm_call_audit TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS prompt_tokens ON TABLE llm_call_audit TYPE int;
-DEFINE FIELD IF NOT EXISTS completion_tokens ON TABLE llm_call_audit TYPE int;
-DEFINE FIELD IF NOT EXISTS latency_ms ON TABLE llm_call_audit TYPE int;
-DEFINE FIELD IF NOT EXISTS status ON TABLE llm_call_audit TYPE string
-    ASSERT $value IN ["ok","retry","fallback","failed"];
-DEFINE FIELD IF NOT EXISTS metadata ON TABLE llm_call_audit FLEXIBLE TYPE option<object>;
-DEFINE FIELD IF NOT EXISTS created_at ON TABLE llm_call_audit TYPE datetime DEFAULT time::now();
-DEFINE FIELD IF NOT EXISTS raw_prompt ON TABLE llm_call_audit TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS raw_completion ON TABLE llm_call_audit TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS reasoning_tokens ON TABLE llm_call_audit TYPE option<int>;
-DEFINE FIELD IF NOT EXISTS reasoning_chars ON TABLE llm_call_audit TYPE option<int>;
-DEFINE FIELD IF NOT EXISTS reasoning_content ON TABLE llm_call_audit TYPE option<string>;
-
-DEFINE TABLE IF NOT EXISTS saturation_snapshot SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS campaign ON TABLE saturation_snapshot TYPE record<campaign>;
-DEFINE FIELD IF NOT EXISTS session_count ON TABLE saturation_snapshot TYPE int;
-DEFINE FIELD IF NOT EXISTS finished_count ON TABLE saturation_snapshot TYPE int;
-DEFINE FIELD IF NOT EXISTS concept_count ON TABLE saturation_snapshot TYPE int;
-DEFINE FIELD IF NOT EXISTS theme_count ON TABLE saturation_snapshot TYPE int;
-DEFINE FIELD IF NOT EXISTS info_gain ON TABLE saturation_snapshot TYPE float;
-DEFINE FIELD IF NOT EXISTS flat_streak ON TABLE saturation_snapshot TYPE int;
-DEFINE FIELD IF NOT EXISTS saturation_reached ON TABLE saturation_snapshot TYPE bool;
-DEFINE FIELD IF NOT EXISTS taken_at ON TABLE saturation_snapshot TYPE datetime DEFAULT time::now();
-
-DEFINE TABLE IF NOT EXISTS analyst_report SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS campaign ON TABLE analyst_report TYPE record<campaign>;
-DEFINE FIELD IF NOT EXISTS report_kind ON TABLE analyst_report TYPE string;
-DEFINE FIELD IF NOT EXISTS content ON TABLE analyst_report FLEXIBLE TYPE object;
-DEFINE FIELD IF NOT EXISTS created_at ON TABLE analyst_report TYPE datetime DEFAULT time::now();
 
 DEFINE TABLE IF NOT EXISTS campaign_export SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS campaign ON TABLE campaign_export TYPE record<campaign>;

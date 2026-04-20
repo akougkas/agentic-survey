@@ -139,10 +139,7 @@ def _list_approved_grounding_sources(repository, campaign_id: str) -> list[dict[
     """
     if repository is None:
         return []
-    try:
-        sources = repository.list_knowledge_sources(campaign_id)
-    except Exception:
-        return []
+    sources = repository.list_knowledge_sources(campaign_id)
     snapshot: list[dict[str, Any]] = []
     for source in sources:
         if getattr(source, "status", "") != "approved":

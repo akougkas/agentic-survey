@@ -153,10 +153,7 @@ async def redeem_invite(
         pinned_endpoint=settings.default_interviewer_endpoint,
     )
     # docs/AGENTS.md promises the Interviewer is pinned for the session's lifetime.
-    try:
-        get_endpoint_pool().pin_session(session.id, settings.default_interviewer_endpoint)
-    except KeyError:
-        pass
+    get_endpoint_pool().pin_session(session.id, settings.default_interviewer_endpoint)
     repository.mark_invite_used(invite.id, session.id)
     set_participant_session_cookie(response, session.participant_token, settings)
 

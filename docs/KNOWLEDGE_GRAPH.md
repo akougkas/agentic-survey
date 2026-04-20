@@ -22,4 +22,3 @@ SurrealDB stores both nodes and edges, scoped by campaign:
 - `concept`
 - `mentioned_with`
 - `contradicts`
-- `part_of_cluster`

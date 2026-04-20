@@ -39,18 +39,12 @@ EXPECTED_TABLES = {
     "interview_turn",
     "validator_result",
     "interview_event",
-    "knowledge_blob",
     "knowledge_source",
     "knowledge_chunk",
     "retrieval_audit",
     "concept",
-    "theme_cluster",
     "mentioned_with",
     "contradicts",
-    "part_of_cluster",
-    "llm_call_audit",
-    "saturation_snapshot",
-    "analyst_report",
     "campaign_export",
 }
 

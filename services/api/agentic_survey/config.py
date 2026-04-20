@@ -51,13 +51,6 @@ class Settings(BaseSettings):
     surreal_pass: str = "root"
     export_dir: str = "./campaigns"
 
-    # Campaign RAG export (M6) -------------------------------------------
-    # The ``./campaigns/{slug}/rag/`` folder is an audit artifact. SurrealDB
-    # stays the source of truth; the runtime never reads from disk. The
-    # writer reuses ``export_dir`` as its root; a separate env var exists
-    # only as an autosync scaffold for a follow-up milestone.
-    rag_autosync: bool = False
-
     searxng_url: str = "http://searxng:8080"
 
     # Web search (M3) -----------------------------------------------------

@@ -82,9 +82,9 @@ async def process_source(
         extracted = await _fetch(source, cfg, repository, on_progress)
 
         await _advance(repository, source_id, "extracting", on_progress)
-        if len(extracted) < _min_chars(cfg):
+        if len(extracted) < cfg.ingest_min_chars:
             raise Tier1Insufficient(
-                f"extracted body below min_chars={_min_chars(cfg)} ({len(extracted)} chars)"
+                f"extracted body below min_chars={cfg.ingest_min_chars} ({len(extracted)} chars)"
             )
 
         await _advance(repository, source_id, "chunking", on_progress)
@@ -221,19 +221,19 @@ async def _fetch(
     if source.kind == "pdf":
         return await fetch_pdf(
             url,
-            min_chars=_min_chars(settings),
-            timeout_seconds=float(getattr(settings, "ingest_http_timeout_seconds", 60.0)),
+            min_chars=settings.ingest_min_chars,
+            timeout_seconds=settings.ingest_http_timeout_seconds,
         )
 
     if source.kind == "url":
         try:
             return await fetch_html(
                 url,
-                min_chars=_min_chars(settings),
-                timeout_seconds=float(getattr(settings, "ingest_http_timeout_seconds", 30.0)),
+                min_chars=settings.ingest_min_chars,
+                timeout_seconds=settings.ingest_http_timeout_seconds,
             )
         except Tier1Insufficient as exc:
-            if not bool(getattr(settings, "ingest_crawl4ai", True)):
+            if not settings.ingest_crawl4ai:
                 raise
             logger.info("tier-1 insufficient for %s, escalating to crawl4ai", url)
             try:
@@ -255,17 +255,11 @@ async def _fetch(
             )
             return await fetch_with_crawl4ai(
                 url,
-                min_chars=_min_chars(settings),
-                timeout_seconds=float(
-                    getattr(settings, "ingest_crawl4ai_timeout_seconds", 60.0)
-                ),
+                min_chars=settings.ingest_min_chars,
+                timeout_seconds=settings.ingest_crawl4ai_timeout_seconds,
             )
 
     raise SourceNotFetchable(f"kind={source.kind!r} is not fetchable by the worker")
-
-
-def _min_chars(settings: Any) -> int:
-    return int(getattr(settings, "ingest_min_chars", 500))
 
 
 async def _advance(

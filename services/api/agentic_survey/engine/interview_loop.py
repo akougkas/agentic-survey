@@ -419,15 +419,11 @@ def _list_approved_grounding_sources(repository, campaign_id: str) -> list[dict[
     """Snapshot approved knowledge sources for the Brain-B grounding tool.
 
     Kept symmetrical with the Designer helper so Brain B sees the same shape
-    on either surface. Failure isolates: an exception here never breaks the
-    interview loop.
+    on either surface.
     """
     if repository is None:
         return []
-    try:
-        sources = repository.list_knowledge_sources(campaign_id)
-    except Exception:
-        return []
+    sources = repository.list_knowledge_sources(campaign_id)
     snapshot: list[dict[str, Any]] = []
     for source in sources:
         if getattr(source, "status", "") != "approved":

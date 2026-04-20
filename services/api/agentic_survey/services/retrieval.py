@@ -16,15 +16,12 @@ drawer looks identical in either case.
 from __future__ import annotations
 
 import hashlib
-import logging
 from typing import Any, Callable, Literal
 
 from agentic_survey.engine.retrieval_cache import RetrievalCache, RetrievalCacheEntry
 from agentic_survey.repository import ChunkHit
 from agentic_survey.services.retrieval_embed import RetrievalError, embed_query
 from agentic_survey.services.retrieval_fusion import rrf_fuse
-
-logger = logging.getLogger(__name__)
 
 __all__ = [
     "RetrievalError",
@@ -215,7 +212,7 @@ def _cache_lookup(
             # entry was written. Skip it; Brain B sees a short list rather
             # than a dangling id.
             continue
-        source = _safe_get_source(repository, chunk.source_id)
+        source = repository.get_knowledge_source(chunk.source_id)
         hits.append(
             ChunkHit(
                 chunk_id=chunk.id,
@@ -228,15 +225,6 @@ def _cache_lookup(
             )
         )
     return hits
-
-
-def _safe_get_source(repository, source_id: str):
-    """Source titles are nice-to-have; never let a missing row crash retrieval."""
-    try:
-        return repository.get_knowledge_source(source_id)
-    except Exception:
-        logger.exception("get_knowledge_source failed", extra={"source_id": source_id})
-        return None
 
 
 def _write_audit(

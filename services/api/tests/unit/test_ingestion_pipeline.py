@@ -21,6 +21,7 @@ class _Settings:
     ingest_min_chars: int = 20
     ingest_crawl4ai: bool = False
     ingest_http_timeout_seconds: float = 5.0
+    ingest_crawl4ai_timeout_seconds: float = 5.0
     freshness_poll_seconds: int = 30
 
 
