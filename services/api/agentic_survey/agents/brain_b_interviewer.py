@@ -40,6 +40,36 @@ def _brain_b_response_format() -> dict[str, Any]:
     }
 
 
+_DISCUSS_MORE = "Discuss this more."
+
+
+def _normalize_discuss_more(raw: str) -> str:
+    """Ensure ``get_user_input.options`` ends with 'Discuss this more.'.
+
+    Mirror of the Designer's normalizer — local models do not always honor
+    the contract verbatim, and cosmetic prompt lapses should not blow up
+    the whole turn. Falls through on unparseable output so existing
+    ValidationError diagnostics remain intact.
+    """
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    gui = payload.get("get_user_input")
+    if not isinstance(gui, dict):
+        return raw
+    options = gui.get("options")
+    if not isinstance(options, list) or not options:
+        return raw
+    cleaned: list[str] = [str(opt).strip() for opt in options if str(opt).strip()]
+    cleaned = [opt for opt in cleaned if opt.lower() != _DISCUSS_MORE.lower()]
+    cleaned = cleaned[:4]
+    cleaned.append(_DISCUSS_MORE)
+    gui["options"] = cleaned
+    payload["get_user_input"] = gui
+    return json.dumps(payload)
+
+
 def _extract_message_content(response: object) -> str:
     choices = response.get("choices") if isinstance(response, dict) else getattr(response, "choices", None)
     if not choices:
@@ -97,6 +127,7 @@ async def run_brain_b_interviewer(
             metadata={"surface": "interviewer", "brain": "B", "attempt": attempt},
         )
         raw_output = _extract_message_content(response)
+        raw_output = _normalize_discuss_more(raw_output)
         try:
             intent = BrainBIntent.model_validate_json(raw_output)
         except (ValidationError, ValueError) as exc:
