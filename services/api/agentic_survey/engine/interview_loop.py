@@ -260,12 +260,14 @@ async def run_interview_turn(
             cache.put(refreshed.id, query, chunk_ids, scores)
         return results
 
+    grounding_snapshot = _list_approved_grounding_sources(repository, campaign.id)
     intent = await run_brain_b_interviewer(
         outline=campaign.outline,
         transcript_tail=transcript_tail,
         session_signals=signals,
         router=router,
         search_knowledge=_cached_search,
+        list_grounding_sources=lambda: grounding_snapshot,
     )
 
     if intent.should_close:
@@ -406,6 +408,35 @@ def _extract_chunk_text(chunk: object) -> str:
     if isinstance(delta, dict):
         return str(delta.get("content") or "")
     return str(getattr(delta, "content", "") or "")
+
+
+def _list_approved_grounding_sources(repository, campaign_id: str) -> list[dict[str, Any]]:
+    """Snapshot approved knowledge sources for the Brain-B grounding tool.
+
+    Kept symmetrical with the Designer helper so Brain B sees the same shape
+    on either surface. Failure isolates: an exception here never breaks the
+    interview loop.
+    """
+    if repository is None:
+        return []
+    try:
+        sources = repository.list_knowledge_sources(campaign_id)
+    except Exception:
+        return []
+    snapshot: list[dict[str, Any]] = []
+    for source in sources:
+        if getattr(source, "status", "") != "approved":
+            continue
+        snapshot.append(
+            {
+                "id": getattr(source, "id", ""),
+                "title": getattr(source, "title", ""),
+                "kind": getattr(source, "kind", ""),
+                "status": getattr(source, "status", ""),
+                "rationale": getattr(source, "rationale", ""),
+            }
+        )
+    return snapshot
 
 
 def _transcript_tail(session: InterviewSessionRecord, *, tail: int = 6) -> list[dict[str, Any]]:

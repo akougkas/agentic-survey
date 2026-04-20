@@ -122,6 +122,35 @@ async def _noop_search_knowledge(query: str, k: int) -> list[dict[str, Any]]:
     return []
 
 
+def _list_approved_grounding_sources(repository, campaign_id: str) -> list[dict[str, Any]]:
+    """Snapshot approved knowledge sources for the Brain-B grounding tool.
+
+    Returns a compact shape (id, title, kind, status, rationale) so Brain B
+    can reason about what is already on hand without getting buried in chunk
+    bodies. The search_knowledge tool remains the path to actual content.
+    """
+    if repository is None:
+        return []
+    try:
+        sources = repository.list_knowledge_sources(campaign_id)
+    except Exception:
+        return []
+    snapshot: list[dict[str, Any]] = []
+    for source in sources:
+        if getattr(source, "status", "") != "approved":
+            continue
+        snapshot.append(
+            {
+                "id": getattr(source, "id", ""),
+                "title": getattr(source, "title", ""),
+                "kind": getattr(source, "kind", ""),
+                "status": getattr(source, "status", ""),
+                "rationale": getattr(source, "rationale", ""),
+            }
+        )
+    return snapshot
+
+
 async def run_designer_turn(
     *,
     campaign: Campaign,
@@ -149,13 +178,13 @@ async def run_designer_turn(
         if repository is not None
         else _noop_search_knowledge
     )
+    grounding_sources = _list_approved_grounding_sources(repository, campaign.id)
     intent = await run_brain_b_designer(
         outline=outline,
         transcript_tail=transcript_tail,
         router=router,
         search_knowledge=search_fn,
-        get_outline_state=lambda: outline,
-        list_grounding_sources=lambda: [],
+        list_grounding_sources=lambda: grounding_sources,
         propose_outline_patch=_propose,
     )
 
