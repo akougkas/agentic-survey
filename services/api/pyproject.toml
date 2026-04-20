@@ -20,6 +20,9 @@ dependencies = [
 dev = [
   "pytest>=8.3",
 ]
+ingest = [
+  "crawl4ai>=0.4",
+]
 
 [build-system]
 requires = ["hatchling"]

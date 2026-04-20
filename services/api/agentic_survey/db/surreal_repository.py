@@ -1004,12 +1004,20 @@ class SurrealRepository:
         *,
         status: KnowledgeSourceStatus,
         approved_by: str | None = None,
+        error_detail: str | None = None,
     ) -> KnowledgeSource:
         now_dt = _utcnow()
         merge_payload: dict[str, Any] = {
             "status": status,
             "updated_at": now_dt,
         }
+        if error_detail is not None:
+            # Empty string clears the detail; any other string sets it.
+            # ``None`` (the default) preserves the prior value so the UI
+            # can show a tier-1-insufficient note through the tier-2
+            # fallback until the source reaches ``pending_approval`` or
+            # ``failed``.
+            merge_payload["error_detail"] = error_detail or None
         if status == "approved":
             merge_payload["approved_at"] = now_dt
             merge_payload["approved_by"] = approved_by or "scientist"
@@ -1034,6 +1042,39 @@ class SurrealRepository:
         if source is None:
             raise KeyError(f"knowledge_source {source_id} disappeared after status update")
         return source
+
+    def list_knowledge_sources_by_status(
+        self,
+        statuses: list[KnowledgeSourceStatus],
+    ) -> list[KnowledgeSource]:
+        if not statuses:
+            return []
+        rows = self._query(
+            "SELECT * FROM knowledge_source WHERE status INSIDE $statuses ORDER BY updated_at;",
+            {"statuses": list(statuses)},
+        )
+        return [self._row_to_knowledge_source(row) for row in rows or []]
+
+    def list_knowledge_chunks_for_source(self, source_id: str) -> list[KnowledgeChunk]:
+        rows = self._query(
+            "SELECT * FROM knowledge_chunk WHERE source = $src ORDER BY position;",
+            {"src": RecordID("knowledge_source", source_id)},
+        )
+        return [self._row_to_knowledge_chunk(row) for row in rows or []]
+
+    def update_knowledge_chunk_embedding(
+        self,
+        chunk_id: str,
+        embedding: list[float],
+    ) -> None:
+        if len(embedding) != 768:
+            raise ValueError(
+                f"knowledge_chunk embedding must be 768-dim, got {len(embedding)}"
+            )
+        self._query(
+            "UPDATE type::thing('knowledge_chunk', $cid) SET embedding = $vec;",
+            {"cid": chunk_id, "vec": [float(x) for x in embedding]},
+        )
 
     def create_knowledge_chunk(
         self,

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import logging
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 from agentic_survey.auth import require_admin_session
 from agentic_survey.repository import (
@@ -9,6 +13,8 @@ from agentic_survey.repository import (
     KnowledgeSource,
     get_repository,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin/campaigns",
@@ -95,6 +101,63 @@ async def reject_knowledge_source(
         source=updated,
         chunk_count=repository.count_chunks_for_source(source_id),
     )
+
+
+class EnqueueUrlRequest(BaseModel):
+    url: HttpUrl
+    title: str = ""
+    kind: Literal["url", "pdf"] = "url"
+    rationale: str = ""
+
+
+class EnqueueResponse(BaseModel):
+    source: KnowledgeSource
+
+
+@router.post("/{campaign_id}/knowledge/upload-url")
+async def upload_url_source(
+    campaign_id: str,
+    payload: EnqueueUrlRequest,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> EnqueueResponse:
+    """Queue a URL (or a remote PDF) for the ingestion worker to fetch.
+
+    Auto-detects PDF from the path suffix when ``kind`` is left at the
+    default ``url``. The worker walks the new row through
+    ``queued → fetching → extracting → chunking → embedding →
+    pending_approval`` and the scientist approves via the knowledge rail.
+    """
+    if repository.get_campaign(campaign_id) is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    url = str(payload.url).strip()
+    kind: Literal["url", "pdf"] = payload.kind
+    if kind == "url":
+        # Strip ``?query`` and ``#fragment`` before checking the suffix so
+        # links like ``.../paper.pdf?dl=1#page=2`` are still classified.
+        bare = url.lower().split("?", 1)[0].split("#", 1)[0]
+        if bare.endswith(".pdf"):
+            kind = "pdf"
+
+    title = payload.title.strip() or url
+    hash_value = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    source = repository.create_knowledge_source(
+        campaign_id=campaign_id,
+        kind=kind,
+        title=title[:240],
+        hash_value=hash_value,
+        url=url,
+        rationale=payload.rationale.strip(),
+        status="queued",
+    )
+    logger.info(
+        "queued knowledge_source id=%s kind=%s url=%s campaign=%s",
+        source.id,
+        source.kind,
+        source.url,
+        campaign_id,
+    )
+    return EnqueueResponse(source=source)
 
 
 @router.post("/{campaign_id}/knowledge/approve-all-seeds")

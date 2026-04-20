@@ -5,8 +5,8 @@ This is the single source of truth for the multi-milestone work turning Mira int
 ## TL;DR for a fresh session
 
 - **Plan source:** `~/.claude/plans/merry-snuggling-kahn.md` (identical content, older copy).
-- **What's done:** M1 shipped in commits `d6daca8`, `9f5d2da`. Tool-calling Brain B works live against mini (Gemma-4) + dynamo (Nemotron) on localhost.
-- **What's next:** M2 (ingestion pipeline with tiered fetchers + embeddings). See §M2 below.
+- **What's done:** M1 shipped (`d6daca8`, `9f5d2da`); M2 shipped (this commit). Tool-calling Brain B works live; the ingestion worker drains queued URL/PDF sources end-to-end with real 768-dim Nomic embeddings.
+- **What's next:** M3 (web search: SearXNG primary, DDG fallback, scientist-gated). See `~/.claude/plans/merry-snuggling-kahn.md` §M3.
 - **Locked decisions (user-approved):**
   - Scope: full agentic toolset (M1–M8).
   - Fetcher: tiered — `httpx + readability-lxml + pypdf` first, escalate to `crawl4ai` for JS-heavy pages.
@@ -49,9 +49,24 @@ Delivered:
 - Terminal `BrainBIntent` carried `retrieval_used=true`, `retrieval_chunks=["kchunk-4761e273d7e7"]`, quoted the chunk verbatim.
 - 32 seconds per turn with 2 tool calls. "Discuss this more." chip invariant holds.
 
-### M2 — Ingestion pipeline (next)
+### M2 — Ingestion pipeline ✅ shipped
 
-Goal: `knowledge_source.status=queued` rows walk through `fetching → extracting → chunking → embedding → pending_approval` automatically. Scientist approves via existing knowledge rail. Nomic embeddings populate `knowledge_chunk.embedding`.
+Delivered:
+- `services/ingestion/{__init__,pipeline,embed}.py` — `process_source(source_id, repository, router)` linear state machine (`queued → fetching → extracting → chunking → embedding → pending_approval`), `run_once` / `run_forever` worker loop.
+- `services/ingestion/fetchers/{http,pdf,crawl4ai}.py` — tier-1 `httpx + readability-lxml` and `pypdf`; tier-2 `crawl4ai` lazy-imported and flag-gated.
+- `services/knowledge_ingest.py` — `url`/`pdf` seeds create `status=queued` rows; `raw_text` seeds stay chunked synchronously (unchanged).
+- `tools/freshness.py` — rewritten as the real worker CLI (`python -m agentic_survey.tools.freshness [--once]`).
+- `api/knowledge.py` — `POST /admin/campaigns/{id}/knowledge/upload-url` enqueues URL (auto-detects `.pdf` suffix).
+- `repository.py` + `db/surreal_repository.py` — `error_detail` on status updates, `list_knowledge_sources_by_status`, `list_knowledge_chunks_for_source`, `update_knowledge_chunk_embedding`.
+- `tests/unit/test_{fetchers_http,fetchers_pdf,ingestion_pipeline}.py` — 16 new tests, 41/41 green.
+- Deleted stubs: `tools/fetcher.py`, `llm/embeddings.py`.
+
+**Live smoke verified (CITADEL bundle, Surreal mode, dynamo embeddings):**
+- `POST .../knowledge/upload-url` with Wikipedia URL queued `ksrc-1f62c87bf9dc`.
+- `python -m agentic_survey.tools.freshness --once` completed in 1.5s.
+- Readability extracted 10,655 chars → 11 chunks @ ~3,100 chars each.
+- Nomic Embed Text v2 MoE returned 768-dim embeddings (first chunk starts `-0.0393…`, clearly non-zero).
+- Source status `pending_approval`, `retrieval_audit` unaffected (approval path untouched).
 
 ### M3 — Web search (scientist-gated)
 
@@ -112,6 +127,19 @@ Any future milestone should know these so they don't re-litigate:
 13. **Bundle paths.** The active bundle is `citadl/bundle` (via `SURVEY_PRODUCT_BUNDLE_DIR`). The `from-seed` endpoint expects `seed_slug`, not `slug` — field name landmine.
 
 14. **Cookie jar dies on API reload.** Every `--reload` invalidates the admin session cookie. Re-login after any file save if you're scripting curl probes.
+
+## Gotchas discovered during M2
+
+15. **SurrealDB 2.6 record IDs need backticks in SQL when they contain hyphens.** `SELECT … WHERE id = knowledge_source:ksrc-1f62c87bf9dc` silently returns `[]` because the parser reads it as `knowledge_source:ksrc` minus literal `1f62c87bf9dc`. Always write `knowledge_source:\`ksrc-1f62c87bf9dc\``. The driver (RecordID) handles quoting itself; this only matters in the CLI / REPL.
+16. **Surreal aggregation syntax.** `SELECT count() AS n FROM … GROUP BY status` fails without the grouped field in the projection. Write `SELECT status, count() AS n FROM … GROUP BY status` instead. For a single-row total, use `GROUP ALL`.
+17. **Array slicing `embedding[0:5]` is not available in SurrealDB 2.6.** Index a single position (`embedding[0]`) for smoke tests; there is no `array::slice(start, end)` either. Dump to JSON and slice client-side if you must.
+18. **`/api/system/context` exposes bundle identity but not runtime mode.** When debugging "is this process in `memory` or `surreal`?" you cannot tell from the HTTP surface — check `/proc/$PID/environ` or query SurrealDB directly. (Candidate follow-up: expose `repository` in the context response.)
+19. **`embedding` model routes through the dynamo endpoint.** `litellm_config.yaml` pins `api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}` for the `embeddings` model, so whichever LM Studio you point dynamo at must serve Nomic. If embeddings 404, check which model is loaded on dynamo, not the endpoint.
+20. **`crawl4ai` is an optional extra.** M2 ships with `crawl4ai` lazy-imported from `services/ingestion/fetchers/crawl4ai.py`. It is listed in `[project.optional-dependencies].ingest`, NOT the main deps. Install with `uv pip install -e '.[ingest]'` when you need tier-2 escalation. The code raises a helpful `FetcherError` pointing at this install line if the package is missing and the feature flag is on.
+21. **PDFs have no tier-2 escalation.** `fetch_pdf` failing raises `Tier1Insufficient` → pipeline marks source `failed`. Crawl4ai's magic mode is for HTML/JS pages, not binary PDFs; don't wire it up for PDFs.
+22. **`KnowledgeChunk` Pydantic model doesn't carry the embedding vector.** Embeddings live only in Surreal (`knowledge_chunk.embedding`). `repository.update_knowledge_chunk_embedding(chunk_id, vec)` writes them; there is no `chunk.embedding` field on the Python model. For tests that care, the InMemory repo exposes `get_chunk_embedding(chunk_id)`.
+23. **`update_knowledge_source_status` preserves `error_detail` by default; pass `error_detail=""` to clear.** Callers that omit the argument get preservation so a tier-1-insufficient note written during `fetching` survives through `extracting → chunking → embedding`. The pipeline explicitly clears at `pending_approval` (`error_detail=""`) and overwrites with a new string on `failed`. The UI can show the last-known note without losing it on intermediate retries.
+24. **Worker idempotency is status-gated, not lock-based.** Two workers hitting the same source simultaneously would both see `status=queued` and race. M2 ships a single-worker assumption (one `tools.freshness` process). If we ever parallelize, wrap the first status transition in a conditional SurrealQL `WHERE status = 'queued'` to claim-or-skip.
 
 ---
 
@@ -208,7 +236,43 @@ SQL
 
 ---
 
-## M2 plan (next milestone — detailed)
+## M2 smoke-test protocol (executable)
+
+```bash
+# Preconditions: SurrealDB up, migrations applied, api-dev running in surreal mode.
+rm -f /tmp/cj
+curl -sS -c /tmp/cj -X POST http://localhost:8100/api/admin/login \
+  -H 'content-type: application/json' -d '{"password":"change-me"}'
+CID=$(curl -sS -b /tmp/cj -X POST http://localhost:8100/api/campaigns/from-seed \
+  -H 'content-type: application/json' -d '{"seed_slug":"domain-scientists"}' | jq -r .id)
+curl -sS -b /tmp/cj -X POST \
+  "http://localhost:8100/api/admin/campaigns/$CID/knowledge/upload-url" \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://en.wikipedia.org/wiki/Research_design","title":"Research design"}'
+
+# Drain the queue once.
+SURVEY_REPOSITORY=surreal SURVEY_LLM_ENABLED=true \
+  uv run python -m agentic_survey.tools.freshness --once
+
+# Verify status.
+curl -sS -b /tmp/cj "http://localhost:8100/api/admin/campaigns/$CID/knowledge" \
+  | jq '.by_status | keys'
+
+# Verify embeddings were written.
+docker exec -i infra-surrealdb-1 /surreal sql \
+  --endpoint http://localhost:8000 --namespace agentic_survey --database prod \
+  --username root --password root --pretty <<SQL
+SELECT position, array::len(embedding) AS dim, embedding[0] AS first
+FROM knowledge_chunk
+WHERE source = knowledge_source:\`ksrc-...\` ORDER BY position LIMIT 2;
+SQL
+```
+
+Pass criteria: status goes `queued → pending_approval` within one tick; `dim=768`; first value is a non-zero float.
+
+---
+
+## M2 plan (shipped — retained for provenance)
 
 **Goal:** `knowledge_source.status=queued` rows march through `fetching → extracting → chunking → embedding → pending_approval` automatically. Scientists approve via the existing knowledge rail.
 

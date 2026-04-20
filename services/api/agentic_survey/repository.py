@@ -323,6 +323,7 @@ class InMemoryRepository:
         self._knowledge_chunks_by_source: dict[str, list[str]] = {}
         self._retrieval_audits: dict[str, RetrievalAuditRow] = {}
         self._retrieval_audits_by_campaign: dict[str, list[str]] = {}
+        self._chunk_embeddings: dict[str, list[float]] = {}
         self._seed_catalog_locked()
 
     def create_admin_session(self, ttl_hours: int) -> AdminSession:
@@ -972,11 +973,19 @@ class InMemoryRepository:
         *,
         status: KnowledgeSourceStatus,
         approved_by: str | None = None,
+        error_detail: str | None = None,
     ) -> KnowledgeSource:
         with self._lock:
             source = self._knowledge_sources[source_id]
             source.status = status
             source.updated_at = _timestamp()
+            if error_detail is not None:
+                # Empty string explicitly clears; any other string sets.
+                # ``None`` (the default) preserves the prior value so the UI
+                # can show a tier-1-insufficient note through the tier-2
+                # fallback until the source reaches ``pending_approval`` or
+                # ``failed``.
+                source.error_detail = error_detail or None
             if status == "approved":
                 source.approved_at = source.updated_at
                 source.approved_by = approved_by or "scientist"
@@ -992,6 +1001,55 @@ class InMemoryRepository:
                     if chunk is not None:
                         chunk.approved = False
             return source.model_copy(deep=True)
+
+    def list_knowledge_sources_by_status(
+        self,
+        statuses: list[KnowledgeSourceStatus],
+    ) -> list[KnowledgeSource]:
+        """Cross-campaign list used by the ingestion worker.
+
+        Sources are returned oldest-updated first so the worker drains the
+        queue in FIFO order. An empty ``statuses`` returns nothing.
+        """
+        if not statuses:
+            return []
+        wanted = set(statuses)
+        with self._lock:
+            matched = [
+                source.model_copy(deep=True)
+                for source in self._knowledge_sources.values()
+                if source.status in wanted
+            ]
+        matched.sort(key=lambda source: source.updated_at)
+        return matched
+
+    def list_knowledge_chunks_for_source(self, source_id: str) -> list[KnowledgeChunk]:
+        with self._lock:
+            ids = list(self._knowledge_chunks_by_source.get(source_id, []))
+            chunks = [self._knowledge_chunks[cid].model_copy(deep=True) for cid in ids]
+        chunks.sort(key=lambda c: c.position)
+        return chunks
+
+    def update_knowledge_chunk_embedding(
+        self,
+        chunk_id: str,
+        embedding: list[float],
+    ) -> None:
+        """Attach a vector to an existing chunk.
+
+        InMemory: stashed in a side map because ``KnowledgeChunk`` does
+        not model the embedding (the Surreal row does). Tests that care
+        about the side map read it via ``get_chunk_embedding``.
+        """
+        with self._lock:
+            if chunk_id not in self._knowledge_chunks:
+                raise KeyError(f"knowledge_chunk {chunk_id} not found")
+            self._chunk_embeddings[chunk_id] = list(embedding)
+
+    def get_chunk_embedding(self, chunk_id: str) -> list[float] | None:
+        with self._lock:
+            vec = self._chunk_embeddings.get(chunk_id)
+            return list(vec) if vec is not None else None
 
     def create_knowledge_chunk(
         self,

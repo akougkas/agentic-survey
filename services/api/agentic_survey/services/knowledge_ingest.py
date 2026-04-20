@@ -31,14 +31,15 @@ async def ingest_seed_sources(
     sources: list[SeedSource],
     repository,
 ) -> IngestResult:
-    """Synchronously persist bundle seed_sources as knowledge_source + chunks.
+    """Persist bundle seed_sources as knowledge_source rows.
 
-    Every bundle seed lands with ``kind="bundle_seed"`` and
-    ``status="pending_approval"`` per the design doc. ``raw_text`` seeds
-    are chunked immediately via ``tools.chunker.chunk_text``. ``url`` and
-    ``pdf`` seeds are recorded as pending stubs with no chunks until the
-    full fetch pipeline lands post-demo. Ingestion never aborts campaign
-    creation: failures are logged and appended to ``skipped``.
+    ``raw_text`` seeds are chunked synchronously and land as
+    ``pending_approval`` so the scientist can approve them before the
+    campaign goes live. ``url`` and ``pdf`` seeds land as ``kind=url|pdf``
+    with ``status=queued``; the M2 ingestion worker picks them up and
+    walks them through ``fetching → extracting → chunking → embedding →
+    pending_approval``. Ingestion never aborts campaign creation; per-seed
+    failures are logged and appended to ``skipped``.
     """
     created_source_ids: list[str] = []
     created_chunk_count = 0
@@ -73,15 +74,17 @@ async def ingest_seed_sources(
                 created_source_ids.append(source.id)
                 created_chunk_count += len(spans)
             elif seed.kind in {"url", "pdf"}:
-                hash_payload = seed.url or seed.title
+                if not seed.url:
+                    skipped.append(f"{seed.title}: {seed.kind} seed missing url")
+                    continue
                 source = repository.create_knowledge_source(
                     campaign_id=campaign_id,
-                    kind="bundle_seed",
+                    kind=seed.kind,
                     title=seed.title,
-                    hash_value=_hash_content(hash_payload or seed.title),
+                    hash_value=_hash_content(seed.url),
                     url=seed.url,
                     rationale=seed.rationale,
-                    status="pending_approval",
+                    status="queued",
                 )
                 created_source_ids.append(source.id)
             else:

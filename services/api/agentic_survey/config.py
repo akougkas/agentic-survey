@@ -53,6 +53,13 @@ class Settings(BaseSettings):
 
     searxng_url: str = "http://searxng:8080"
 
+    # Ingestion worker (M2) -----------------------------------------------
+    freshness_poll_seconds: int = 30
+    ingest_min_chars: int = 500
+    ingest_crawl4ai: bool = True
+    ingest_http_timeout_seconds: float = 30.0
+    ingest_crawl4ai_timeout_seconds: float = 60.0
+
     mini_endpoint_url: str = "http://mini:8080/v1"
     mini_model: str = "gemma-4-26B-A4B-it-Q4_K_M"
     dynamo_endpoint_url: str = "http://dynamo:1234/v1"
