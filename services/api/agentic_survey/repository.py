@@ -205,6 +205,7 @@ class InterviewSessionRecord(BaseModel):
     close_reason: str | None = None
     paused_reason: str | None = None
     abandoned_reason: str | None = None
+    micro_form_answers: dict[str, str] = Field(default_factory=dict)
     turns: list[InterviewTurnRecord] = Field(default_factory=list)
 
 
@@ -704,6 +705,7 @@ class InMemoryRepository:
         identity_label: str,
         persona_snapshot: dict,
         pinned_endpoint: str,
+        micro_form_answers: dict[str, str] | None = None,
     ) -> InterviewSessionRecord:
         now = _timestamp()
         session = InterviewSessionRecord(
@@ -718,6 +720,7 @@ class InMemoryRepository:
             status="active",
             started_at=now,
             updated_at=now,
+            micro_form_answers=dict(micro_form_answers) if micro_form_answers else {},
         )
         with self._lock:
             self._interview_sessions[session.id] = session

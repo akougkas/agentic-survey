@@ -86,7 +86,7 @@ def seed_entries() -> list[CatalogEntry]:
             model_id=dynamo_model,
             label=f"{dynamo_model} (Brain B on dynamo)",
             is_default=True,
-            reasoning_mode="on",
+            reasoning_mode="off",
             reasoning_kwarg="enable_thinking",
         ),
         CatalogEntry(
@@ -96,8 +96,8 @@ def seed_entries() -> list[CatalogEntry]:
             model_id=dynamo_model,
             label=f"{dynamo_model} (Validator on dynamo, reasoning budget)",
             is_default=True,
-            reasoning_mode="budget",
-            reasoning_budget_tokens=2048,
+            reasoning_mode="off",
+            reasoning_budget_tokens=None,
             reasoning_kwarg="enable_thinking",
         ),
         CatalogEntry(

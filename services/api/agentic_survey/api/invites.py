@@ -8,6 +8,7 @@ from agentic_survey.auth import (
     set_participant_session_cookie,
 )
 from agentic_survey.config import Settings, get_settings
+from agentic_survey.domain.outline import MicroFormField
 from agentic_survey.engine.state_machine import CampaignState
 from agentic_survey.llm.client import get_endpoint_pool
 from agentic_survey.repository import (
@@ -50,6 +51,7 @@ class InviteInfoResponse(BaseModel):
 class RedeemInviteRequest(BaseModel):
     consent_mode: str = Field(pattern="^(anonymous|named)$")
     identity_label: str = ""
+    micro_form_answers: dict[str, str] = Field(default_factory=dict)
 
 
 class RedeemInviteResponse(BaseModel):
@@ -144,6 +146,11 @@ async def redeem_invite(
             detail=f"Campaign is not accepting participants (state={campaign.state})",
         )
 
+    sanitized_answers = _validate_micro_form_answers(
+        schema=campaign.outline.micro_form_schema,
+        answers=payload.micro_form_answers,
+    )
+
     session = repository.start_interview_session(
         campaign_id=campaign.id,
         invite_id=invite.id,
@@ -151,6 +158,7 @@ async def redeem_invite(
         identity_label=payload.identity_label,
         persona_snapshot=dict(campaign.outline.persona_hints),
         pinned_endpoint=settings.default_interviewer_endpoint,
+        micro_form_answers=sanitized_answers,
     )
     # docs/AGENTS.md promises the Interviewer is pinned for the session's lifetime.
     get_endpoint_pool().pin_session(session.id, settings.default_interviewer_endpoint)
@@ -165,3 +173,30 @@ def _load_campaign(repository: InMemoryRepository, campaign_id: str) -> Campaign
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return campaign
+
+
+def _validate_micro_form_answers(
+    *,
+    schema: list[MicroFormField],
+    answers: dict[str, str],
+) -> dict[str, str]:
+    sanitized: dict[str, str] = {}
+    for field in schema:
+        raw = answers.get(field.key, "")
+        value = raw.strip() if isinstance(raw, str) else ""
+        if field.required and not value:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Missing required micro-form field '{field.key}'.",
+            )
+        if field.field_type == "single_select" and value and field.options:
+            if value not in field.options:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Micro-form field '{field.key}' value is not one of the allowed options."
+                    ),
+                )
+        if value:
+            sanitized[field.key] = value
+    return sanitized

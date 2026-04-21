@@ -28,6 +28,27 @@ def _load_chatter_prompt(prompt_md_path: str) -> str:
     return f"{_persona_preamble()}\n\n{_load_prompt(prompt_md_path)}"
 
 
+def _format_participant_context(context: dict[str, str] | None) -> str:
+    if not context:
+        return ""
+    lines: list[str] = []
+    for key, raw_value in context.items():
+        if not isinstance(raw_value, str):
+            continue
+        value = raw_value.strip()
+        if not value:
+            continue
+        lines.append(f'- {key}: "{value}"')
+    if not lines:
+        return ""
+    return (
+        "The respondent answered the pre-interview micro-form as follows:\n"
+        + "\n".join(lines)
+        + "\n\nCalibrate your register from turn one. Mirror their vocabulary. "
+        "Do not flatten to corporate tone."
+    )
+
+
 def _extract_chunk_text(chunk: object) -> str:
     choices = chunk.get("choices") if isinstance(chunk, dict) else getattr(chunk, "choices", None)
     if not choices:
@@ -53,22 +74,27 @@ async def stream_brain_a(
     brain_b_intent: BrainBIntent,
     persona: str,
     router,
+    participant_context: dict[str, str] | None = None,
 ) -> AsyncIterator[str]:
     """Stream Brain A's conversational reply token-by-token.
 
     ``role`` is the LiteLLM model-list alias (e.g., ``"mira-chatter"``).
     ``prompt_md_path`` resolves under ``agents/prompts/`` when relative.
-    ``brain_b_intent`` is injected as a system message; Brain A is expected
-    to render ``brain_b_intent.get_user_input.options`` verbatim at the end
-    of its prose per the designer-interview contract (chips-last). The
-    caller assembles yielded tokens; if the assembled reply lacks the chip
-    rendering, the orchestrator raises rather than fabricating it.
+    ``brain_b_intent`` is injected as a system message; the UI renders
+    ``get_user_input.options`` separately as chip buttons, so Brain A must
+    not echo them inside the prose body. ``participant_context`` carries
+    pre-interview micro-form answers; when present, a calibration system
+    message is inserted before persona hints so tone and vocabulary align
+    from the first token.
     """
     system_prompt = _load_chatter_prompt(prompt_md_path)
     persona_blob = persona.strip()
     intent_blob = brain_b_intent.model_dump_json(indent=2)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+    context_block = _format_participant_context(participant_context)
+    if context_block:
+        messages.append({"role": "system", "content": context_block})
     if persona_blob:
         messages.append({"role": "system", "content": f"Persona hints:\n{persona_blob}"})
     messages.extend(transcript_tail)
@@ -76,8 +102,9 @@ async def stream_brain_a(
         {
             "role": "system",
             "content": (
-                "Brain B intent for this turn. Do not repeat the JSON; render "
-                "get_user_input.options verbatim as chips at the end of your prose.\n"
+                "Brain B intent for this turn. Render the next probe as short "
+                "natural prose. Do NOT print the chip options inside your reply "
+                "text; the UI displays them separately.\n"
                 f"{intent_blob}"
             ),
         }

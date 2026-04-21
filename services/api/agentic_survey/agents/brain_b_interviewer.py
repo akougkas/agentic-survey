@@ -45,6 +45,7 @@ async def run_brain_b_interviewer(
     list_grounding_sources: Callable[[], list[dict[str, Any]]] | None = None,
     graph_neighborhood: GraphNeighborhood | None = None,
     max_tool_calls: int = 4,
+    participant_context: dict[str, str] | None = None,
 ) -> BrainBIntent:
     """Run Interviewer Brain B as a tool-calling agent.
 
@@ -70,6 +71,20 @@ async def run_brain_b_interviewer(
         "Session signals (advisory; close is still your call):\n"
         + session_signals.model_dump_json(indent=2),
     ]
+    context_lines: list[str] = []
+    if participant_context:
+        for key, raw_value in participant_context.items():
+            if not isinstance(raw_value, str):
+                continue
+            value = raw_value.strip()
+            if not value:
+                continue
+            context_lines.append(f'- {key}: "{value}"')
+    if context_lines:
+        system_context.append(
+            "Participant self-description (from pre-interview micro-form):\n"
+            + "\n".join(context_lines)
+        )
     result = await run_brain_b_with_tools(
         surface="interviewer",
         system_context=system_context,

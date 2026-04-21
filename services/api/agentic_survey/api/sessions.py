@@ -122,7 +122,7 @@ async def start_participant_loop(
     repository.append_interview_turn(
         session.id,
         role="agent",
-        content=opening_turn_message(campaign),
+        content=opening_turn_message(campaign, session),
     )
     session = repository.get_interview_session(session.id)  # type: ignore[assignment]
     assert session is not None

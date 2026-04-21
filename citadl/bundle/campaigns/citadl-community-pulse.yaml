@@ -1,0 +1,502 @@
+slug: citadl-community-pulse
+title: CITADL Community Pulse — Adaptive Interviews on the Future of Agentic Data Lifecycle Management
+description: 'A single conversational study, conducted entirely by Mira, that replaces the traditional multi-survey approach. One interview instrument adapts per respondent across roles (domain scientists, facility operators, tool and library developers, AI/ML practitioners, institutional leads) and across scientific domains. Mira infers the respondent''s profile from the opening turns, modulates her register accordingly, and selects probes from a structured rubric so that every conversation contributes coverage to the same eight-axis evidence map that will inform the Category I CITADL IDSS proposal.
+
+  '
+min_n: 120
+max_n: 500
+outline:
+  research_question: 'What is the actual shape of community pain, trust, and desired agency across the scientific data lifecycle — mapped across roles, domains, and technical fluency — that must ground the architecture, governance, and sustainability decisions of the Category I CITADL IDSS proposal?
+
+    '
+  sampling_frame: 'Active participants in the U.S. scientific research and cyberinfrastructure ecosystem who have direct experience with scientific data at any phase of its lifecycle. Includes domain scientists and research engineers across materials, biology, chemistry, neuroscience, earth sciences, agriculture, additive manufacturing, healthcare, aerospace, physics, and adjacent fields; operators and architects of institutional and national computing and data facilities; developers of data management tools, libraries, and services; research software engineers embedded in scientific groups; AI/ML practitioners with applied or methods experience relevant to scientific workflows; and institutional or platform leads for national cyberinfrastructure including ACCESS, NDP, NAIRR, and domain data repositories. Recruitment proceeds through PI and Co-PI mailing lists, university lists, HPC user communities, DOE and NSF notification channels, ACCESS and NDP announcement streams, and open social
+    outreach.
+
+    '
+  exclusion_criteria: 'Participants with no direct engagement with scientific data at any lifecycle phase. Pure administrative roles with no operational exposure to data workflows. Respondents who cannot consent for themselves. Respondents whose exclusive involvement is in non-scientific applications of AI (finance, advertising, consumer chat) without any bridge to research or research-infrastructure work.
+
+    '
+  publication_intent: 'Primary input to the July 2026 Category I CITADL IDSS proposal''s preliminary-work and community-engagement sections, including the requirements-traceability matrix, the architecture blueprint evidence base, the governance framework, and the sustainability model. Secondary artifact: the aggregated concept graph and thematic analysis published internally to the CITADL planning team, with quotable excerpts used in the proposal narrative under the consent language each respondent accepts at the start of their conversation.
+
+    '
+  axes:
+  - 'R1 — Lifecycle pain topology: where friction concentrates per phase, grounded in recent concrete episodes.'
+  - 'R2 — Trust gating conditions: the geography of where autonomy is acceptable, where review is required, where human judgment is irreducible, and why.'
+  - 'R3 — Cross-phase coordination: narrative evidence of friction at the handoffs between lifecycle phases; the locus of the CITADL thesis.'
+  - 'R4 — Natural-language intent: the concrete sentences respondents wish they could say to a system and have executed.'
+  - 'R5 — Adoption ceiling gradient: the range between the first task the respondent would delegate to an agent and the last.'
+  - 'R6 — Integration constraints: role-modulated practical limits on any national agentic data infrastructure (API surface, platforms, frameworks, trust posture).'
+  - 'R7 — Community sovereignty: ownership, governance, accountability, and sustainability models the respondent would accept for a national agentic infrastructure.'
+  - 'R8 — Counter-evidence solicitation: the respondent''s strongest objection to the CITADL vision as they understood it during this conversation.'
+  objectives:
+  - Infer respondent role, domain, technical fluency, and lifecycle surface area from the opening exchange; modulate probe selection and vocabulary register accordingly.
+  - Cover R1–R8 with per-respondent depth calibrated to their role and available time; favor concrete episodes over self-assessments.
+  - Solicit and record counter-evidence (R8) on every respondent without exception.
+  - Collect the respondent's own natural-language intent sentences (R4) as a primary proposal artifact.
+  probes:
+  - Walk me through the last end-to-end data workflow you were involved with — where the data came from and where a result ended up.
+  - Where in that flow did you personally spend the most time, or where did something most recently cost you a day you did not expect to lose?
+  - When a tool or service produces something you need to trust, what do you actually do before you let that output count toward a real result?
+  - Describe a moment when a decision made at one stage of a workflow came back to haunt you at a later stage — where did the disconnect sit?
+  - If you could say one sentence to a system and have it carry out the work that would otherwise take you days, what would that sentence be?
+  - What is the first task in your workflow you would be willing to hand off to an agent, and what is the last task you would ever hand off?
+  - What would a national agentic data management infrastructure have to do — or refuse to do — to be integratable with your environment as you actually work in it today?
+  - When an agent makes a consequential error in production, who do you think should be responsible, and how do you think that should be decided?
+  - Where do you think the vision of this work, as you have understood it in this conversation, might be wrong or overstated?
+  risk_register:
+  - risk: Mira mis-classifies respondent role early and locks into the wrong register.
+    mitigation: Persona_hints instructs Brain A to hold register tentatively in the opening exchange and to correct openly if the respondent signals a different identity. Validator flags register mismatch as a scoring dimension.
+  - risk: Leading-language bias around "agentic," "autonomous," or "AI" introduced by Mira before the respondent has used the terms.
+    mitigation: Opening exchange avoids these terms until the respondent introduces them. Probes reframe around the respondent's own vocabulary when possible.
+  - risk: Selection bias toward AI-enthusiastic respondents; domain and role cell thinness.
+    mitigation: Scientist monitors micro-form self-description distributions through the operator console and adjusts outreach channels when any cohort cell appears under-filled.
+  - risk: Social-desirability inflation of rigor, trust, and adoption readiness.
+    mitigation: Probes anchor in recent failure episodes and desired-vs-actual gaps, not aspirational statements. R8 disconfirmation is fired on every respondent.
+  - risk: Probe-selection drift where Brain B repeatedly picks the easy axes (R1, R4) and neglects harder ones (R3, R8).
+    mitigation: Rubric-axis saturation scoring (runtime feature) tracks coverage per axis; Brain B prompt requires R8 coverage before close authority fires.
+  - risk: Premature close declared before R1–R8 have touched, especially on long conversations that drift.
+    mitigation: Close authority gated on rubric-axis coverage minimums; scientist can override close either direction through the operator console.
+  - risk: Respondent fatigue on open-ended conversation at 30-plus minutes; dropout before R7–R8.
+    mitigation: Brain B tracks turn count and fatigue signals; if fatigue surfaces, Brain B surfaces R8 early and closes gracefully, accepting partial coverage over dropout.
+  - risk: Bot or low-effort submissions in the public-recruitment path distorting the corpus.
+    mitigation: Validator identifies non-substantive responses per-turn; Analyst excludes sessions below a minimum-substance threshold; operator console surfaces abuse indicators.
+  grounding_sources_approved: []
+  readiness_rationale: 'The outline is ready when the research_question names the specific evidence base the Category I proposal will draw from (not just that evidence is desired); when the axes cover the full R1–R8 rubric with a distinct purpose per axis; when the probes open each axis without scripting the conversation; when the risk_register names the failure modes specific to adaptive single-campaign design (register mis-classification, probe drift, selection bias, social-desirability inflation); when the persona_hints instruct Brain A to modulate register rather than hold a fixed voice; and when the seed_sources carry enough framing for Brain B to anchor vocabulary on turn one.
+
+    '
+  decision_gate:
+    gate: scientist_approval
+    rationale: 'The scientist locks the outline at launch through a Designer session with Mira. Every subsequent participant session carries this outline snapshot so that analysis across the cohort remains internally consistent even if the outline is amended mid-campaign.
+
+      '
+  suggested_search_queries:
+  - agentic AI scientific data lifecycle requirements community engagement 2026
+  - autonomous data management trust governance national cyberinfrastructure
+  - natural language intent research workflow automation foundation models
+  - provenance reproducibility scientific workflows AI agents
+  - facility operations AI agent deployment federation identity
+  - multi-agent coordination scientific data management production
+  rubric:
+    coverage_dimensions:
+    - R1 — At least one concrete lifecycle-pain episode with phase location, frequency, and workaround described.
+    - 'R2 — Respondent''s personal trust-zone geography surfaced: at least two zones named with their acceptance conditions.'
+    - R3 — At least one cross-phase coordination failure narrated with the handoff location identified.
+    - R4 — At least one natural-language intent sentence captured, specific enough to be planning-tractable.
+    - R5 — First-delegable and last-delegable tasks both named, with the reasoning for the boundary.
+    - R6 — At least one concrete integration constraint named, role-appropriate (API, platform, framework, governance model).
+    - R7 — Respondent's view on ownership, accountability, or sustainability articulated with at least one specific model or precedent.
+    - R8 — At least one disconfirmation, objection, or critique of the CITADL vision surfaced and probed.
+    risk_checks:
+    - Avoid introducing "agentic" or "autonomous" before the respondent does; probe in the respondent's own vocabulary.
+    - Anchor every abstract response in a recent concrete episode.
+    - Fire R8 on every respondent; partial coverage is better than skipping it.
+    - Correct register openly if the opening classification of the respondent proves wrong.
+    - Do not defend the vision when R8 is answered; elicit and record.
+  freshness_query: agentic AI scientific data lifecycle community requirements trust governance 2026
+  persona_hints:
+    name: Mira
+    role: 'Single adaptive field researcher who conducts the entire CITADL community study alone. Mira holds one methodological spine while modulating voice and depth across every respondent''s role, domain, and fluency.
+
+      '
+    tone: 'Measured, curious, technically literate, and honest about uncertainty. Mira matches the respondent''s register across a continuous gradient. When the respondent sounds like a practicing PI, Mira reads as a peer scientist; when they sound like a storage architect, Mira reads as a peer operator; when they sound like an AI researcher, Mira reads as a peer AI researcher. Mira never reads as corporate, as salesy, or as methodology-explaining.
+
+      '
+    behavior: 'Open with a light question that lets the respondent self-describe in one or two sentences. Use the first two or three turns to infer role, domain, and technical fluency from their vocabulary, metaphors, and what they describe as difficult. Hold the register tentatively and correct openly if the respondent signals a different identity. Ask one precise question at a time. Funnel from broad to concrete quickly; prefer recent specific episodes over abstract opinions. Select probes from the R1–R8 rubric based on what the respondent has opened and the coverage state of the conversation so far. Track which axes have been touched and which have not. Fire R8 on every respondent without exception. Close gracefully when the rubric is sufficiently covered for this respondent''s available time and attention, not when a fixed turn ceiling is reached.
+
+      '
+  consent_language: 'This is a research conversation conducted by Mira, an autonomous interview agent, for the CITADL project (Cyberinfrastructure for Intelligent, Trustworthy, Agentic Data Lifecycles). Your participation is voluntary. You can skip any question, pause at any time, or stop the conversation entirely with no explanation. You may stay anonymous or share your name and affiliation if you prefer — named responses may be quoted with attribution in the resulting NSF proposal and internal project artifacts. Everything you say is stored privately on infrastructure operated by the CITADL planning team, accessed only by team members, and used to inform the architecture and governance of a proposed national agentic data management infrastructure. No email or identifying information is collected beyond what you volunteer. The conversation will take roughly twenty to forty minutes depending on how much of your experience you choose to share.
+
+    '
+  micro_form_schema:
+  - key: evidence_of_belonging
+    label: In a sentence or two, what do you work on with scientific or research data? Answer however is natural for you — role, domain, a recent project, what you spend your time on.
+    field_type: long_text
+    required: true
+  - key: role_self_description
+    label: If you had to pick one, which describes your primary relationship to scientific data? (Optional; Mira will infer this from the conversation regardless.)
+    field_type: single_select
+    required: false
+    options:
+    - Research scientist or engineer generating or analyzing data
+    - Facility operator or systems administrator
+    - Tool, library, or service developer
+    - Research software engineer supporting scientific applications
+    - AI or ML researcher or practitioner
+    - Institutional or platform lead
+    - Other or multiple of the above
+  scientist_summary: 'The CITADL Community Pulse is a single unified interview campaign that replaces the traditional split into role-specific surveys. One instrument, conducted entirely by Mira, adapts per respondent across the R1–R8 rubric while maintaining internal consistency for cohort analysis. The artifact supports the Category I CITADL IDSS proposal due in July 2026: requirements-traceability matrix, architecture evidence base, governance framework, sustainability model. Target cohort: minimum 120, aim 360, stretch 500 across two months of running conversations. The scientist locks the outline through a Designer session with Mira at launch, then monitors the live operator console and intervenes only on recruitment distribution drift, register misclassification signals, or close authority disputes. First-pass thematic coding happens through the Analyst agent after the campaign closes or reaches interim checkpoints; the scientist drives interpretation and final quote selection for
+    the proposal narrative.
+
+    '
+seed_sources:
+- kind: raw_text
+  title: CITADL lifecycle framing for Mira
+  content_inline: |
+    The scientific data lifecycle is typically decomposed into six phases:
+    Acquisition, which is where data enters the world from instruments,
+    simulations, or sensors; Preparation, which is the long tail of getting
+    raw data into analysis-ready shape through cleaning, alignment, format
+    conversion, and metadata enrichment; Storage, which is the policy
+    problem of where data lives across performance tiers; Movement, which
+    is the orchestrated transfer of data between locations; Decision
+    Support, which is analysis, discovery, and provenance tracking; and
+    Sharing, which is publication, collaboration, and archival. The six
+    phases are shorthand. The pain of scientific data work lives
+    predominantly at the handoffs between phases, where information about
+    the prior phase is typically lost and has to be reconstructed. The
+    thesis Mira is testing in every conversation is that an agentic
+    coordination layer above the existing tools, rather than better tools
+    in isolation, is what the community needs. This is a hypothesis to be
+    challenged, not a conclusion to be validated.
+  rationale: |
+    Gives Mira shared vocabulary for phases and the cross-phase coordination framing on turn one, without scripting a definition-drop into the conversation. If the respondent uses the phase vocabulary differently, Mira can adapt.
+- kind: raw_text
+  title: CITADL rubric framing for Mira
+  content_inline: |
+    Every CITADL conversation is expected to produce coverage across eight
+    rubric axes, not in a fixed order: R1 lifecycle pain topology grounded
+    in concrete episodes; R2 trust gating conditions mapped as zones of
+    autonomy acceptance, asynchronous review, synchronous oversight, and
+    refusal; R3 cross-phase coordination narratives that identify where
+    handoffs break; R4 natural-language intent sentences captured verbatim
+    as a primary artifact; R5 first-delegable and last-delegable tasks
+    that bracket the adoption ceiling; R6 role-modulated integration
+    constraints from platform to API to framework choice; R7 ownership,
+    accountability, and sustainability views on a national agentic
+    infrastructure; R8 disconfirmation, which is the respondent's
+    strongest critique of the vision and must be fired on every respondent
+    without exception. Coverage across these axes, weighted by the
+    respondent's available time and attention, governs close authority.
+    Rich grounding material for each axis — full probe phrasings, trigger
+    conditions, depth pathways — lives in the citadl-probe-bank.md
+    knowledge document. Full project context lives in the
+    citadl-vision-brief.md knowledge document. Mira retrieves from both
+    through search_knowledge when planning the next probe.
+  rationale: |
+    Anchors Brain B's planning on the eight-axis rubric and points to the two primary knowledge documents that carry the detailed grounding. Ensures Brain B knows which axes it must cover and which artifact to search when it needs deeper probe material.
+- kind: raw_text
+  title: CITADL Vision Brief — Full Context
+  content_inline: |
+    # CITADL — A Knowledge Brief for Mira
+
+    *CITADL: Cyberinfrastructure for Intelligent, Trustworthy, Agentic Data Lifecycles.*
+
+    This document gives Mira the working conceptual ground she stands on during every CITADL interview. It is not a script, not a list of questions, and not a marketing summary. It is the distilled vision she is testing against the community's real experience. When a respondent uses unfamiliar vocabulary, Mira should search this brief for the nearest shared concept. When a respondent challenges the premise, Mira should be able to recognize which part of the vision they are pushing back on and probe for the specific disagreement. Treat this as the researcher's notebook before the field starts — thick enough to ground the conversation, thin enough to stay out of the participant's way.
+
+    ## Why this work exists
+
+    Scientific productivity rhetoric and actual scientific workflow reality have drifted apart. On paper, we celebrate that experiments run faster, simulations scale wider, and storage gets cheaper every quarter. In practice, a working scientist still spends a substantial fraction of any given week copying files between systems, hand-writing provenance notes after the fact, chasing format conversions, staging data onto whatever tier has room, and reconstructing what they did three months ago so the paper figures can be regenerated. The bottleneck is not compute and it is not storage. The bottleneck is the coordination work between the two and the coordination work between the scientist and the infrastructure. Agentic AI has matured to a point where that coordination work is something an autonomous system can plausibly carry, at scale, for researchers who today carry it by hand. The community's question is not whether coordination can be automated in principle. The question is whether it can be automated in a way that scientists trust, operators will deploy, and institutions will sustain. That question is what the interviews are actually for.
+
+    ## The scientific data lifecycle, phase by phase
+
+    The field has settled on six phases as a shared frame. Each phase has a purpose, a characteristic pain, and a set of tools that address it partially. The deeper story is not inside any single phase. It is in the handoffs between phases, which is where almost all the friction concentrates.
+
+    ### Acquisition
+
+    Acquisition is where data enters the world. An instrument samples. A simulation writes to disk. A sensor network pushes events. The immediate question is always about configuration: what sampling rate, what precision, what metadata to attach at the moment of creation, what to discard before anyone has to think about it. Scientists today configure acquisition by hand or by per-experiment scripts because the instruments and the intent behind the campaign change faster than any rigid pipeline can accommodate. The pain at this phase is not that the data is missing. The pain is that the data enters the system stripped of the context that explains what it is, why it was generated, and what it was expected to show. That missing context has to be reconstructed downstream, often months later, under time pressure, with imperfect memory.
+
+    ### Preparation
+
+    Preparation is the long tail of getting raw data into analysis-ready shape. Cleaning. Outlier handling. Unit normalization. Cross-instrument alignment. Metadata enrichment so the downstream tools can find what they need. Format conversion from whatever came off the instrument into whatever the analysis pipeline expects. In most domains, this is the single most time-expensive phase, and it is also the phase scientists most want to treat as uninteresting plumbing. The irony is that the choices made during preparation silently decide which scientific questions remain askable. A study design can survive bad storage. A study design rarely survives bad preparation, because the errors are invisible by the time they matter. Agentic preparation promises not only speed but consistency across campaigns, which is the precondition for cross-campaign meta-analysis.
+
+    ### Storage
+
+    Storage is a policy problem disguised as a hardware problem. Once data exists, it has to live somewhere, and the choice of where — hot tier, warm tier, cold tier, archive, tape, cloud object store — depends on how often the data will be accessed, by whom, under what latency requirement, and for how long. Scientists today make these decisions by convenience rather than policy. The dataset lives where the person made it lives. It gets copied where someone needs it. Nothing migrates on its own. The result is that active data competes with stale data on the same hot tier, archival data that nobody has looked at in two years occupies capacity someone else needs this month, and the facility operator has no principled way to reclaim space without breaking someone's workflow. The agentic answer is not smarter tiering policies in isolation. It is tiering policies that understand what the scientist is actually doing and what they are about to do next.
+
+    ### Movement
+
+    Movement is the phase that exists because the world is not a single machine. Data that was generated at an instrument facility has to move to a compute facility to be processed. Data that was processed on a cluster has to move to a cloud repository to be shared. Data that was archived at one institution has to move across a wide-area network to collaborators at another. Every one of these moves is today a scheduled, monitored, often manually-retried operation. Globus is the state of the art and it is still a person clicking through a browser or writing a Python script for each transfer. The agentic story in movement is that data should move because a downstream job is about to need it and the system knows the job is coming — not because a human realized three hours into the job run that the data is on the wrong side of the network.
+
+    ### Decision support
+
+    Decision support is the phase most scientists don't name explicitly, which is why it is the phase most broken. It includes the moment a scientist asks "what have we done with this data before," or "what else correlates with this signal," or "where did this number come from, three derivations back." Today, each of these questions is answered by grep, by memory, by walking down the hall to ask a colleague, or by reading one's own lab notebook. Provenance systems exist but they live beside the data rather than with it. Discovery systems exist but each facility and repository has its own. The agentic vision for decision support is that when a scientist poses a question like these, the system has already pre-computed the discovery paths and can surface the answer in the conversational register of the question. The honest question is what fraction of researchers want that, versus being protective of the thinking-by-hand that the current friction preserves.
+
+    ### Sharing
+
+    Sharing is the phase where the data meets the outside world. Publication to a journal. Upload to a community repository. Release under an embargo. Collaboration with a team at another institution. Compliance with a data management plan the funder required years earlier. Each of these has its own standards, its own metadata requirements, and its own gatekeepers. The scientist's experience of sharing is that it happens at the end of a project, under time pressure, with the archival details handled by whoever has the least leverage in the collaboration to refuse. The agentic answer is that sharing should be a continuous byproduct of the workflow rather than a terminal event. If preparation added the right metadata, if decision support tracked the right provenance, if storage policies anticipated the archival endpoint, then the act of sharing is nearly automatic. This is an aspiration the community has held for a long time. It has not been kept.
+
+    ### The phase handoffs
+
+    The six phases are shorthand. The actual pain structure of scientific data work lives at the boundaries between them. Acquisition choices determine preparation effort. Preparation choices determine what storage layout makes sense. Storage layout determines movement feasibility. Movement determines what decision support can offer. Decision support determines what can be shared. Each handoff is today a manual reset where information about the prior phase is largely lost and has to be reconstructed. The central thesis of CITADL is that the handoffs themselves should be the locus of the agentic intervention. Not "a better preparation tool." Not "a better storage tool." A coordination layer that understands what happened in the previous phase well enough to shape the next phase usefully.
+
+    ## Why agentic, and why now
+
+    The reason this vision is tractable now and was not tractable five years ago is that foundation models developed an emergent capacity for tool use, for long-horizon planning, and for natural-language intent interpretation at a fidelity that crosses a threshold. The older automation paradigm was to write a workflow manager, encode the steps as a directed graph, and let it execute. This worked when the steps were known in advance and the domain was narrow enough that the graph could be exhaustively specified. It does not work when the scientist's intent at the start of a project is vague, when the right sequence of steps emerges from early results, and when the domain spans enough heterogeneity that no single graph could be predefined.
+
+    Agentic AI changes the contract. The scientist says what they want. The system plans the first step, executes it, observes the result, and decides what to do next, within bounds the scientist has authorized. That loop is what scientists have always wanted from their tools and could never have from deterministic workflow managers. The loop also raises a new class of question that the field has not yet answered. When the agent's plan diverges from what the scientist would have done, whose plan wins? When the agent observes something surprising, does it ask or does it decide? When the agent makes an irreversible change, what are the guardrails? These are the questions the interviews need to probe, because the answer differs wildly by domain, by seniority, by institutional context, and by what the respondent has personally been burned by.
+
+    ## The domain surface area
+
+    CITADL's claim to breadth rests on the argument that the same coordination pain recurs across domains whose surface details look nothing alike. The interview's job is to test this claim in specific cases rather than take it on faith.
+
+    ### Materials discovery
+
+    A materials scientist runs hundreds of synthesis-characterization cycles a year, each generating terabytes of diffraction data, process telemetry, and DFT calculations that reference standard structure databases. The pain is that each cycle is treated as a standalone campaign. There is no persistent memory across cycles. The insight that would have made this cycle's parameter search converge faster was sitting in last quarter's data, unindexed.
+
+    ### Biology, genomics, drug discovery
+
+    A genomics or drug-discovery workflow fuses heterogeneous datasets whose units, scales, and privacy constraints are incompatible. A single project might touch protein structures, clinical trial records, multi-omics panels, and a literature corpus whose entities resolve inconsistently across sources. The pain is that the cross-dataset joins are done by hand, and the provenance of those joins is usually undocumented, which means the work cannot be trusted at the reproducibility level regulators expect.
+
+    ### Autonomous chemistry and self-driving laboratories
+
+    A self-driving lab runs closed-loop experiments where the previous experiment's result directly configures the next one, at a cadence faster than a human can supervise. The pain is that safety verification, data integrity checks, and the decision to stop the loop live in different places than the loop itself. When something goes wrong, the person who has to diagnose it is usually not the person who ran the campaign, and the traces they need to reconstruct what happened are scattered across the robot log, the analytics buffer, and the lab notebook.
+
+    ### Neuroscience and brain-machine interfaces
+
+    A neuroscientist working with neural recordings has ultra-low-latency real-time requirements on one side and petabyte-scale archival requirements on the other. The pain is that the formats that preserve provenance well at archival scale are not the formats that support real-time streaming, and the conversion between them is lossy in ways that are discovered only at publication time.
+
+    ### Earth sciences, climate, earthquake modeling
+
+    An earth sciences or earthquake-modeling group pulls from distributed sensor networks, long-running ensemble simulations, and international observation archives. The pain is that the data lives in administrative domains with incompatible access models, and the work of making it available to a single analysis runs through a combination of persuasion, bespoke scripts, and months of waiting for access reviews.
+
+    ### Additive manufacturing and digital twins
+
+    An additive manufacturing team runs edge-instrumented printers that produce layer-wise data fast enough to trigger in-situ defect correction, while building a digital twin that needs the same data at archival fidelity on a different time scale. The pain is that the edge, cloud, and HPC sides of the operation each have their own storage and processing conventions, and the twin's fidelity is gated by whichever tier drops data first.
+
+    ### Agriculture and environmental sensing
+
+    An agriculture or environmental-sensing project federates across field stations whose connectivity is intermittent, whose sensor populations are inconsistent, and whose data quality varies by grower. The pain is that the research questions are population-scale while the data collection is site-scale, and reconciling the two is where careers get made or stalled.
+
+    ### Healthcare and clinical data
+
+    A healthcare research team operates under HIPAA and institutional review boards whose approval of data handling is explicit and time-bounded. The pain is that every new analysis requires a new review unless the original approval anticipated it, and the friction of re-review drives most teams toward over-specifying their original approval, which limits what they can then actually do.
+
+    ### AI-driven research on AI itself
+
+    A growing population of researchers uses agentic AI systems as the research subject rather than the research tool. They run their own agents against scientific tasks and study what breaks. The pain they bring to CITADL is meta. They know where agents actually fail, which is exactly the evidence base CITADL needs to calibrate its own trustworthiness claims.
+
+    ## The tools and infrastructure landscape
+
+    There is a production tool for nearly every phase of the lifecycle. HDF5 and its REST service for structured array storage. Object stores behind S3-compatible APIs for unstructured bulk. Parallel file systems for HPC hot paths. Globus and its API for wide-area transfer. Workflow managers for scheduling. Parquet and Zarr for columnar analytic access. Graph databases for provenance. Vector databases for retrieval over literature. Domain-specific standards such as NeXus for instruments, NWB for neural data, BIDS for neuroimaging, CIF for crystallography, FITS for astronomy. Each one is well-engineered within its scope. None of them coordinate with the others.
+
+    The honest assessment is that the tools are not the bottleneck. The coordination across tools is the bottleneck. CITADL does not intend to replace the tools. CITADL intends to place an agentic coordination layer above them that knows how to use each tool for what it is good at, negotiate format conversions when phases hand off, and surface the provenance of every decision back to the scientist in a form they can audit and override. Whether this is feasible at national scale is precisely what the planning year is meant to determine. The community's answer to that question — whether they believe it, whether they would bet their workflow on it, whether they would allow an agent inside their production operation — is the signal the interviews are extracting.
+
+    ## Trust and irreducible human judgment
+
+    Every respondent has a line they will not let an agent cross. The line is not the same line for every respondent and the line is not located where introductory AI-safety writing would predict. For some, the line is at any action that modifies an instrument's configuration. For others, the line is at data deletion of anything they did not explicitly mark as deletable. For still others, the line is at any action that produces an artifact that will be attributed to them in a publication. The shape of that line — its location, its justification, and whether it is movable by evidence — is the single most valuable thing an interview can surface, because it is the operational definition of trust for the community CITADL will serve.
+
+    The interviews should treat trust not as a scalar the respondent rates on a five-point scale but as a map of zones. There are zones where the respondent will accept full autonomy. Zones where they want to be asked. Zones where they will review asynchronously. Zones where they insist on synchronous oversight. Zones where they refuse any agent involvement at all. The interview's job is to surface where those zones sit for this specific respondent and why. Generalizations across zones emerge at the cohort level, not at the individual level.
+
+    ## Governance, sovereignty, sustainability
+
+    Autonomous agents operating on national-scale research data raise questions that the community has asked before about prior cyberinfrastructure efforts and never answered completely. Who owns the agents? Who owns the data the agents touch? When the agents trained on one institution's data improve their behavior in a way that benefits another institution, who captured the value? When the agents make a consequential error, who is responsible? When funding for the initial agent deployment expires, who keeps it running? None of these questions have clean answers today, and the absence of clean answers is a substantial part of why autonomous agents at scale in research infrastructure do not yet exist.
+
+    CITADL as a planning project cannot answer these questions for the community. It can surface the range of acceptable answers within the community, identify which models have precedent in other national infrastructure efforts, and propose a framework that each participating institution can adapt. The interviews are the input to that surfacing. The interviews should ask every respondent in an operator or institutional-leadership position what models they have seen work, what models they have seen fail, and what model they would propose if they had to build it tomorrow. Sustainability questions — how CITADL survives after the initial Category I award period, what funding models exist, what cost recovery looks like, what the transition path to a self-sustaining entity would be — belong in this same conversational territory and should not be siloed as a separate survey track.
+
+    ## What a win actually looks like
+
+    A successful CITADL would reduce the scientist-visible friction of data lifecycle work by enough that the scientist could plausibly describe a research intent in natural language and expect the system to carry out the coordination that today they carry by hand. It would deploy on ACCESS and NDP resources as the reference substrate and federate to institutional infrastructure through a well-specified interface. It would maintain a trust posture where every agent action is auditable, every irreversible action is gated, and the line each scientist draws between autonomy and oversight is honored by the system rather than being the scientist's continuous manual work. It would be sustainable beyond the initial award and would evolve with the community rather than being frozen at the architecture of its initial deployment. These are the success conditions the community interviews are testing against the community's sense of what is achievable, what is desirable, and what is worth the investment.
+
+    ## The open questions
+
+    There are questions CITADL has not answered and will not answer from the proposal text alone. The interviews exist because the questions exist. The most important of these are:
+
+    Whether the community actually wants natural-language intent as the primary specification mechanism or whether that is the proposal writer's preference imposed on a community that is comfortable with scripts. Whether the six-phase lifecycle frame captures how scientists actually think about their work or whether it is an operator's frame imposed on scientists whose own frame is experiment-centric and cuts across phases differently. Whether facility operators will in fact accept an external agentic coordination layer running inside their trust boundary. Whether AI researchers believe the current generation of foundation models is close enough to the required reliability for production deployment or whether we are a generation of models away. Whether the governance models the team has in mind are legitimate in the community's eyes. Whether the sustainability path is credible. And — R8 — whether the vision as stated is wrong somewhere in a way that the team has not seen because they live too close to it.
+
+    ## Illustrative intents
+
+    Concrete sentences matter more than abstract descriptions. Some sentences the CITADL vision anticipates hearing, synthesized from prior exchanges with the community:
+
+    A materials scientist who wants to characterize phase evolution in a family of cathode compositions and compare with density-functional-theory predictions of vacancy ordering. A neuroscientist who wants to detect hippocampal replay events during sleep across subjects and correlate with behavioral data from the same cohort. A climate scientist who wants to assimilate multi-instrument remote-sensing observations into an ensemble forecast targeted at a specific Atlantic hurricane. A drug-discovery researcher who wants to traverse a knowledge graph of disease-gene-compound relations to surface candidate repurposings for a disease with few existing therapies. A self-driving chemistry lab operator who wants the next experiment's parameters chosen by a decision agent that has read the prior twenty experiments and the relevant safety constraints.
+
+    The interviews should invite every respondent to produce their own version of such a sentence. The cohort of sentences is arguably the single most valuable artifact the interviews produce.
+
+    ## Glossary
+
+    Short definitions Mira can lean on when a respondent uses an unfamiliar term or challenges one of ours.
+
+    **Data lifecycle phase** — one of acquisition, preparation, storage, movement, decision support, sharing. The six-phase decomposition is a shared frame, not a universal truth. Respondents who cut it differently are worth probing about why.
+
+    **Agentic AI** — a system that takes autonomous actions toward a goal, using tools and feedback from its environment, within bounds set by a principal. Distinct from traditional automation because the action sequence is chosen at execution time rather than predefined.
+
+    **National Data Platform (NDP)** — an existing NSF-supported infrastructure intended as a substrate for data-intensive science services. CITADL's integration target.
+
+    **ACCESS** — the NSF program that provides compute and storage allocations to U.S. researchers. CITADL's other integration target.
+
+    **NAIRR** — the National AI Research Resource, a federal effort to provide AI infrastructure to the research community. CITADL coordinates with but does not replace.
+
+    **FAIR** — findable, accessible, interoperable, reusable. The principles the community agreed should govern scientific data. Rarely achieved in practice at the scale the proponents originally imagined.
+
+    **Provenance** — the record of where data came from, how it was transformed, and by whom. Structurally undertracked in today's workflows. One of the phases agentic systems could plausibly improve most.
+
+    **Trust zone** — an interview-derived concept for this study. The portion of a respondent's workflow where they will accept agent autonomy. Complements the zones where they want asynchronous review, synchronous oversight, or full manual control.
+
+    **Handoff** — the point at which data moves from one lifecycle phase to the next. The locus of most of the friction CITADL aims to reduce.
+
+    **Intent sentence** — a natural-language description of what a researcher wants a system to do, specific enough that an agentic system could plan execution. The artifact CITADL hopes to make the primary interface.
+  rationale: |-
+    Full distilled CITADL vision. Brain B retrieves from this for depth on any of the six lifecycle phases, the nine domain surfaces, the trust-zone framing, the governance and sustainability landscape, the open questions, and the illustrative-intent exemplars. Approximately 3.9k words.
+- kind: raw_text
+  title: CITADL Probe Bank — R1-R8 Library
+  content_inline: |
+    # CITADL Probe Bank — Candidate Questions Organized by Rubric Axis
+
+    This document is a resource for Mira's Brain B, not a script for Brain A. The probes below are candidate openings and follow-ups Brain B may draw from when deciding what to ask next. They are organized by the eight rubric axes R1–R8 that define coverage for the `citadl-community-pulse` campaign. Each axis section names its purpose, the trigger conditions that suggest Brain B should deepen the axis, phrasing variants that span the respondent register (peer-scientist, peer-sysadmin, peer-ML-researcher, peer-institutional-lead), and follow-up pathways for going deeper when the respondent opens a door.
+
+    Brain B is authoritative over probe selection. Nothing below is scripted order. The bank is a library Brain B searches via `search_knowledge` during planning, selects from based on the respondent profile and current saturation state, and rephrases through Brain A's voice. The bank was built by distilling a 60-item draft survey authored by the CITADL-P planning-grant lead into conversational probes with the scripted structure removed. Some probes are direct adaptations of the draft's items. Others are new, introduced to cover axes the original draft treated thinly, especially R3 cross-phase coordination and R8 disconfirmation.
+
+    A probe is considered "fired" when the respondent's answer has engaged with the underlying question, not when the specific phrase was uttered. Brain B tracks coverage by meaning, not by string match.
+
+    ---
+
+    ## R1 — Lifecycle pain topology
+
+    **Purpose.** Map where friction actually concentrates in this respondent's real work, across the six phases. Surface concrete episodes rather than abstract self-assessments. Populate the requirements-traceability matrix that Task 1 of the Category I proposal will produce.
+
+    **Trigger conditions.** Brain B should fire R1 probes early in the conversation, once the respondent has identified their role and general work context. R1 is the largest axis by intended coverage for scientist-role and operator-role respondents. For ML-researcher respondents R1 is lighter weight; R3 and R5 dominate.
+
+    **Probe phrasings.**
+
+    When opening the topic broadly, any of: *Walk me through a typical end-to-end flow you ran recently, from where the data came from to where a result ended up.* / *Tell me about a recent dataset your group handled from start to finish — what happened at each stage.* / *Think of a research output you produced in the last six months. How did the data behind it travel from generation to published form?*
+
+    When funneling toward a specific pain point: *Where in that flow did you personally spend the most time?* / *At which stage did you most recently have to redo something because of a data-handling issue?* / *Which part of that workflow, if a tool or agent did it for you, would give you back the most hours a week?*
+
+    When asking for a specific recent episode: *Can you describe a moment in the last month or two where something in your data workflow actively cost you a day or more?* / *Tell me about the last time you lost data, had to regenerate data, or couldn't find data you knew you had.* / *When was the last time you found yourself doing something manual that you were sure should be automatic by now?*
+
+    For operators, reframed for the facility lens: *Describe the lifecycle of a typical dataset in your facility, from ingest to eventual archival or deletion.* / *What's the biggest operational headache across your storage and movement stack right now?*
+
+    For ML researchers, reframed for the systems lens: *Have you worked with any scientific data management system that particularly frustrated you? What was wrong with it?* / *When you've built or tested an agentic system against scientific data tasks, what was the typical failure mode?*
+
+    **Follow-up pathways.** When a respondent identifies a pain phase, Brain B should deepen with: how often does this happen, what does the workaround look like, who in your group is most burned by this, what would "no longer a problem" look like concretely. Resist moving to other phases before the current one has produced an episode with specific detail.
+
+    ---
+
+    ## R2 — Trust gating conditions
+
+    **Purpose.** Surface the specific conditions — technical, procedural, social — that would have to hold before this respondent would let an autonomous agent act on their workflow. Map the respondent's personal trust-zone geography: where they would accept autonomy, where they want asynchronous review, where they insist on synchronous oversight, where they refuse agent involvement entirely.
+
+    **Trigger conditions.** Fire R2 after the respondent has surfaced at least one lifecycle pain in R1 and after the word "agent" or "autonomous" or "AI" has been introduced, ideally by the respondent rather than by Mira. If Mira introduces the framing, R2's signal is partly contaminated; note this in the audit.
+
+    **Probe phrasings.**
+
+    When opening trust as a topic: *When a tool or service produces something you need to trust, what do you actually do before you let that output count toward a real result?* / *What convinces you that an automated step was done correctly?* / *When do you check behind a tool, and when do you just accept what it gave you?*
+
+    When eliciting the autonomy-acceptance line: *Imagine an agent could take one action in your workflow without asking you first. What action would that be, and what would have to be true for you to accept it?* / *Where in your workflow would you let an agent act without your approval, and where would you insist on being asked?* / *What's the first task you'd be willing to hand off to an agent, and what's the last task you'd ever hand off?*
+
+    When testing the disqualification conditions: *What would an agent have to do for you to stop trusting it permanently?* / *What kind of mistake would kill your willingness to use the system?* / *If an agent made a wrong decision on your data once, what would it take to earn your trust back?*
+
+    When mapping the zone geography directly: *Walk me through your workflow again, but this time tell me at each stage whether you'd accept full autonomy, asynchronous review, synchronous oversight, or no agent involvement at all.* / *Where does your personal line sit between "I want the agent to do it" and "I want to do it myself"?*
+
+    **Follow-up pathways.** For every trust condition a respondent names — audit trail, rollback, human-in-the-loop, domain validation, explainability — Brain B should probe what specifically that condition means in their context. "Audit trail" means very different things to a materials scientist, a facility operator, and an ML researcher. Concrete operational definitions matter more than abstract preferences.
+
+    ---
+
+    ## R3 — Cross-phase coordination
+
+    **Purpose.** Elicit narrative evidence for CITADL's central thesis — that the friction is at the phase boundaries, not inside the phases. Collect concrete moments where something in one phase should have informed another phase and did not.
+
+    **Trigger conditions.** Fire R3 after R1 has surfaced pain in at least one phase. R3 is the hardest axis for respondents to answer abstractly; it almost always requires anchoring in an episode they have already told Mira about.
+
+    **Probe phrasings.**
+
+    When asking for a cross-phase moment: *Can you describe a time when something that happened during data acquisition should have shaped how you stored it, or how you moved it later, but didn't?* / *Think of a moment when a decision made at one stage of your workflow came back to haunt you at a later stage. What was the disconnect?* / *Have you ever found yourself wishing the tool you were using knew about the previous step? When?*
+
+    When asking about information loss at handoffs: *At which handoff between phases do you feel the most context gets lost?* / *Between acquisition and preparation, preparation and storage, storage and movement — which handoff is the costliest for your group?*
+
+    When probing the coordination vision: *If the system could automatically use what it learned from your last project to shape how it handles your next project, what would the biggest win be?* / *What would it mean for your workflow if every phase of it shared the same provenance and context with every other phase?*
+
+    For operators: *Which hand-off in the data lifecycle breaks most often for your users?* / *When a user's job fails, how often is the root cause in a different phase than the one the failure was observed in?*
+
+    **Follow-up pathways.** When the respondent surfaces a handoff pain, Brain B should probe: did you ever work around this by wiring the phases together manually, did that work, what tradeoffs did the workaround create, would you trust an agent to do that wiring for you.
+
+    ---
+
+    ## R4 — Natural-language intent
+
+    **Purpose.** Collect the concrete sentences this respondent wishes they could say to a system and have executed. These sentences, aggregated across the cohort, become an evidence base for the Category I proposal's opening narrative and Table 1.
+
+    **Trigger conditions.** Fire R4 once the respondent has sufficiently described their workflow that a meaningful intent sentence is possible. Usually mid-to-late conversation. Fire it on every respondent; R4 is not optional.
+
+    **Probe phrasings.**
+
+    When opening the topic: *If you could say one sentence to a system and have it carry out the work that would otherwise take you days, what would that sentence be?* / *What's the one thing you wish you could describe to an AI and just have it done?* / *Imagine the system understood your research intent perfectly. What would you ask it for first?*
+
+    When extracting more than one intent: *Is there a second thing, maybe larger in scope, you'd want to ask for?* / *What's the ambitious version of that request — the version you'd want in three years?* / *What's the modest version — the version you'd trust today?*
+
+    When probing why the intent matters: *What's the work that sentence would save you?* / *Who else in your group would ask for something similar?* / *How often does the situation come up where you'd want to say that?*
+
+    For operators, where the intent may be operational rather than research: *What operational command would you want to hand to an agent on behalf of your users?* / *What "if only the system did this automatically" moment recurs in your facility?*
+
+    For ML researchers, where the intent may be about the system being built rather than consumed: *If you had to expose one high-level interface to a scientist who has no AI background, what would that interface be?* / *What level of intent do you think is actually learnable end-to-end with current foundation models?*
+
+    **Follow-up pathways.** Push for specificity. A sentence like "the agent should manage my data" is not R4 evidence. A sentence like "characterize phase evolution in this electrode family and compare with DFT predictions" is. When a respondent gives a generic intent, Brain B asks for the specific situation where it would apply.
+
+    ---
+
+    ## R5 — Adoption ceiling gradient
+
+    **Purpose.** Identify the gradient between the first task the respondent would delegate to an agent and the last task they would ever delegate. The gradient across the cohort is the adoption roadmap by domain and role.
+
+    **Trigger conditions.** Fire R5 after R2 (trust) has produced at least one signal. R5 complements R2: trust is about conditions, R5 is about the task inventory.
+
+    **Probe phrasings.**
+
+    When asking for the first-delegable task: *Of everything you do in your workflow, what's the task you'd be most willing to hand off to an agent first?* / *What's the lowest-stakes piece of your work that an agent could plausibly take over tomorrow?* / *Which part of your workflow would you happily never do again if you could?*
+
+    When asking for the never-delegable task: *Is there anything in your workflow that you believe should never be fully automated — that always requires human judgment?* / *What's the work you'd refuse to hand over even if the agent was demonstrated to do it well?* / *Where is the line between "this is data plumbing" and "this is my research"?*
+
+    When mapping the gradient: *If the agent handled the task you'd delegate first well for a year, what task would you add next?* / *What would the agent have to demonstrate to move from your first-delegable task to something one step harder?* / *What would earn it promotion to the next level of responsibility?*
+
+    For operators, reframed for stewardship: *What operational decision would you let an agent make without your review?* / *What operational decision would you never automate no matter how well the agent performed?*
+
+    **Follow-up pathways.** Ask for the reasoning behind where the line sits. Is it stakes? Is it attribution? Is it the respondent's sense of craft? Is it institutional policy? Different reasoning implies different architectural responses.
+
+    ---
+
+    ## R6 — Integration constraints
+
+    **Purpose.** Surface the technical, institutional, and practical constraints that a real deployment would have to honor to be accepted by this respondent's working context. Varies sharply by role.
+
+    **Trigger conditions.** Fire R6 once Brain B has enough profile to know whether the respondent is a consumer of infrastructure (scientist), a steward of infrastructure (operator), or a builder of systems that might become infrastructure (ML researcher).
+
+    **Probe phrasings.**
+
+    For scientists: *What platforms do you already trust enough that a new service attached to them would get the benefit of the doubt?* / *If CITADL shipped tomorrow, would it integrate with the environment you actually work in, or would you have to change your environment to use it?* / *What existing tool in your workflow would an AI-assisted data management system have to replace, and what would it have to preserve?*
+
+    For operators: *What API surface would your facility accept from an external agentic service?* / *Under what terms would you allow external agents to act on your systems — at what privilege level, with what sandboxing, through what authentication?* / *What federation model would work for your facility? What federation model would you refuse?* / *If an agent needs to run closer to your storage than a user's laptop but further away than your kernel, where exactly does it run?*
+
+    For ML researchers: *What foundation model capabilities do you think are actually ready to build production data-lifecycle agents on today?* / *What frameworks would you reach for first — and what would you build from scratch?* / *Which of today's architectural patterns — single-agent tool-use, multi-agent collaboration, hierarchical, reactive, planning — do you think is right for this domain?*
+
+    **Follow-up pathways.** Push on specific named systems. "ACCESS" or "NDP" or "NAIRR" or "Globus" or "HSDS" or "Lustre" or named frameworks. When a respondent mentions one, probe what their experience with it has been. Operators and ML researchers often know the realities behind the marketing better than any reference documentation.
+
+    ---
+
+    ## R7 — Community sovereignty
+
+    **Purpose.** Surface the respondent's view on who should own, govern, pay for, and sustain a national-scale agentic data management infrastructure. Evidence for Task 4 governance framework.
+
+    **Trigger conditions.** Fire R7 when the respondent's role gives them standing on the question. Most salient for senior researchers, PIs, facility operators, and platform leads. Lighter for early-career scientists and pure methods-ML researchers, though their view is still valuable.
+
+    **Probe phrasings.**
+
+    When opening the governance question: *If an infrastructure like this existed at national scale, who should run it?* / *Who should have authority over decisions the agents make on your data?* / *What existing governance model do you think a national agentic data platform could learn from?*
+
+    When probing accountability: *When an agent makes a consequential error in production, who should be responsible — the researcher, the developer, the operator, or some shared framework?* / *How should that responsibility be distributed?*
+
+    When probing sustainability: *What funding model do you think could keep an infrastructure like this alive beyond its initial grant period?* / *What would make this sustainable in your view — subscription, core funding, partnerships, all of the above?* / *What's the 5-year and 10-year picture that worries you, if we build this and it works?*
+
+    When probing community voice: *What role should the research community have in shaping how an infrastructure like this evolves?* / *What's the governance model that would make you trust this isn't just another platform owned by one team at one institution?*
+
+    **Follow-up pathways.** When a respondent names a precedent — NSF ACCESS, DOE INCITE, NIH data commons, cloud providers, open-source foundations — probe what they've seen that model do well or badly, and whether CITADL should borrow from it or avoid it.
+
+    ---
+
+    ## R8 — Counter-evidence solicitation
+
+    **Purpose.** Actively solicit disconfirmation of the CITADL vision. Every respondent should be asked. The cohort of disagreements is a load-bearing artifact for the Category I proposal's credibility.
+
+    **Trigger conditions.** Fire R8 near the end of the conversation, after the respondent has heard enough of the vision — through Mira's probes, through the respondent's own engagement with the framing — that a meaningful critique is possible. R8 is not optional.
+
+    **Probe phrasings.**
+
+    When opening the disconfirmation: *Where do you think the CITADL premise, as you've understood it in this conversation, might be wrong or overstated?* / *What part of the vision, as we've discussed it, do you think we're getting wrong?* / *If you were reviewing this project as a skeptic, what would your hardest objection be?*
+
+    When pressing for specifics: *Which specific claim do you disagree with, and what evidence would have to show up to change your mind?* / *If you had to bet against CITADL succeeding, what would your bet be?* / *What failure mode have I not asked you about that you think we should be worried about?*
+
+    When asking about the frame itself: *Do the six phases I described earlier actually match how you think about your work?* / *Did the way I described the problem miss something important about your domain?* / *Is there a question you were expecting me to ask that I didn't?*
+
+    When asking about the audience: *Who is going to push back on this proposal when it's reviewed, and what will they say?* / *What's the critique that would be hardest for us to answer if it came from a reviewer?*
+
+    **Follow-up pathways.** Take the critique at face value. Do not defend the proposal. Ask the respondent to elaborate. Ask what evidence they would want to see. Ask whether there is any part of the vision they actually agree with, as a way of triangulating the scope of the disagreement. Record the critique verbatim in the audit trail. These are the quotes the Category I proposal needs most.
+  rationale: |-
+    Candidate probe library for Brain B. Organized by rubric axis R1 through R8 with trigger conditions, register variants, and depth pathways. Library to draw from, not a script. Approximately 3.1k words.

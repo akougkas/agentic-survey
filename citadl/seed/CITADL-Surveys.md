@@ -655,7 +655,7 @@ This survey is for operators of large-scale computing and data facilities, as we
 
 ☐  Cost of AI compute resources for operational tasks
 
-**Q17.** If a national-scale CITADEL-like infrastructure were deployed, what integration model would work best for your facility?
+**Q17.** If a national-scale CITADL-like infrastructure were deployed, what integration model would work best for your facility?
 
 *\[Select one\]*
 

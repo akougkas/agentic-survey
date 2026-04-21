@@ -41,24 +41,53 @@ __all__ = [
 ]
 
 
-def opening_turn_message(campaign: Campaign) -> str:
+def opening_turn_message(campaign: Campaign, session: InterviewSessionRecord) -> str:
     """The first agent turn at the top of a participant session.
 
     Kept deterministic (no LLM) so a session boots cleanly even when the
     router is cold; ``run_interview_turn`` takes over from turn 2 onward.
+
+    Title-free and calibrated: when the participant has already answered
+    ``evidence_of_belonging`` in the pre-interview micro-form, the opener
+    echoes a short noun phrase back and asks for a concrete recent
+    episode. When no answer is present, it invites a light self
+    description. Controls are named once before the question.
     """
-    topic = campaign.title
-    first_probe = (
-        campaign.outline.probes[0]
-        if campaign.outline.probes
-        else "What happened the last time this showed up in your work?"
-    )
+    del campaign  # title is intentionally not quoted; leaked vocabulary is a risk.
+    answers = getattr(session, "micro_form_answers", {}) or {}
+    evidence = (answers.get("evidence_of_belonging") or "").strip()
+    controls = "You can skip, pause, come back later, or stop anytime."
+    if evidence:
+        noun_phrase = _extract_noun_phrase(evidence)
+        return (
+            f"Mira here. You mentioned {noun_phrase}. "
+            f"{controls} "
+            "Walk me through the last time that cost you a day you didn't expect."
+        )
     return (
-        f"I'm Mira. I'll keep this conversational and grounded in real work. "
-        f"We're here to understand {topic.lower()} through concrete moments, not the polished version. "
-        "If anything feels off, too personal, or not worth getting into, we can skip it, pause, come back later, or stop. "
-        f"To start, {first_probe}"
+        "Mira here. "
+        f"{controls} "
+        "Tell me in a sentence or two what you work on with scientific or research data, "
+        "whatever feels natural: role, domain, a recent project. "
+        "I'll take it from there."
     )
+
+
+def _extract_noun_phrase(text: str, *, max_words: int = 12) -> str:
+    """Pull a short head-of-sentence phrase from free text.
+
+    Naive slice: the first clause before a comma, or the first
+    ``max_words`` tokens. Trailing punctuation is stripped. This runs
+    deterministically on the respondent's own words; no LLM call.
+    """
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    head = cleaned.split(",", 1)[0].strip()
+    tokens = head.split()
+    if len(tokens) > max_words:
+        head = " ".join(tokens[:max_words])
+    return head.rstrip(".!?;:").strip()
 
 INTERVIEWER_BRAIN_A_PROMPT = "interviewer_brain_a.md"
 
@@ -265,6 +294,7 @@ async def run_interview_turn(
     )
 
     grounding_snapshot = _list_approved_grounding_sources(repository, campaign.id)
+    participant_context = dict(refreshed.micro_form_answers or {})
     intent = await run_brain_b_interviewer(
         outline=campaign.outline,
         transcript_tail=transcript_tail,
@@ -273,6 +303,7 @@ async def run_interview_turn(
         search_knowledge=search_fn,
         list_grounding_sources=lambda: grounding_snapshot,
         graph_neighborhood=neighborhood_fn,
+        participant_context=participant_context,
     )
 
     if intent.should_close:
@@ -321,6 +352,7 @@ async def run_interview_turn(
         brain_b_intent=intent,
         persona=persona,
         router=router,
+        participant_context=participant_context,
     ):
         chunks.append(token)
         events.append(InterviewEvent(name="token", data={"text": token}))
@@ -376,7 +408,7 @@ async def _stream_closing(
     events, matching the regular flow.
     """
     system_prompt = (
-        "You are Mira, closing a completed interview. Write 2 to 4 short "
+        "You are Mira, closing a research conversation. Write 2 to 4 short "
         "sentences grounded in the participant's own signal. No question, "
         "no bullets, no chips. Keep it under 110 words."
     )

@@ -1,60 +1,140 @@
 slug: citadl
-name: CITADEL Surveys
+name: CITADL Community Pulse
 runtime: agentic-survey
 public_base_url: https://citadl.gnosis.run
 
 branding:
-  eyebrow: CITADEL
-  title: Conversations that interrogate the scientific data lifecycle.
+  eyebrow: CITADL
+  title: One conversation with Mira on the future of scientific data.
   description: >
-    NSF IDSS planning-grant research on how scientists, facility operators,
-    and AI/ML practitioners experience data management today — and what
-    autonomous agents would have to do to earn production trust. Three
-    tracks, one conversational instrument.
+    The CITADL Community Pulse is a single adaptive interview study that
+    replaces the traditional split into role-specific surveys. One
+    instrument, conducted entirely by Mira, adapts across domain scientists,
+    facility operators, tool developers, and AI researchers while keeping
+    the same methodological spine. The artifact feeds the July 2026 Category
+    I CITADL IDSS proposal. CITADL stands for Cyberinfrastructure for
+    Intelligent, Trustworthy, Agentic Data Lifecycles.
 
 ui:
   home:
-    eyebrow: CITADEL Surveys
+    eyebrow: CITADL Community Pulse
     operator_path_label: Operator path
-    operator_path_title: Design or launch a CITADEL track
+    operator_path_title: Design and launch the CITADL conversation
     operator_path_description: >
-      Pick one of the three tracks (Domain Scientists, Facility Operators,
-      AI/ML Practitioners). Mira designs the interview outline with you,
-      then holds the conversations with respondents across the cohort.
+      Lock the outline with Mira through a Designer session, issue invites to
+      the target cohort, and monitor the live operator console as
+      conversations come through. One campaign; one instrument; one Mira
+      who adapts per respondent.
     participant_path_label: Participant path
-    participant_path_title: Resume a CITADEL conversation
+    participant_path_title: Enter your CITADL conversation
     participant_path_description: >
-      If you received an invitation, you'll enter a short conversation with
-      Mira about your experience. Anonymous by default; named if you choose.
-    bundle_panel_title: CITADEL
+      If you received an invitation, follow the link to begin a private
+      conversation with Mira about your experience with scientific data.
+      Roughly twenty to forty minutes. Anonymous by default; named if you
+      choose.
+    bundle_panel_title: CITADL
     persona_panel_title: Mira
     persona_panel_description: >
-      Mira is a synthetic field researcher. She adapts her tone per track
-      (peer scientist, peer operator, peer ML researcher) while keeping one
-      methodological spine. She is not a form; she is a conversation.
+      Mira is a single adaptive field researcher. She holds one
+      methodological spine while modulating voice and depth across every
+      respondent's role, domain, and fluency. She is not a form; she is a
+      conversation.
   admin:
-    nav_label: CITADEL Console
-    workspace_eyebrow: CITADEL Operator Workspace
-    workspace_title: CITADEL Survey Campaigns
-    login_eyebrow: CITADEL Access
+    nav_label: CITADL Console
+    workspace_eyebrow: CITADL Operator Workspace
+    workspace_title: CITADL Community Pulse
+    login_eyebrow: CITADL Access
     login_description: >
       Access stays behind the environment-variable password gate. Replace
-      the default before sharing any invite link externally.
+      the default before sharing any invite link.
     boundary_eyebrow: Operator boundary
     boundary_description: >
-      Admin access stays behind the runtime password gate. Track identity,
-      seed campaigns, and branding come from this bundle; the underlying
-      runtime (agentic-survey) stays generic.
-    current_path_label: CITADEL path
+      Admin access stays behind the runtime password gate. Campaign
+      identity, seed material, and branding come from this bundle; the
+      underlying runtime (agentic-survey) stays generic.
+    current_path_label: CITADL path
     current_path_description: >
-      Design each track with Mira, seed the outlines from the CITADEL brief,
-      launch the campaigns, issue invitations, and monitor transcripts and
-      concept graphs as respondents come through.
+      Lock the outline with Mira, issue invites across the target cohort,
+      and monitor transcripts, the live concept graph, and rubric coverage
+      as respondents come through.
+  invite:
+    header_eyebrow: CITADL Community Pulse
+    header_wordmark: CITADL
+    header_subline: A research conversation on the future of scientific data.
+    page_title: CITADL Community Pulse — Research Conversation
+    consent_title: Before we begin
+    anonymous_title: Contribute anonymously
+    anonymous_description: >
+      Your responses inform the cohort analysis without attaching your name
+      or affiliation. This is the default for the CITADL study.
+    named_title: Attribute your responses
+    named_description: >
+      Your name or preferred citation can appear alongside quoted responses
+      in the Category I CITADL IDSS proposal and the internal planning
+      artifacts that inform it.
+    micro_form_eyebrow: Orient Mira before you begin
+    micro_form_description: >
+      A sentence or two so Mira opens in a register that fits your work.
+      She will infer the rest from the conversation.
+    micro_form_required_hint: This one is required before the conversation can begin.
+    micro_form_answer_note: >
+      Your answer stays between you, Mira, and the CITADL planning team.
+    start_button_idle: Begin the conversation
+    start_button_pending: Starting the session...
+    next_eyebrow: How the conversation runs
+    next_steps:
+      - Mira opens with one precise question grounded in what you shared above.
+      - The conversation covers an eight-axis rubric at whatever depth your time allows.
+      - You can skip, pause, come back later, or stop at any point. The controls stay available throughout.
+      - You will see Mira's working notes update as she tracks coverage and emerging concepts.
+    closed_title: This invitation is no longer active.
+    closed_status_eyebrow: Status
+    closed_status_template: This invite is marked "{status}" in the study.
+    closed_used_message: >
+      This invitation has already been redeemed. Each link is single-use by design.
+    closed_revoked_message: >
+      This invitation has been withdrawn by the CITADL planning team.
+    closed_fresh_link_message: >
+      Contact the CITADL planning team if you still need access to the study.
+  chat:
+    header_eyebrow: CITADL Community Pulse
+    header_wordmark: CITADL
+    header_subline: Research conversation with Mira.
+    page_title: CITADL Community Pulse — Conversation
+    conversation_heading: Conversation
+    transcript_locked_label: Transcript locked
+    agent_composing_label: Mira is thinking...
+    working_notes_eyebrow: Mira's working notes
+    working_notes_heading: What I am tracking this session
+    retrieved_heading: Retrieved this turn
+    retrieved_description_singular: >
+      Mira drew one passage from the CITADL grounding library.
+    retrieved_description_plural: >
+      Mira drew {count} passages from the CITADL grounding library.
+    concepts_heading: Emerging concepts
+    concepts_empty: Mira will name concepts as they surface in your answers.
+    turn_counter_template: >
+      Turn {count}. This is an open-ended conversation with no fixed length.
+    active_footer: >
+      Answer in your own words. Mira keeps the thread focused one question at a time.
+    paused_footer: >
+      Mira has paused this session. Resume when you are ready to continue.
+    finished_footer: >
+      Mira has closed this session. The transcript is now read-only.
+    session_complete_eyebrow: Session complete
+    return_home_label: Return to home
+    empty_state: >
+      The conversation will begin with Mira's first question as soon as the session is ready.
+    placeholder_default: Answer in your own words.
+    placeholder_with_chips: Tap one of the anchors above, or write your own answer.
+    submit_idle: Send
+    submit_pending: Working...
+    submit_finished: Session complete
+
+research_agent_hook:
+  provider: null
+  config: {}
 
 campaigns:
-  - slug: domain-scientists
-    seed: campaigns/domain-scientists.yaml
-  - slug: facility-operators
-    seed: campaigns/facility-operators.yaml
-  - slug: ml-practitioners
-    seed: campaigns/ml-practitioners.yaml
+  - slug: citadl-community-pulse
+    seed: campaigns/citadl-community-pulse.yaml

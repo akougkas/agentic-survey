@@ -73,9 +73,96 @@ class BundleAdminCopy(BaseModel):
     )
 
 
+class BundleInviteCopy(BaseModel):
+    header_eyebrow: str = "Research Conversation"
+    header_wordmark: str = ""
+    header_subline: str = ""
+    page_title: str = "Research conversation invite"
+    consent_title: str = "Before we begin"
+    anonymous_title: str = "Contribute anonymously"
+    anonymous_description: str = (
+        "Your responses contribute to the analysis without attaching your name."
+    )
+    named_title: str = "Attribute your responses"
+    named_description: str = (
+        "Your name or preferred citation can appear alongside quoted responses in the resulting research outputs."
+    )
+    micro_form_eyebrow: str = "Orient Mira before you begin"
+    micro_form_description: str = (
+        "A sentence or two so Mira opens in a register that fits your work."
+    )
+    micro_form_required_hint: str = "This one is required before the conversation can begin."
+    micro_form_answer_note: str = "Your answer stays between you, Mira, and the study team."
+    start_button_idle: str = "Begin the conversation"
+    start_button_pending: str = "Starting the session..."
+    next_eyebrow: str = "How the conversation runs"
+    next_steps: list[str] = Field(
+        default_factory=lambda: [
+            "Mira opens with one precise question grounded in what you shared above.",
+            "Each answer is graded silently for coverage and follow-up signal.",
+            "You can skip, pause, come back later, or stop at any point.",
+        ]
+    )
+    closed_title: str = "This invitation is no longer active."
+    closed_status_eyebrow: str = "Status"
+    closed_status_template: str = 'This invite is marked "{status}" in the study.'
+    closed_used_message: str = (
+        "This invitation has already been redeemed. Each link is single-use."
+    )
+    closed_revoked_message: str = "This invitation has been withdrawn by the study team."
+    closed_fresh_link_message: str = (
+        "Contact the study team if you still need access."
+    )
+
+
+class BundleChatCopy(BaseModel):
+    header_eyebrow: str = "Research Conversation"
+    header_wordmark: str = ""
+    header_subline: str = ""
+    page_title: str = "Research conversation with Mira"
+    conversation_heading: str = "Conversation"
+    transcript_locked_label: str = "Transcript locked"
+    agent_composing_label: str = "Mira is composing"
+    working_notes_eyebrow: str = "Mira's working notes"
+    working_notes_heading: str = "What I am tracking this session"
+    retrieved_heading: str = "Retrieved this turn"
+    retrieved_description_singular: str = (
+        "Mira drew one passage from the study's grounding library."
+    )
+    retrieved_description_plural: str = (
+        "Mira drew {count} passages from the study's grounding library."
+    )
+    concepts_heading: str = "Emerging concepts"
+    concepts_empty: str = "Mira will name concepts as they surface in your answers."
+    turn_counter_template: str = (
+        "Turn {count}. This is an open-ended conversation with no fixed length."
+    )
+    active_footer: str = (
+        "Answer in your own words. Mira keeps the thread focused one question at a time."
+    )
+    paused_footer: str = (
+        "Mira has paused this session. Resume when you are ready to continue."
+    )
+    finished_footer: str = (
+        "Mira has closed this session. The transcript is now read-only."
+    )
+    session_complete_eyebrow: str = "Session complete"
+    return_home_label: str = "Return to home"
+    empty_state: str = (
+        "The conversation will begin with Mira's first question as soon as the session is ready."
+    )
+    placeholder_default: str = "Answer in your own words."
+    placeholder_with_chips: str = "Tap one of the anchors above, or write your own answer."
+    submit_idle: str = "Send"
+    submit_pending: str = "Working..."
+    submit_finished: str = "Session complete"
+
+
 class BundleCopy(BaseModel):
     home: BundleHomeCopy = Field(default_factory=BundleHomeCopy)
     admin: BundleAdminCopy = Field(default_factory=BundleAdminCopy)
+    invite: BundleInviteCopy = Field(default_factory=BundleInviteCopy)
+    chat: BundleChatCopy = Field(default_factory=BundleChatCopy)
 
 
 class ProductBundleManifest(BaseModel):

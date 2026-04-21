@@ -17,6 +17,7 @@ class MicroFormField(BaseModel):
     label: str
     field_type: str = "text"
     required: bool = True
+    options: list[str] = Field(default_factory=list)
 
 
 class ParticipantFAQEntry(BaseModel):

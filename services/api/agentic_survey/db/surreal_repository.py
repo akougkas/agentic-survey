@@ -685,6 +685,7 @@ class SurrealRepository:
         identity_label: str,
         persona_snapshot: dict,
         pinned_endpoint: str,
+        micro_form_answers: dict[str, str] | None = None,
     ) -> InterviewSessionRecord:
         session_id = _interview_session_id()
         now_dt = _utcnow()
@@ -693,6 +694,7 @@ class SurrealRepository:
         outline_rev = self._latest_outline_revision(campaign_id)
         if outline_rev is None:
             raise RuntimeError(f"No outline revision found for campaign {campaign_id}")
+        answers = dict(micro_form_answers) if micro_form_answers else {}
         payload: dict[str, Any] = {
             "campaign": RecordID("campaign", campaign_id),
             "invite": RecordID("invite", invite_id) if invite_id is not None else None,
@@ -705,6 +707,7 @@ class SurrealRepository:
             "status": "active",
             "started_at": now_dt,
             "updated_at": now_dt,
+            "micro_form_answers": answers,
         }
         self._db().create(RecordID("interview_session", session_id), payload)
         return InterviewSessionRecord(
@@ -719,6 +722,7 @@ class SurrealRepository:
             status="active",
             started_at=now,
             updated_at=now,
+            micro_form_answers=answers,
         )
 
     def _latest_outline_revision(self, campaign_id: str) -> OutlineRevision | None:
@@ -928,6 +932,7 @@ class SurrealRepository:
             close_reason=row.get("close_reason"),
             paused_reason=row.get("paused_reason"),
             abandoned_reason=row.get("abandoned_reason"),
+            micro_form_answers=dict(row.get("micro_form_answers") or {}),
             turns=turns,
         )
 

@@ -46,6 +46,7 @@ export interface MicroFormField {
   label: string;
   field_type: string;
   required: boolean;
+  options?: string[];
 }
 
 export interface ParticipantFAQEntry {
@@ -163,9 +164,66 @@ export interface BundleAdminCopy {
   current_path_description: string;
 }
 
+export interface BundleInviteCopy {
+  header_eyebrow: string;
+  header_wordmark: string;
+  header_subline: string;
+  page_title: string;
+  consent_title: string;
+  anonymous_title: string;
+  anonymous_description: string;
+  named_title: string;
+  named_description: string;
+  micro_form_eyebrow: string;
+  micro_form_description: string;
+  micro_form_required_hint: string;
+  micro_form_answer_note: string;
+  start_button_idle: string;
+  start_button_pending: string;
+  next_eyebrow: string;
+  next_steps: string[];
+  closed_title: string;
+  closed_status_eyebrow: string;
+  closed_status_template: string;
+  closed_used_message: string;
+  closed_revoked_message: string;
+  closed_fresh_link_message: string;
+}
+
+export interface BundleChatCopy {
+  header_eyebrow: string;
+  header_wordmark: string;
+  header_subline: string;
+  page_title: string;
+  conversation_heading: string;
+  transcript_locked_label: string;
+  agent_composing_label: string;
+  working_notes_eyebrow: string;
+  working_notes_heading: string;
+  retrieved_heading: string;
+  retrieved_description_singular: string;
+  retrieved_description_plural: string;
+  concepts_heading: string;
+  concepts_empty: string;
+  turn_counter_template: string;
+  active_footer: string;
+  paused_footer: string;
+  finished_footer: string;
+  session_complete_eyebrow: string;
+  return_home_label: string;
+  empty_state: string;
+  placeholder_default: string;
+  placeholder_with_chips: string;
+  submit_idle: string;
+  submit_pending: string;
+  submit_finished: string;
+}
+
 export interface BundleUiCopy {
   home: BundleHomeCopy;
   admin: BundleAdminCopy;
+  invite: BundleInviteCopy;
+  chat: BundleChatCopy;
 }
 
 export interface ProductBundleManifest {
@@ -310,6 +368,7 @@ export interface InterviewSessionRecord {
   close_reason: string | null;
   paused_reason: string | null;
   abandoned_reason: string | null;
+  micro_form_answers?: Record<string, string>;
   turns: InterviewTurnRecord[];
 }
 
