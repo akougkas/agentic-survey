@@ -1,11 +1,17 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
   import { ApiError, getJson, postJson } from '$lib/api';
   import ChatPane from '$lib/components/ChatPane.svelte';
   import { demoCopy } from '$lib/demo-copy';
-  import type { InterviewTurnRecord, SessionBundleResponse } from '$lib/types';
+  import type {
+    BrainBIntent,
+    InterviewSessionRecord,
+    InterviewTurnRecord,
+    SessionBundleResponse,
+    ValidationSnapshot
+  } from '$lib/types';
 
   let bundle: SessionBundleResponse | null = null;
   let sessionId = '';
@@ -70,8 +76,12 @@
     ? bundle.session.turns.filter((t) => t.role === 'participant').length
     : 0;
   $: rubricRows = bundle
-    ? coverageByAxis(bundle.session.turns, bundle.campaign.outline.axes ?? [])
-    : coverageByAxis([], []);
+    ? coverageByAxis(
+        bundle.session.turns,
+        bundle.campaign.outline.axes ?? [],
+        bundle.session.next_plan ?? null
+      )
+    : coverageByAxis([], [], null);
   $: emergingConcepts = bundle ? collectConcepts(bundle.session.turns) : [];
   $: statusTone = bundle
     ? bundle.session.status === 'active'
@@ -126,12 +136,20 @@
 
   function coverageByAxis(
     turns: InterviewTurnRecord[],
-    outlineAxes: string[]
+    outlineAxes: string[],
+    nextPlan: BrainBIntent | null
   ): Array<{ key: string; score: number; fullLabel: string }> {
-    const latest = [...turns]
+    // Prefer the freshest pre-plan if present; otherwise fall back to the
+    // latest agent turn's committed intent (which is what rendered the
+    // current visible reply).
+    const plannedCoverage = nextPlan?.axes_coverage;
+    const latestTurn = [...turns]
       .reverse()
       .find((t) => t.role === 'agent' && t.brain_b_intent?.axes_coverage);
-    const coverageList = latest?.brain_b_intent?.axes_coverage ?? [];
+    const coverageList =
+      plannedCoverage && plannedCoverage.length > 0
+        ? plannedCoverage
+        : latestTurn?.brain_b_intent?.axes_coverage ?? [];
 
     const scoreByPrefix = new Map<string, number>();
     for (const entry of coverageList) {
@@ -187,6 +205,145 @@
     return out;
   }
 
+  // --- SSE plumbing -------------------------------------------------------
+  // One persistent EventSource per session. The browser handles Last-Event-ID
+  // replay on reconnect automatically; we only need to reopen the socket with
+  // a modest backoff when the server drops us.
+  let eventSource: EventSource | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectDelayMs = 1000;
+  let streamClosed = false;
+
+  function patchNextPlan(plan: BrainBIntent | null): void {
+    if (!bundle) return;
+    bundle = {
+      ...bundle,
+      session: { ...bundle.session, next_plan: plan }
+    };
+  }
+
+  function patchTurnValidation(turnId: string, validation: ValidationSnapshot): void {
+    if (!bundle) return;
+    const turns = bundle.session.turns.map((turn) =>
+      turn.id === turnId ? { ...turn, validation } : turn
+    );
+    bundle = {
+      ...bundle,
+      session: { ...bundle.session, turns }
+    };
+  }
+
+  function patchSessionStatus(
+    status: InterviewSessionRecord['status'],
+    closeReason?: string | null
+  ): void {
+    if (!bundle) return;
+    bundle = {
+      ...bundle,
+      session: {
+        ...bundle.session,
+        status,
+        close_reason: closeReason ?? bundle.session.close_reason
+      }
+    };
+  }
+
+  function handleStreamEvent(name: string, raw: string): void {
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    switch (name) {
+      case 'brain_b_planned': {
+        const plan = (data.next_plan ?? null) as BrainBIntent | null;
+        patchNextPlan(plan);
+        return;
+      }
+      case 'validator_scored': {
+        const turnId = typeof data.turn_id === 'string' ? data.turn_id : '';
+        const validation = (data.validation ?? null) as ValidationSnapshot | null;
+        if (turnId && validation) {
+          patchTurnValidation(turnId, validation);
+        }
+        return;
+      }
+      case 'concepts_extracted':
+      case 'graph_delta':
+      case 'turn_complete':
+        // No-op on the chat page: validator_scored already carries the
+        // concept payload, the admin graph view owns graph_delta, and the
+        // POST response already closed the foreground turn.
+        return;
+      case 'session_finished': {
+        const closeReason =
+          typeof data.close_reason === 'string' ? data.close_reason : null;
+        patchSessionStatus('finished', closeReason);
+        return;
+      }
+      case 'session_paused': {
+        patchSessionStatus('paused');
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  function closeStream(): void {
+    streamClosed = true;
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+  }
+
+  function scheduleReconnect(): void {
+    if (streamClosed || reconnectTimer !== null) return;
+    const delay = Math.min(reconnectDelayMs, 10_000);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      reconnectDelayMs = Math.min(reconnectDelayMs * 2, 10_000);
+      openStream();
+    }, delay);
+  }
+
+  function openStream(): void {
+    if (streamClosed || typeof window === 'undefined' || !sessionId) return;
+    if (eventSource) return;
+    const source = new EventSource(`/api/sessions/${encodeURIComponent(sessionId)}/stream`);
+    eventSource = source;
+    const eventNames = [
+      'brain_b_planned',
+      'validator_scored',
+      'concepts_extracted',
+      'graph_delta',
+      'turn_complete',
+      'session_finished',
+      'session_paused'
+    ];
+    for (const name of eventNames) {
+      source.addEventListener(name, (evt) => {
+        handleStreamEvent(name, (evt as MessageEvent).data);
+      });
+    }
+    source.onopen = () => {
+      reconnectDelayMs = 1000;
+    };
+    source.onerror = () => {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      scheduleReconnect();
+    };
+  }
+
   onMount(async () => {
     try {
       bundle = await getJson<SessionBundleResponse>(`/sessions/${encodeURIComponent(sessionId)}`);
@@ -196,11 +353,16 @@
           {}
         );
       }
+      openStream();
     } catch (caught) {
       error = caught instanceof ApiError ? caught.message : 'Unable to load that session.';
     } finally {
       loading = false;
     }
+  });
+
+  onDestroy(() => {
+    closeStream();
   });
 
   async function submitTurn(event: CustomEvent<{ content: string }>): Promise<void> {

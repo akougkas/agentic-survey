@@ -370,6 +370,7 @@ export interface InterviewSessionRecord {
   abandoned_reason: string | null;
   micro_form_answers?: Record<string, string>;
   turns: InterviewTurnRecord[];
+  next_plan: BrainBIntent | null;
 }
 
 export interface CampaignBundleResponse {

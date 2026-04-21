@@ -122,7 +122,7 @@ class BundleChatCopy(BaseModel):
     page_title: str = "Research conversation with Mira"
     conversation_heading: str = "Conversation"
     transcript_locked_label: str = "Transcript locked"
-    agent_composing_label: str = "Mira is composing"
+    agent_composing_label: str = "Mira is thinking..."
     working_notes_eyebrow: str = "Mira's working notes"
     working_notes_heading: str = "What I am tracking this session"
     retrieved_heading: str = "Retrieved this turn"

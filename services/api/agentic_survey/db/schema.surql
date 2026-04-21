@@ -106,6 +106,7 @@ DEFINE FIELD IF NOT EXISTS close_reason ON TABLE interview_session TYPE option<s
 DEFINE FIELD IF NOT EXISTS paused_reason ON TABLE interview_session TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS abandoned_reason ON TABLE interview_session TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS micro_form_answers ON TABLE interview_session FLEXIBLE TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS next_plan ON TABLE interview_session FLEXIBLE TYPE option<object>;
 
 DEFINE TABLE IF NOT EXISTS interview_turn SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS session ON TABLE interview_turn TYPE record<interview_session>;

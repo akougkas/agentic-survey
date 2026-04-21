@@ -88,7 +88,7 @@ export const demoCopy = {
     page_title: 'Research conversation with Mira',
     conversation_heading: 'Conversation',
     transcript_locked_label: 'Transcript locked',
-    agent_composing_label: 'Mira is composing',
+    agent_composing_label: 'Mira is thinking...',
     working_notes_eyebrow: "Mira's working notes",
     working_notes_heading: 'What I am tracking this session',
     retrieved_heading: 'Retrieved this turn',

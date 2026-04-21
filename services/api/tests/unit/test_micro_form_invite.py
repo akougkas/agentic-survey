@@ -7,7 +7,9 @@ from fastapi.testclient import TestClient
 from agentic_survey.api.invites import router as invites_router
 from agentic_survey.auth import require_admin_session
 from agentic_survey.config import get_settings
+from agentic_survey.domain.intent import BrainBIntent
 from agentic_survey.domain.outline import MicroFormField, OutlineArtifact
+from agentic_survey.domain.tools import GetUserInputOptions
 from agentic_survey.engine.interview_loop import opening_turn_message
 from agentic_survey.engine.state_machine import CampaignState
 from agentic_survey.repository import Campaign, InMemoryRepository, get_repository
@@ -216,3 +218,33 @@ def test_noun_phrase_extractor_handles_clauses_and_whitespace(raw: str, expected
 
     head = _extract_noun_phrase(raw)
     assert head.startswith(expected_head) or head == expected_head
+
+
+def test_update_next_plan_round_trips_brain_b_intent() -> None:
+    _campaign, repo, session_id = _campaign_with_answers(
+        {"evidence_of_belonging": "I run a Slurm cluster for a physics group."}
+    )
+    intent = BrainBIntent(
+        active_axis="workflow",
+        question_intent="Elicit the last concrete job they ran",
+        get_user_input=GetUserInputOptions(
+            question="What did you run last?",
+            options=[
+                "A quick experiment",
+                "A long campaign",
+                "Something else",
+                "Discuss this more.",
+            ],
+            allow_free_text=True,
+        ),
+        axes_coverage=[],
+        retrieval_used=False,
+        retrieval_chunks=[],
+        should_close=False,
+    )
+    updated = repo.update_next_plan(session_id, intent)
+    assert updated.next_plan is not None
+    assert updated.next_plan.model_dump() == intent.model_dump()
+
+    cleared = repo.update_next_plan(session_id, None)
+    assert cleared.next_plan is None

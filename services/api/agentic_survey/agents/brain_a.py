@@ -5,8 +5,13 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from agentic_survey.domain.intent import BrainBIntent
+from agentic_survey.domain.outline import OutlineArtifact
+from agentic_survey.domain.tools import GetUserInputOptions
 
-__all__ = ["stream_brain_a"]
+__all__ = ["build_scaffold_intent", "stream_brain_a"]
+
+_DISCUSS_CHIP = "Discuss this more."
+_SCAFFOLD_MAX_CHIPS = 3
 
 _PROMPTS_DIR = Path(__file__).with_name("prompts")
 _PERSONA_PATH = _PROMPTS_DIR / "mira_persona.md"
@@ -64,6 +69,78 @@ def _extract_chunk_text(chunk: object) -> str:
     if isinstance(delta, dict):
         return str(delta.get("content") or "")
     return str(getattr(delta, "content", "") or "")
+
+
+def build_scaffold_intent(
+    *,
+    outline: OutlineArtifact,
+    participant_context: dict[str, str] | None,
+    transcript_tail: list[dict[str, Any]] | None,
+) -> BrainBIntent:
+    """Minimal Brain-B stand-in used when no pre-computed plan exists.
+
+    Brain A renders this the same way it would render a real plan, so
+    the participant never sees a stall while the background planner
+    catches up. The scaffold is deliberately shallow:
+
+    - ``active_axis`` is the first outline axis (we have no coverage
+      state yet).
+    - ``get_user_input.options`` rotates the first two outline probes as
+      short chip labels, ending with the canonical ``"Discuss this
+      more."`` option; ``allow_free_text`` stays on.
+    - ``retrieval_used`` is ``False`` and ``retrieval_chunks`` is empty —
+      scaffold mode never invokes retrieval.
+    """
+    del transcript_tail, participant_context  # reserved for later register mirroring.
+
+    axes = [axis.strip() for axis in (outline.axes or []) if axis and axis.strip()]
+    active_axis = axes[0] if axes else ""
+    axis_hint = active_axis or "what you were doing"
+    question_intent = f"Open with one concrete recent example from {axis_hint}."
+
+    probes = [probe.strip() for probe in (outline.probes or []) if probe and probe.strip()]
+    chip_options: list[str] = []
+    for probe in probes:
+        if len(chip_options) >= _SCAFFOLD_MAX_CHIPS - 1:
+            break
+        label = _shorten_chip(probe)
+        if label and label not in chip_options:
+            chip_options.append(label)
+    while len(chip_options) < _SCAFFOLD_MAX_CHIPS - 1:
+        chip_options.append("Share a recent moment")
+    chip_options.append(_DISCUSS_CHIP)
+
+    default_question = (
+        "Can you walk me through a recent moment this showed up at work?"
+    )
+    question = probes[0] if probes else default_question
+
+    return BrainBIntent(
+        active_axis=active_axis,
+        axes_coverage=[],
+        question_intent=question_intent,
+        get_user_input=GetUserInputOptions(
+            question=question,
+            options=chip_options,
+            allow_free_text=True,
+        ),
+        outline_patch=None,
+        ready_for_review=False,
+        should_close=False,
+        closing=False,
+        retrieval_used=False,
+        retrieval_chunks=[],
+    )
+
+
+def _shorten_chip(text: str, *, max_words: int = 6) -> str:
+    cleaned = text.strip().rstrip("?.!").strip()
+    if not cleaned:
+        return ""
+    tokens = cleaned.split()
+    if len(tokens) <= max_words:
+        return cleaned
+    return " ".join(tokens[:max_words])
 
 
 async def stream_brain_a(

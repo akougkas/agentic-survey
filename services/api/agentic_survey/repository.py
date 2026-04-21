@@ -207,6 +207,7 @@ class InterviewSessionRecord(BaseModel):
     abandoned_reason: str | None = None
     micro_form_answers: dict[str, str] = Field(default_factory=dict)
     turns: list[InterviewTurnRecord] = Field(default_factory=list)
+    next_plan: BrainBIntent | None = None
 
 
 DEFAULT_PERSONA_HINTS = {
@@ -799,6 +800,36 @@ class InMemoryRepository:
             session.close_reason = close_reason
             session.paused_reason = None
         return session.model_copy(deep=True)
+
+    def update_next_plan(
+        self,
+        session_id: str,
+        plan: BrainBIntent | None,
+    ) -> InterviewSessionRecord:
+        with self._lock:
+            session = self._interview_sessions[session_id]
+            session.next_plan = plan.model_copy(deep=True) if plan is not None else None
+            session.updated_at = _timestamp()
+        return session.model_copy(deep=True)
+
+    def update_interview_turn_validation(
+        self,
+        session_id: str,
+        turn_id: str,
+        patch: dict,
+    ) -> InterviewTurnRecord:
+        """Merge ``patch`` into the turn's validation dict (creates if absent)."""
+        with self._lock:
+            session = self._interview_sessions[session_id]
+            for turn in session.turns:
+                if turn.id != turn_id:
+                    continue
+                current: dict = dict(turn.validation) if isinstance(turn.validation, dict) else {}
+                current.update(patch)
+                turn.validation = current
+                session.updated_at = _timestamp()
+                return turn.model_copy(deep=True)
+        raise KeyError(f"Interview turn not found: session={session_id!r} turn={turn_id!r}")
 
     def _build_outline(self, *, title: str, min_n: int, max_n: int) -> OutlineArtifact:
         base_query = " ".join(part for part in title.split() if part).strip().lower()

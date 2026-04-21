@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from agentic_survey.agents.brain_a import stream_brain_a
+from agentic_survey.agents.brain_a import build_scaffold_intent, stream_brain_a
 from agentic_survey.agents.brain_b_interviewer import (
     InterviewerBrainBError,
     run_brain_b_interviewer,
@@ -12,6 +14,9 @@ from agentic_survey.agents.brain_b_interviewer import (
 from agentic_survey.agents.validator import Validator
 from agentic_survey.domain.intent import BrainBIntent
 from agentic_survey.engine.graph_builder import apply_validator_to_graph
+
+if TYPE_CHECKING:
+    from agentic_survey.engine.event_bus import CampaignEventBus
 from agentic_survey.engine.retrieval_cache import RetrievalCache
 from agentic_survey.engine.session_policy import (
     SessionSignals,
@@ -38,7 +43,11 @@ __all__ = [
     "normalize_control_signal",
     "opening_turn_message",
     "run_interview_turn",
+    "run_post_turn_background",
+    "run_pre_plan_background",
 ]
+
+logger = logging.getLogger(__name__)
 
 
 def opening_turn_message(campaign: Campaign, session: InterviewSessionRecord) -> str:
@@ -119,11 +128,12 @@ def normalize_control_signal(text: str) -> ParticipantControl | None:
 class InterviewEvent:
     """One entry in the ordered SSE event log produced by ``run_interview_turn``.
 
-    ``name`` maps 1:1 to lifecycles.md §2.7 SSE names (``turn_start``,
-    ``token``, ``get_user_input``, ``graph_delta``, ``turn_complete``,
-    ``session_finished``). ``data`` is the JSON-serializable payload the
-    eventual SSE endpoint will emit. Structured only; no per-token
-    ``interview_event`` persistence.
+    ``name`` maps 1:1 to lifecycles.md §2.7 SSE names. Foreground-only
+    names now: ``turn_start``, ``token``, ``get_user_input``,
+    ``turn_complete``, ``session_paused``, ``session_finished``. Events
+    produced by the post-turn background task (``validator_scored``,
+    ``graph_delta``, ``concepts_extracted``, ``brain_b_planned``) are
+    published directly to the bus and never enter the foreground list.
     """
 
     name: str
@@ -151,23 +161,29 @@ async def run_interview_turn(
     router: LiteLLMRouter,
     cache: RetrievalCache,
 ) -> InterviewTurnResult:
-    """Run a single live interview turn end-to-end.
+    """Run one participant turn in the **foreground**.
 
-    Flow:
+    Brain A streams here; Validator, graph builder, and Brain B are
+    deferred to :func:`run_post_turn_background`. Foreground steps:
 
-    1. Persist the participant turn (with validator-or-control-signal
-       validation row).
-    2. Recompute ``SessionSignals`` (advisory only).
-    3. Ask Brain B for a ``BrainBIntent``.
-    4. If ``intent.should_close``: stream Brain A's closing prose (no
-       chips), persist the agent turn, mark the session finished with
-       ``close_reason="brain_b_judgment"``.
-    5. Else: stream Brain A's reply tokens, persist the agent turn with
-       the ``BrainBIntent`` and its chip set.
+    1. Persist the participant turn (with a control-signal payload for
+       control words or a skeletal ``pending_validation`` marker for
+       substantive turns; the background task fills in validator
+       results).
+    2. Handle control signals (``pause``/``stop`` short-circuit here,
+       ``skip``/``continue`` fall through to streaming).
+    3. Read ``session.next_plan`` (set by the previous turn's background
+       task). If present, consume it; otherwise synthesize a
+       :func:`build_scaffold_intent` so Brain A still has something to
+       render.
+    4. Stream Brain A's reply tokens.
+    5. Persist the agent turn with the intent that drove it.
 
-    Retrieval cache writes land in step 3 once B2-min wires real retrieval;
-    the cache is passed through today so signatures stabilize.
+    ``cache`` is passed through for signature symmetry with the
+    background runner; it is only consumed when real retrieval fires,
+    which is always a Brain B concern.
     """
+    del cache  # foreground does not touch retrieval today; kept for API parity.
     session = repository.get_interview_session(session_id)
     if session is None:
         raise ValueError(f"Interview session {session_id!r} not found")
@@ -190,22 +206,12 @@ async def run_interview_turn(
         if chip_selected:
             validation_payload["chip_selected"] = chip_selected
     else:
-        last_agent = next(
-            (turn.content for turn in reversed(session.turns) if turn.role == "agent"),
-            "",
-        )
-        result = await validator.validate(
-            campaign=campaign,
-            content=content,
-            outline=campaign.outline,
-            previous_agent_question=last_agent,
-        )
-        validation_payload = result.to_dict()
-        validation_payload["objective_tags"] = derive_objective_tags(
-            content=content,
-            outline=campaign.outline,
-            validation=validation_payload,
-        )
+        # Validator runs in the background. Persist a placeholder so the
+        # turn row isn't ``None``; ``derive_objective_tags`` fires later.
+        validation_payload = {
+            "pending_validation": True,
+            "objective_tags": [],
+        }
         if chip_selected:
             validation_payload["chip_selected"] = chip_selected
 
@@ -216,20 +222,14 @@ async def run_interview_turn(
         validation=validation_payload,
     )
 
-    if control is None:
-        delta = await apply_validator_to_graph(
-            campaign_id=campaign.id,
-            session_id=session.id,
-            turn_id=participant_turn.id,
-            validation=validation_payload,
-            repository=repository,
-            router=router,
-        )
-        events.append(InterviewEvent(name="graph_delta", data=delta.to_dict()))
-
     if control == "pause":
         paused = repository.pause_interview_session(session.id, reason="participant_paused")
-        events.append(InterviewEvent(name="session_paused", data={"session_id": paused.id, "reason": "participant_paused"}))
+        events.append(
+            InterviewEvent(
+                name="session_paused",
+                data={"session_id": paused.id, "reason": "participant_paused"},
+            )
+        )
         return InterviewTurnResult(
             session=paused,
             participant_turn=participant_turn,
@@ -238,9 +238,6 @@ async def run_interview_turn(
 
     refreshed = repository.get_interview_session(session.id)
     assert refreshed is not None
-
-    participant_validations = [turn.validation for turn in refreshed.turns if turn.role == "participant"]
-    signals = compute_signals(refreshed, campaign.outline, participant_validations)
 
     if control == "stop":
         close_reason = "participant_stop"
@@ -260,87 +257,43 @@ async def run_interview_turn(
             validation={
                 "closing": True,
                 "close_reason": close_reason,
-                "turn_count": signals.turn_count,
-                "coverage_streak": signals.coverage_streak,
-                "low_coverage_streak": signals.low_coverage_streak,
-                "objective_hits": signals.objective_hits,
             },
         )
         finished = repository.finish_interview_session(refreshed.id, close_reason=close_reason)
-        events.append(InterviewEvent(name="turn_complete", data={"turn_id": agent_turn.id}))
-        events.append(InterviewEvent(name="session_finished", data={"session_id": finished.id, "close_reason": close_reason}))
+        events.append(
+            InterviewEvent(
+                name="turn_complete",
+                data={"session_id": finished.id, "turn_id": agent_turn.id},
+            )
+        )
+        events.append(
+            InterviewEvent(
+                name="session_finished",
+                data={"session_id": finished.id, "close_reason": close_reason},
+            )
+        )
         return InterviewTurnResult(
             session=finished,
             agent_turn=agent_turn,
             participant_turn=participant_turn,
-            signals=signals,
+            signals=None,
             close_reason=close_reason,
             events=events,
         )
 
-    transcript_tail = _transcript_tail(refreshed)
-
-    search_fn = build_search_knowledge(
-        repository=repository,
-        campaign_id=campaign.id,
-        surface="interviewer",
-        router=router,
-        session_id=refreshed.id,
-        cache=cache,
-    )
-    neighborhood_fn = build_neighborhood_provider(
-        repository=repository,
-        campaign_id=campaign.id,
-    )
-
-    grounding_snapshot = _list_approved_grounding_sources(repository, campaign.id)
-    participant_context = dict(refreshed.micro_form_answers or {})
-    intent = await run_brain_b_interviewer(
-        outline=campaign.outline,
-        transcript_tail=transcript_tail,
-        session_signals=signals,
-        router=router,
-        search_knowledge=search_fn,
-        list_grounding_sources=lambda: grounding_snapshot,
-        graph_neighborhood=neighborhood_fn,
-        participant_context=participant_context,
-    )
-
-    if intent.should_close:
-        close_reason = "brain_b_judgment"
-        reply_text = await _stream_closing(
-            router=router,
-            session=refreshed,
-            campaign=campaign,
-            close_reason=close_reason,
-            events=events,
-        )
-        agent_turn = repository.append_interview_turn(
-            refreshed.id,
-            role="agent",
-            content=reply_text,
-            brain_b_intent=intent,
-            get_user_input=intent.get_user_input,
-            validation={
-                "closing": True,
-                "close_reason": close_reason,
-                "turn_count": signals.turn_count,
-                "coverage_streak": signals.coverage_streak,
-                "low_coverage_streak": signals.low_coverage_streak,
-                "objective_hits": signals.objective_hits,
-            },
-        )
-        finished = repository.finish_interview_session(refreshed.id, close_reason=close_reason)
-        events.append(InterviewEvent(name="turn_complete", data={"turn_id": agent_turn.id}))
-        events.append(InterviewEvent(name="session_finished", data={"session_id": finished.id, "close_reason": close_reason}))
-        return InterviewTurnResult(
-            session=finished,
-            agent_turn=agent_turn,
-            participant_turn=participant_turn,
-            brain_b_intent=intent,
-            signals=signals,
-            close_reason=close_reason,
-            events=events,
+    # Substantive / skip / continue: render Brain A from the plan the
+    # previous background task wrote (or a scaffold when no plan exists).
+    planned = refreshed.next_plan
+    if planned is not None:
+        intent = planned.model_copy(deep=True)
+        # Consume the plan so a subsequent failed background leaves the
+        # NEXT turn on scaffold instead of rendering a stale probe.
+        repository.update_next_plan(refreshed.id, None)
+    else:
+        intent = build_scaffold_intent(
+            outline=campaign.outline,
+            participant_context=dict(refreshed.micro_form_answers or {}),
+            transcript_tail=_transcript_tail(refreshed),
         )
 
     persona = _compose_persona(campaign.outline.persona_hints)
@@ -348,11 +301,11 @@ async def run_interview_turn(
     async for token in stream_brain_a(
         role="mira-chatter",
         prompt_md_path=INTERVIEWER_BRAIN_A_PROMPT,
-        transcript_tail=transcript_tail,
+        transcript_tail=_transcript_tail(refreshed),
         brain_b_intent=intent,
         persona=persona,
         router=router,
-        participant_context=participant_context,
+        participant_context=dict(refreshed.micro_form_answers or {}),
     ):
         chunks.append(token)
         events.append(InterviewEvent(name="token", data={"text": token}))
@@ -370,6 +323,7 @@ async def run_interview_turn(
         InterviewEvent(
             name="get_user_input",
             data={
+                "session_id": refreshed.id,
                 "turn_id": agent_turn.id,
                 "question": intent.get_user_input.question,
                 "options": list(intent.get_user_input.options),
@@ -377,7 +331,12 @@ async def run_interview_turn(
             },
         )
     )
-    events.append(InterviewEvent(name="turn_complete", data={"turn_id": agent_turn.id}))
+    events.append(
+        InterviewEvent(
+            name="turn_complete",
+            data={"session_id": refreshed.id, "turn_id": agent_turn.id},
+        )
+    )
 
     updated_session = repository.get_interview_session(refreshed.id)
     assert updated_session is not None
@@ -386,9 +345,302 @@ async def run_interview_turn(
         agent_turn=agent_turn,
         participant_turn=participant_turn,
         brain_b_intent=intent,
-        signals=signals,
+        signals=None,
         events=events,
     )
+
+
+async def run_post_turn_background(
+    *,
+    session_id: str,
+    campaign_id: str,
+    participant_turn_id: str,
+    agent_turn_id: str,
+    repository: InMemoryRepository,
+    router: LiteLLMRouter,
+    validator: Validator,
+    cache: RetrievalCache,
+    bus: "CampaignEventBus",
+) -> None:
+    """Post-turn fan-out: Validator → graph → Brain B → next_plan.
+
+    Spawned by the HTTP handler under ``asyncio.create_task`` after the
+    foreground returns its payload. Runs entirely under an outer guard:
+    any exception is logged and recorded on the agent turn's validation
+    dict as ``background_failed=True``; the exception is never raised to
+    the caller or the event loop's default handler.
+
+    Ordering (each step emits exactly one bus event on success):
+
+    1. Validator scores the participant turn →
+       publishes ``validator_scored`` and merges the result into the
+       participant turn's ``validation``.
+    2. :func:`apply_validator_to_graph` writes concepts + edges →
+       publishes ``graph_delta`` and ``concepts_extracted``.
+    3. :func:`run_brain_b_interviewer` plans the NEXT probe and the plan
+       is written via ``repository.update_next_plan`` →
+       publishes ``brain_b_planned``.
+
+    Control-signal turns (``skip``/``continue``) skip steps 1 and 2 since
+    there is no substantive participant content to score.
+    """
+    try:
+        await _post_turn_background_inner(
+            session_id=session_id,
+            campaign_id=campaign_id,
+            participant_turn_id=participant_turn_id,
+            repository=repository,
+            router=router,
+            validator=validator,
+            cache=cache,
+            bus=bus,
+        )
+    except Exception:
+        logger.exception(
+            "post-turn background failed: session=%s participant_turn=%s agent_turn=%s",
+            session_id,
+            participant_turn_id,
+            agent_turn_id,
+        )
+        try:
+            repository.update_interview_turn_validation(
+                session_id,
+                agent_turn_id,
+                {"background_failed": True},
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "post-turn background failed to record background_failed marker"
+            )
+
+
+async def _post_turn_background_inner(
+    *,
+    session_id: str,
+    campaign_id: str,
+    participant_turn_id: str,
+    repository: InMemoryRepository,
+    router: LiteLLMRouter,
+    validator: Validator,
+    cache: RetrievalCache,
+    bus: "CampaignEventBus",
+) -> None:
+    session = repository.get_interview_session(session_id)
+    if session is None:
+        raise RuntimeError(f"post-turn background: session {session_id!r} not found")
+    campaign = repository.get_campaign(session.campaign_id)
+    if campaign is None:
+        raise RuntimeError(
+            f"post-turn background: campaign {session.campaign_id!r} not found"
+        )
+
+    participant_turn = next(
+        (turn for turn in session.turns if turn.id == participant_turn_id),
+        None,
+    )
+    if participant_turn is None:
+        raise RuntimeError(
+            f"post-turn background: participant turn {participant_turn_id!r} missing"
+        )
+
+    existing_validation = participant_turn.validation or {}
+    is_control = "control_signal" in existing_validation
+
+    # Step 1: Validator.
+    if not is_control:
+        last_agent = _last_agent_content_before(session, participant_turn_id)
+        result = await validator.validate(
+            campaign=campaign,
+            content=participant_turn.content,
+            outline=campaign.outline,
+            previous_agent_question=last_agent,
+        )
+        validation_payload = result.to_dict()
+        validation_payload["objective_tags"] = derive_objective_tags(
+            content=participant_turn.content,
+            outline=campaign.outline,
+            validation=validation_payload,
+        )
+        # Preserve chip_selected if the foreground recorded one.
+        if "chip_selected" in existing_validation:
+            validation_payload["chip_selected"] = existing_validation["chip_selected"]
+        repository.update_interview_turn_validation(
+            session_id,
+            participant_turn_id,
+            validation_payload,
+        )
+        bus.publish_many(
+            campaign_id,
+            [
+                InterviewEvent(
+                    name="validator_scored",
+                    data={
+                        "session_id": session_id,
+                        "turn_id": participant_turn_id,
+                        "validation": validation_payload,
+                    },
+                )
+            ],
+        )
+
+        # Step 2: graph builder.
+        delta = await apply_validator_to_graph(
+            campaign_id=campaign_id,
+            session_id=session_id,
+            turn_id=participant_turn_id,
+            validation=validation_payload,
+            repository=repository,
+            router=router,
+        )
+        delta_payload = delta.to_dict()
+        delta_payload["session_id"] = session_id
+        delta_payload["turn_id"] = participant_turn_id
+        concept_payload = {
+            "session_id": session_id,
+            "turn_id": participant_turn_id,
+            "concepts": [
+                {"id": node["id"], "label": node["label"], "type": node.get("type", "")}
+                for node in delta.add_nodes
+            ],
+            "light_up": list(delta.light_up),
+        }
+        bus.publish_many(
+            campaign_id,
+            [
+                InterviewEvent(name="graph_delta", data=delta_payload),
+                InterviewEvent(name="concepts_extracted", data=concept_payload),
+            ],
+        )
+
+    # Step 3: Brain B plans the NEXT turn.
+    refreshed = repository.get_interview_session(session_id)
+    assert refreshed is not None
+    participant_validations = [
+        turn.validation for turn in refreshed.turns if turn.role == "participant"
+    ]
+    signals = compute_signals(refreshed, campaign.outline, participant_validations)
+    transcript_tail = _transcript_tail(refreshed)
+    search_fn = build_search_knowledge(
+        repository=repository,
+        campaign_id=campaign_id,
+        surface="interviewer",
+        router=router,
+        session_id=session_id,
+        cache=cache,
+    )
+    neighborhood_fn = build_neighborhood_provider(
+        repository=repository,
+        campaign_id=campaign_id,
+    )
+    grounding_snapshot = _list_approved_grounding_sources(repository, campaign_id)
+    participant_context = dict(refreshed.micro_form_answers or {})
+    intent = await run_brain_b_interviewer(
+        outline=campaign.outline,
+        transcript_tail=transcript_tail,
+        session_signals=signals,
+        router=router,
+        search_knowledge=search_fn,
+        list_grounding_sources=lambda: grounding_snapshot,
+        graph_neighborhood=neighborhood_fn,
+        participant_context=participant_context,
+    )
+    repository.update_next_plan(session_id, intent)
+    bus.publish_many(
+        campaign_id,
+        [
+            InterviewEvent(
+                name="brain_b_planned",
+                data={
+                    "session_id": session_id,
+                    "next_plan": intent.model_dump(mode="json"),
+                },
+            )
+        ],
+    )
+
+
+async def run_pre_plan_background(
+    *,
+    session_id: str,
+    campaign_id: str,
+    repository: InMemoryRepository,
+    router: LiteLLMRouter,
+    cache: RetrievalCache,
+    bus: "CampaignEventBus",
+) -> None:
+    """Seed ``session.next_plan`` from the deterministic opener.
+
+    Called after ``POST /sessions/{sid}/start`` drops the opener turn so
+    that turn 1's foreground can render a planned probe instead of a
+    scaffold. Same isolation contract as the post-turn runner: any
+    exception is swallowed and logged; the next turn degrades cleanly to
+    a scaffold.
+    """
+    try:
+        session = repository.get_interview_session(session_id)
+        if session is None:
+            return
+        campaign = repository.get_campaign(session.campaign_id)
+        if campaign is None:
+            return
+        transcript_tail = _transcript_tail(session)
+        signals = compute_signals(session, campaign.outline, [])
+        search_fn = build_search_knowledge(
+            repository=repository,
+            campaign_id=campaign_id,
+            surface="interviewer",
+            router=router,
+            session_id=session_id,
+            cache=cache,
+        )
+        neighborhood_fn = build_neighborhood_provider(
+            repository=repository,
+            campaign_id=campaign_id,
+        )
+        grounding_snapshot = _list_approved_grounding_sources(repository, campaign_id)
+        participant_context = dict(session.micro_form_answers or {})
+        intent = await run_brain_b_interviewer(
+            outline=campaign.outline,
+            transcript_tail=transcript_tail,
+            session_signals=signals,
+            router=router,
+            search_knowledge=search_fn,
+            list_grounding_sources=lambda: grounding_snapshot,
+            graph_neighborhood=neighborhood_fn,
+            participant_context=participant_context,
+        )
+        repository.update_next_plan(session_id, intent)
+        bus.publish_many(
+            campaign_id,
+            [
+                InterviewEvent(
+                    name="brain_b_planned",
+                    data={
+                        "session_id": session_id,
+                        "next_plan": intent.model_dump(mode="json"),
+                    },
+                )
+            ],
+        )
+    except Exception:
+        logger.exception(
+            "pre-plan background failed: session=%s campaign=%s",
+            session_id,
+            campaign_id,
+        )
+
+
+def _last_agent_content_before(
+    session: InterviewSessionRecord, pivot_turn_id: str
+) -> str:
+    """Return the most recent agent content persisted before the pivot turn."""
+    last = ""
+    for turn in session.turns:
+        if turn.id == pivot_turn_id:
+            break
+        if turn.role == "agent":
+            last = turn.content
+    return last
 
 
 async def _stream_closing(
@@ -407,6 +659,7 @@ async def _stream_closing(
     message. The text is token-streamed into the event log as ``token``
     events, matching the regular flow.
     """
+    del campaign  # only session + close_reason matter here.
     system_prompt = (
         "You are Mira, closing a research conversation. Write 2 to 4 short "
         "sentences grounded in the participant's own signal. No question, "
@@ -496,3 +749,7 @@ def _compose_persona(persona_hints: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+# ``asyncio`` is imported for side-effect symmetry with callers that spawn
+# tasks via ``asyncio.create_task`` over these coroutines. The helper
+# functions themselves never schedule anything — the caller is the scheduler.
+_ = asyncio  # keep the import from being pruned by zealous formatters.

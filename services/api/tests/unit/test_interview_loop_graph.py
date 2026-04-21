@@ -9,7 +9,11 @@ from agentic_survey.agents.validator import ValidationResult
 from agentic_survey.domain.intent import BrainBIntent
 from agentic_survey.domain.tools import GetUserInputOptions
 from agentic_survey.engine import interview_loop as interview_loop_module
-from agentic_survey.engine.interview_loop import run_interview_turn
+from agentic_survey.engine.event_bus import CampaignEventBus
+from agentic_survey.engine.interview_loop import (
+    run_interview_turn,
+    run_post_turn_background,
+)
 from agentic_survey.engine.retrieval_cache import RetrievalCache
 from agentic_survey.repository import InMemoryRepository
 
@@ -106,7 +110,7 @@ def _seed_live_session(repo: InMemoryRepository):
     return campaign, session
 
 
-def test_non_control_turn_emits_one_graph_delta_event(
+def test_non_control_turn_publishes_graph_delta_from_background(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fake_agents(monkeypatch)
@@ -119,9 +123,10 @@ def test_non_control_turn_emits_one_graph_delta_event(
         ],
         relations=[],
     )
+    bus = CampaignEventBus()
 
-    result = asyncio.run(
-        run_interview_turn(
+    async def main() -> None:
+        result = await run_interview_turn(
             session_id=session.id,
             participant_content="We use code review to build feedback loops.",
             chip_selected=None,
@@ -130,31 +135,53 @@ def test_non_control_turn_emits_one_graph_delta_event(
             router=_StubRouter(),
             cache=RetrievalCache(),
         )
-    )
+        # Foreground no longer emits graph_delta; it moved to background.
+        assert [event.name for event in result.events if event.name == "graph_delta"] == []
+        assert result.agent_turn is not None
+        assert result.participant_turn is not None
+        await run_post_turn_background(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            participant_turn_id=result.participant_turn.id,
+            agent_turn_id=result.agent_turn.id,
+            repository=repo,
+            router=_StubRouter(),
+            validator=validator,
+            cache=RetrievalCache(),
+            bus=bus,
+        )
 
-    graph_events = [event for event in result.events if event.name == "graph_delta"]
-    assert len(graph_events) == 1
-    payload = graph_events[0].data
+    asyncio.run(main())
+
+    published = bus.replay(campaign.id, since=-1)
+    graph_envelopes = [env for env in published if env.name == "graph_delta"]
+    assert len(graph_envelopes) == 1
+    payload = graph_envelopes[0].data
     assert len(payload["add_nodes"]) == 2
     assert all(node["is_new"] is True for node in payload["add_nodes"])
     assert len(payload["add_edges"]) == 1
+    assert payload["session_id"] == session.id
+
+    concepts_envelopes = [env for env in published if env.name == "concepts_extracted"]
+    assert len(concepts_envelopes) == 1
+    assert len(concepts_envelopes[0].data["concepts"]) == 2
 
 
 @pytest.mark.parametrize("control", ["pause", "skip", "continue", "stop"])
-def test_control_signal_turn_emits_no_graph_delta(
+def test_control_signal_turn_does_not_emit_graph_delta(
     monkeypatch: pytest.MonkeyPatch, control: str
 ) -> None:
     _install_fake_agents(monkeypatch)
     repo = InMemoryRepository()
     campaign, session = _seed_live_session(repo)
-    # The validator must not be called for control signals, so a stub that
-    # raises on .validate() also proves the invariant.
+    bus = CampaignEventBus()
+
     class _Raising:
         async def validate(self, **kwargs: Any) -> ValidationResult:
             raise AssertionError("validator must not run for control signals")
 
-    result = asyncio.run(
-        run_interview_turn(
+    async def main() -> None:
+        result = await run_interview_turn(
             session_id=session.id,
             participant_content=control,
             chip_selected=None,
@@ -163,22 +190,50 @@ def test_control_signal_turn_emits_no_graph_delta(
             router=_StubRouter(),
             cache=RetrievalCache(),
         )
-    )
+        foreground_graph = [
+            event for event in result.events if event.name == "graph_delta"
+        ]
+        assert foreground_graph == []
+        # For skip/continue the session stays active and the background task
+        # would be spawned by the HTTP handler; simulate that here and assert
+        # the validator gate skips because the participant row already carries
+        # a control_signal.
+        if (
+            control in {"skip", "continue"}
+            and result.agent_turn is not None
+            and result.participant_turn is not None
+        ):
+            await run_post_turn_background(
+                session_id=session.id,
+                campaign_id=campaign.id,
+                participant_turn_id=result.participant_turn.id,
+                agent_turn_id=result.agent_turn.id,
+                repository=repo,
+                router=_StubRouter(),
+                validator=_Raising(),
+                cache=RetrievalCache(),
+                bus=bus,
+            )
 
-    graph_events = [event for event in result.events if event.name == "graph_delta"]
-    assert graph_events == []
+    asyncio.run(main())
+
+    graph_envelopes = [
+        env for env in bus.replay(campaign.id, since=-1) if env.name == "graph_delta"
+    ]
+    assert graph_envelopes == []
 
 
-def test_empty_concepts_still_emits_graph_delta_with_empty_payload(
+def test_empty_concepts_still_publishes_graph_delta_with_empty_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fake_agents(monkeypatch)
     repo = InMemoryRepository()
     campaign, session = _seed_live_session(repo)
     validator = _FakeValidator(concepts=[], relations=[])
+    bus = CampaignEventBus()
 
-    result = asyncio.run(
-        run_interview_turn(
+    async def main() -> None:
+        result = await run_interview_turn(
             session_id=session.id,
             participant_content="A normal answer with no tagged concepts.",
             chip_selected=None,
@@ -187,11 +242,27 @@ def test_empty_concepts_still_emits_graph_delta_with_empty_payload(
             router=_StubRouter(),
             cache=RetrievalCache(),
         )
-    )
+        assert result.agent_turn is not None
+        assert result.participant_turn is not None
+        await run_post_turn_background(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            participant_turn_id=result.participant_turn.id,
+            agent_turn_id=result.agent_turn.id,
+            repository=repo,
+            router=_StubRouter(),
+            validator=validator,
+            cache=RetrievalCache(),
+            bus=bus,
+        )
 
-    graph_events = [event for event in result.events if event.name == "graph_delta"]
-    assert len(graph_events) == 1
-    payload = graph_events[0].data
+    asyncio.run(main())
+
+    graph_envelopes = [
+        env for env in bus.replay(campaign.id, since=-1) if env.name == "graph_delta"
+    ]
+    assert len(graph_envelopes) == 1
+    payload = graph_envelopes[0].data
     assert payload["add_nodes"] == []
     assert payload["add_edges"] == []
     assert payload["light_up"] == []

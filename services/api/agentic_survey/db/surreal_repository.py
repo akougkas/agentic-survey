@@ -708,6 +708,7 @@ class SurrealRepository:
             "started_at": now_dt,
             "updated_at": now_dt,
             "micro_form_answers": answers,
+            "next_plan": None,
         }
         self._db().create(RecordID("interview_session", session_id), payload)
         return InterviewSessionRecord(
@@ -859,6 +860,51 @@ class SurrealRepository:
         assert session is not None
         return session
 
+    def update_next_plan(
+        self,
+        session_id: str,
+        plan: BrainBIntent | None,
+    ) -> InterviewSessionRecord:
+        now_dt = _utcnow()
+        payload = plan.model_dump(mode="json") if plan is not None else None
+        self._query(
+            """UPDATE type::thing('interview_session', $sid) MERGE {
+                next_plan: $plan,
+                updated_at: $ts
+            };""",
+            {"sid": session_id, "plan": payload, "ts": now_dt},
+        )
+        session = self.get_interview_session(session_id)
+        assert session is not None
+        return session
+
+    def update_interview_turn_validation(
+        self,
+        session_id: str,
+        turn_id: str,
+        patch: dict,
+    ) -> InterviewTurnRecord:
+        """Merge ``patch`` into an existing interview_turn's ``validation`` dict."""
+        rows = self._query(
+            "SELECT validation FROM type::thing('interview_turn', $id);",
+            {"id": turn_id},
+        )
+        current: dict = {}
+        if rows and isinstance(rows[0].get("validation"), dict):
+            current = dict(rows[0]["validation"])
+        current.update(patch)
+        self._query(
+            "UPDATE type::thing('interview_turn', $id) MERGE { validation: $v };",
+            {"id": turn_id, "v": current},
+        )
+        session = self.get_interview_session(session_id)
+        if session is None:
+            raise KeyError(f"Interview session not found: {session_id}")
+        for turn in session.turns:
+            if turn.id == turn_id:
+                return turn
+        raise KeyError(f"Interview turn not found: session={session_id!r} turn={turn_id!r}")
+
     def _row_to_campaign(self, campaign_id: str, row: dict) -> Campaign:
         return Campaign(
             id=campaign_id,
@@ -934,6 +980,7 @@ class SurrealRepository:
             abandoned_reason=row.get("abandoned_reason"),
             micro_form_answers=dict(row.get("micro_form_answers") or {}),
             turns=turns,
+            next_plan=BrainBIntent.model_validate(row["next_plan"]) if row.get("next_plan") else None,
         )
 
     def _row_to_interview_turn(self, session_id: str, row: dict) -> InterviewTurnRecord:
