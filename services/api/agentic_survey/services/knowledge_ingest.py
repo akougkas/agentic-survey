@@ -33,13 +33,14 @@ async def ingest_seed_sources(
 ) -> IngestResult:
     """Persist bundle seed_sources as knowledge_source rows.
 
-    ``raw_text`` seeds are chunked synchronously and land as
-    ``pending_approval`` so the scientist can approve them before the
-    campaign goes live. ``url`` and ``pdf`` seeds land as ``kind=url|pdf``
+    ``raw_text`` seeds are chunked synchronously and auto-approved because
+    the bundle author is the scientist: any text baked into the bundle is
+    already curated. ``url`` and ``pdf`` seeds land as ``kind=url|pdf``
     with ``status=queued``; the M2 ingestion worker picks them up and
     walks them through ``fetching → extracting → chunking → embedding →
-    pending_approval``. Ingestion never aborts campaign creation; per-seed
-    failures are logged and appended to ``skipped``.
+    pending_approval`` before a human approves them. Ingestion never
+    aborts campaign creation; per-seed failures are logged and appended
+    to ``skipped``.
     """
     created_source_ids: list[str] = []
     created_chunk_count = 0
@@ -71,6 +72,12 @@ async def ingest_seed_sources(
                         char_end=span.end_char,
                         approved=False,
                     )
+                # raw_text seeds are scientist-curated by virtue of being baked into the bundle; the pending_approval gate exists for network-ingested content (URL/PDF).
+                repository.update_knowledge_source_status(
+                    source.id,
+                    status="approved",
+                    approved_by="bundle_seed_autoapproval",
+                )
                 created_source_ids.append(source.id)
                 created_chunk_count += len(spans)
             elif seed.kind in {"url", "pdf"}:

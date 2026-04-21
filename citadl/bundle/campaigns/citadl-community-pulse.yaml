@@ -92,6 +92,8 @@ outline:
     - Fire R8 on every respondent; partial coverage is better than skipping it.
     - Correct register openly if the opening classification of the respondent proves wrong.
     - Do not defend the vision when R8 is answered; elicit and record.
+    mandatory_close_axes:
+    - R8
   freshness_query: agentic AI scientific data lifecycle community requirements trust governance 2026
   persona_hints:
     name: Mira

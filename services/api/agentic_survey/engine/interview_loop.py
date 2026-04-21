@@ -12,7 +12,7 @@ from agentic_survey.agents.brain_b_interviewer import (
     run_brain_b_interviewer,
 )
 from agentic_survey.agents.validator import Validator
-from agentic_survey.domain.intent import BrainBIntent
+from agentic_survey.domain.intent import AxisCoverage, BrainBIntent
 from agentic_survey.engine.graph_builder import apply_validator_to_graph
 
 if TYPE_CHECKING:
@@ -519,6 +519,7 @@ async def _post_turn_background_inner(
         turn.validation for turn in refreshed.turns if turn.role == "participant"
     ]
     signals = compute_signals(refreshed, campaign.outline, participant_validations)
+    prior_axes = _last_axes_coverage(refreshed)
     transcript_tail = _transcript_tail(refreshed)
     search_fn = build_search_knowledge(
         repository=repository,
@@ -543,6 +544,7 @@ async def _post_turn_background_inner(
         list_grounding_sources=lambda: grounding_snapshot,
         graph_neighborhood=neighborhood_fn,
         participant_context=participant_context,
+        prior_axes_coverage=prior_axes,
     )
     repository.update_next_plan(session_id, intent)
     bus.publish_many(
@@ -608,6 +610,7 @@ async def run_pre_plan_background(
             list_grounding_sources=lambda: grounding_snapshot,
             graph_neighborhood=neighborhood_fn,
             participant_context=participant_context,
+            prior_axes_coverage=[],
         )
         repository.update_next_plan(session_id, intent)
         bus.publish_many(
@@ -698,6 +701,24 @@ def _extract_chunk_text(chunk: object) -> str:
     if isinstance(delta, dict):
         return str(delta.get("content") or "")
     return str(getattr(delta, "content", "") or "")
+
+
+def _last_axes_coverage(session: InterviewSessionRecord) -> list[AxisCoverage]:
+    """Return the most recent non-empty ``axes_coverage`` from an agent turn.
+
+    Walks the session's turns newest-first and returns a deep copy so the
+    caller can safely pass the list into the next Brain B plan without
+    aliasing into repository state. Empty list on cold start.
+    """
+    for turn in reversed(session.turns):
+        if turn.role != "agent":
+            continue
+        intent = turn.brain_b_intent
+        if intent is None:
+            continue
+        if intent.axes_coverage:
+            return [c.model_copy(deep=True) for c in intent.axes_coverage]
+    return []
 
 
 def _list_approved_grounding_sources(repository, campaign_id: str) -> list[dict[str, Any]]:

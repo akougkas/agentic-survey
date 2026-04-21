@@ -99,7 +99,7 @@ def seed_entries() -> list[CatalogEntry]:
             label=f"{dynamo_model} (Validator on dynamo, reasoning budget)",
             is_default=True,
             reasoning_mode="budget",
-            reasoning_budget_tokens=2048,
+            reasoning_budget_tokens=8192,
             reasoning_kwarg="enable_thinking",
         ),
         CatalogEntry(

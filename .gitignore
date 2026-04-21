@@ -59,6 +59,7 @@ htmlcov/
 *.pid.lock
 /campaigns/
 services/api/campaigns/
+services/api/scripts/
 examples/product-bundles/*/artifacts/
 examples/product-bundles/*/scratch/
 citadl/.env

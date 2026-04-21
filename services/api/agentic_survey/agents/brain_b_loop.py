@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -9,7 +10,7 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from agentic_survey.agents.tools.registry import ToolDispatchError, ToolRegistry
-from agentic_survey.domain.intent import BrainBIntent
+from agentic_survey.domain.intent import AxisCoverage, BrainBIntent
 
 __all__ = [
     "BrainBLoopError",
@@ -176,6 +177,98 @@ def _observed_retrieval_chunks(tool_calls: list[ToolCallRecord]) -> list[str]:
     return chunk_ids
 
 
+_AXIS_PREFIX_RE = re.compile(r"^(R\d+)", re.IGNORECASE)
+
+
+def _axis_prefix(axis: str) -> str:
+    stripped = (axis or "").strip()
+    match = _AXIS_PREFIX_RE.match(stripped)
+    if match:
+        return match.group(1).upper()
+    return stripped
+
+
+def _clamp_score(value: Any) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if score < 0.0:
+        return 0.0
+    if score > 1.0:
+        return 1.0
+    return score
+
+
+def _normalize_axes_coverage(
+    intent: BrainBIntent,
+    *,
+    rubric_axes: list[str],
+    prior_axes: list[AxisCoverage] | None,
+) -> BrainBIntent:
+    prior_score_by_prefix: dict[str, float] = {}
+    prior_gap_by_prefix: dict[str, str] = {}
+    for entry in prior_axes or []:
+        prefix = _axis_prefix(entry.axis)
+        if not prefix:
+            continue
+        prior_score_by_prefix[prefix] = _clamp_score(entry.score)
+        prior_gap_by_prefix[prefix] = entry.gap or ""
+
+    emitted_score_by_prefix: dict[str, float] = {}
+    emitted_gap_by_prefix: dict[str, str] = {}
+    for entry in intent.axes_coverage:
+        prefix = _axis_prefix(entry.axis)
+        if not prefix:
+            continue
+        emitted_score_by_prefix[prefix] = _clamp_score(entry.score)
+        emitted_gap_by_prefix[prefix] = entry.gap or ""
+
+    normalized: list[AxisCoverage] = []
+    for raw_axis in rubric_axes:
+        prefix = _axis_prefix(raw_axis)
+        prior_score = prior_score_by_prefix.get(prefix, 0.0)
+        if prefix in emitted_score_by_prefix:
+            final_score = max(prior_score, emitted_score_by_prefix[prefix])
+            gap = emitted_gap_by_prefix.get(prefix, "") or prior_gap_by_prefix.get(prefix, "")
+        else:
+            final_score = prior_score
+            gap = prior_gap_by_prefix.get(prefix, "")
+        normalized.append(AxisCoverage(axis=prefix, score=final_score, gap=gap))
+    return intent.model_copy(update={"axes_coverage": normalized})
+
+
+def _enforce_close_guard(
+    intent: BrainBIntent,
+    *,
+    close_guard_axes: list[str] | None,
+    surface: Surface,
+) -> BrainBIntent:
+    if not intent.should_close:
+        return intent
+    if not close_guard_axes:
+        return intent
+    score_by_prefix: dict[str, float] = {}
+    for entry in intent.axes_coverage:
+        prefix = _axis_prefix(entry.axis)
+        if not prefix:
+            continue
+        score_by_prefix[prefix] = _clamp_score(entry.score)
+    for raw_guard in close_guard_axes:
+        prefix = _axis_prefix(raw_guard)
+        if not prefix:
+            continue
+        score = score_by_prefix.get(prefix)
+        if score is None or score == 0.0:
+            logger.warning(
+                "close guard flipped should_close=False surface=%s reason=axis_%s_is_zero",
+                surface,
+                prefix,
+            )
+            return intent.model_copy(update={"should_close": False})
+    return intent
+
+
 async def run_brain_b_with_tools(
     *,
     surface: Surface,
@@ -185,6 +278,9 @@ async def run_brain_b_with_tools(
     router,
     max_tool_calls: int = 4,
     max_parse_retries: int = 1,
+    rubric_axes: list[str] | None = None,
+    prior_axes_coverage: list[AxisCoverage] | None = None,
+    close_guard_axes: list[str] | None = None,
 ) -> BrainBLoopResult:
     """Single tool-calling loop shared by Designer and Interviewer Brain B.
 
@@ -196,6 +292,16 @@ async def run_brain_b_with_tools(
     predictable. ``retrieval_used`` and ``retrieval_chunks`` on the returned
     intent are overridden from observed ``search_knowledge`` calls so the
     audit trail reflects reality, not model self-report.
+
+    When ``rubric_axes`` is provided, the returned intent's ``axes_coverage``
+    is rewritten to carry one entry per rubric axis in declaration order, with
+    scores clamped to ``[0.0, 1.0]`` and monotonically non-decreasing against
+    ``prior_axes_coverage`` (an empty emission inherits the prior; an absent
+    prior defaults to ``0.0``). When ``close_guard_axes`` is truthy and the
+    model emitted ``should_close=True``, the guard flips it back to ``False``
+    whenever any listed axis is missing or scored ``0.0``; the flip is logged
+    for audit. Both knobs default to ``None`` so the Designer surface keeps
+    its existing permissive behavior.
     """
     system_prompt = _prompt_path(surface).read_text(encoding="utf-8").strip()
     messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
@@ -335,6 +441,18 @@ async def run_brain_b_with_tools(
                 "retrieval_chunks": observed_chunks if retrieval_used else [],
             }
         )
+        if rubric_axes is not None:
+            intent = _normalize_axes_coverage(
+                intent,
+                rubric_axes=rubric_axes,
+                prior_axes=prior_axes_coverage,
+            )
+        if close_guard_axes:
+            intent = _enforce_close_guard(
+                intent,
+                close_guard_axes=close_guard_axes,
+                surface=surface,
+            )
         return BrainBLoopResult(intent=intent, tool_calls=tool_calls_made, raw_output=raw_output)
 
     raise BrainBLoopError(

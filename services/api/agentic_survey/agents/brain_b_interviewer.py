@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Awaitable, Callable
 
 from agentic_survey.agents.brain_b_loop import (
@@ -16,7 +17,7 @@ from agentic_survey.agents.tools.definitions import (
     search_knowledge_tool,
 )
 from agentic_survey.agents.tools.registry import ToolRegistry
-from agentic_survey.domain.intent import BrainBIntent
+from agentic_survey.domain.intent import AxisCoverage, BrainBIntent
 from agentic_survey.domain.outline import OutlineArtifact
 from agentic_survey.engine.session_policy import SessionSignals
 
@@ -46,6 +47,7 @@ async def run_brain_b_interviewer(
     graph_neighborhood: GraphNeighborhood | None = None,
     max_tool_calls: int = 4,
     participant_context: dict[str, str] | None = None,
+    prior_axes_coverage: list[AxisCoverage] | None = None,
 ) -> BrainBIntent:
     """Run Interviewer Brain B as a tool-calling agent.
 
@@ -85,6 +87,11 @@ async def run_brain_b_interviewer(
             "Participant self-description (from pre-interview micro-form):\n"
             + "\n".join(context_lines)
         )
+    if prior_axes_coverage:
+        system_context.append(
+            "Prior axes coverage (monotonicity floor; enforced server-side):\n"
+            + json.dumps([c.model_dump() for c in prior_axes_coverage], indent=2)
+        )
     result = await run_brain_b_with_tools(
         surface="interviewer",
         system_context=system_context,
@@ -92,5 +99,8 @@ async def run_brain_b_interviewer(
         registry=registry,
         router=router,
         max_tool_calls=max_tool_calls,
+        rubric_axes=list(outline.axes),
+        prior_axes_coverage=prior_axes_coverage,
+        close_guard_axes=list(outline.rubric.mandatory_close_axes),
     )
     return result.intent

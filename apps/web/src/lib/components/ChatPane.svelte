@@ -24,6 +24,7 @@
   let draft = '';
   let transcriptEl: HTMLDivElement | null = null;
   let seenMessageCount = 0;
+  let seenPending = false;
 
   function isAgent(role: string): boolean {
     return role === 'agent' || role === 'designer';
@@ -93,11 +94,10 @@
   }
 
   afterUpdate(() => {
-    if (!transcriptEl || messages.length === seenMessageCount) {
-      return;
-    }
-
+    if (!transcriptEl) return;
+    if (messages.length === seenMessageCount && pending === seenPending) return;
     seenMessageCount = messages.length;
+    seenPending = pending;
     transcriptEl.scrollTop = transcriptEl.scrollHeight;
   });
 </script>
@@ -111,7 +111,7 @@
     <div class="flex items-center gap-2 text-right">
       {#if pending}
         <span class="dot-pulse"><span></span><span></span><span></span></span>
-        <span class="label m-0">{agentName} is composing</span>
+        <span class="label m-0">{agentName} is thinking</span>
       {:else if disabled}
         <span class="label m-0">Transcript locked</span>
       {:else}
@@ -141,6 +141,19 @@
             </p>
           </article>
         {/each}
+        {#if pending}
+          <article
+            class="max-w-[44rem] rounded-[8px] border-l-2 border-[color:rgba(126,184,141,0.46)] bg-[color:rgba(126,184,141,0.08)] px-5 py-4"
+          >
+            <p class="font-mono text-[11px] uppercase tracking-[0.16em] text-[color:var(--muted)] mb-2">
+              {agentName}
+            </p>
+            <div class="flex items-center gap-2">
+              <span class="dot-pulse"><span></span><span></span><span></span></span>
+              <span class="text-[15px] italic leading-[1.75] text-[color:var(--muted)]">is thinking…</span>
+            </div>
+          </article>
+        {/if}
       {/if}
     </div>
   </div>

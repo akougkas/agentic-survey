@@ -373,6 +373,26 @@
     sendPending = true;
     error = '';
 
+    const optimisticTurn = {
+      id: `pending-${Date.now()}`,
+      session_id: bundle.session.id,
+      role: 'participant',
+      content: event.detail.content,
+      index: bundle.session.turns.length,
+      validation: null,
+      brain_b_intent: null,
+      get_user_input: null,
+      retrieval_audit_id: null,
+      created_at: new Date().toISOString()
+    } as unknown as InterviewTurnRecord;
+    bundle = {
+      ...bundle,
+      session: {
+        ...bundle.session,
+        turns: [...bundle.session.turns, optimisticTurn]
+      }
+    };
+
     try {
       bundle = await postJson<SessionBundleResponse>(
         `/sessions/${encodeURIComponent(sessionId)}/turns`,

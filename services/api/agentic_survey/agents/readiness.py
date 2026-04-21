@@ -10,7 +10,7 @@ MIN_PROBES = 3
 MIN_RISK_REGISTER = 1
 MAX_N_CEILING = 1000
 
-_INCLUSION_HINTS = ("inclus", "who count", "who belong", "eligible", "qualifie")
+_INCLUSION_HINTS = ("inclu", "who count", "who belong", "eligible", "qualifie")
 
 
 def unmet_minimums(outline: OutlineArtifact) -> list[str]:
