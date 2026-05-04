@@ -15,7 +15,7 @@
   } from '$lib/campaign-ui';
   import { getAdminSession } from '$lib/admin';
   import ChatPane from '$lib/components/ChatPane.svelte';
-  import { demoCopy } from '$lib/demo-copy';
+  import { runtimeCopy } from '$lib/runtime-copy';
   import { getModelCatalog } from '$lib/runtime';
   import type {
     AgentRole,
@@ -393,7 +393,7 @@
 </script>
 
 <section class="grid gap-5">
-  <a class="text-sm text-moss" href="/admin/campaigns">&larr; {demoCopy.campaigns.detailBackLabel}</a>
+  <a class="text-sm text-moss" href="/admin/campaigns">&larr; {runtimeCopy.campaigns.detailBackLabel}</a>
 
   {#if loading}
     <article class="band px-6 py-6 text-sm text-[color:var(--muted)]">Loading campaign...</article>
@@ -404,26 +404,26 @@
       <div class="grid gap-6">
         {#if showDesignerChat}
           <ChatPane
-            title={demoCopy.campaigns.designerTitle}
+            title={runtimeCopy.campaigns.designerTitle}
             messages={bundle.designer_session?.turns ?? []}
             agentName="Mira"
             participantName="Operator"
             placeholder="Add the next constraint, participant signal, or blind spot."
             submitLabel="Continue design"
             pending={sendPending}
-            footerNote={demoCopy.campaigns.designerFooter}
+            footerNote={runtimeCopy.campaigns.designerFooter}
             on:submit={submitTurn}
           />
         {:else}
           <section class="band grid gap-5 px-6 py-6">
             <div class="grid gap-2">
-              <p class="eyebrow">{demoCopy.campaigns.revisionsEyebrow}</p>
+              <p class="eyebrow">{runtimeCopy.campaigns.revisionsEyebrow}</p>
               <h2 class="section-title">
                 {bundle.campaign.source === 'seed' ? 'Seed-backed launch path' : 'Designer transcript'}
               </h2>
               <p class="section-copy">
                 {bundle.campaign.source === 'seed'
-                  ? demoCopy.campaigns.seededReadyMessage
+                  ? runtimeCopy.campaigns.seededReadyMessage
                   : 'The draft is already past the design loop. Review the latest operator-designer exchange here without leaving the campaign page.'}
               </p>
             </div>
@@ -439,7 +439,7 @@
               </div>
             {:else}
               <p class="m-0 border-t border-[color:var(--line)] pt-4 text-sm leading-7 text-[color:var(--muted)]">
-                {demoCopy.campaigns.seededReadyMessage}
+                {runtimeCopy.campaigns.seededReadyMessage}
               </p>
             {/if}
           </section>
@@ -447,8 +447,8 @@
 
         <section class="band grid gap-5 px-6 py-6">
           <div class="grid gap-2">
-            <p class="eyebrow">{demoCopy.campaigns.revisionsEyebrow}</p>
-            <h2 class="section-title">{demoCopy.campaigns.revisionsTitle}</h2>
+            <p class="eyebrow">{runtimeCopy.campaigns.revisionsEyebrow}</p>
+            <h2 class="section-title">{runtimeCopy.campaigns.revisionsTitle}</h2>
           </div>
 
           {#if visibleRevisions.length > 0}
@@ -479,15 +479,15 @@
 
         <section class="band grid gap-5 px-6 py-6">
           <div class="grid gap-2">
-            <p class="eyebrow">{demoCopy.campaigns.outlineEyebrow}</p>
-            <h2 class="section-title">{demoCopy.campaigns.outlineTitle}</h2>
+            <p class="eyebrow">{runtimeCopy.campaigns.outlineEyebrow}</p>
+            <h2 class="section-title">{runtimeCopy.campaigns.outlineTitle}</h2>
           </div>
 
           <div class="grid gap-5 border-t border-[color:var(--line)] pt-4 text-sm leading-7 text-[color:var(--muted)]">
             <div class="grid gap-2">
               <p class="label m-0">Summary</p>
               <p class="m-0 text-[color:var(--text)]">
-                {bundle.campaign.outline.scientist_summary || demoCopy.campaigns.noSummaryYet}
+                {bundle.campaign.outline.scientist_summary || runtimeCopy.campaigns.noSummaryYet}
               </p>
             </div>
 
@@ -726,9 +726,9 @@
               </span>
             </div>
             <div class="grid gap-2">
-              <p class="eyebrow">{demoCopy.campaigns.workflowEyebrow}</p>
+              <p class="eyebrow">{runtimeCopy.campaigns.workflowEyebrow}</p>
               <h2 class="section-title text-[1.9rem] md:text-[2.2rem]">{bundle.campaign.title}</h2>
-              <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">{demoCopy.campaigns.workflowTitle}</p>
+              <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">{runtimeCopy.campaigns.workflowTitle}</p>
             </div>
           </div>
 
@@ -773,7 +773,7 @@
                 {/each}
               </div>
             {:else}
-              <p class="m-0 text-sm text-[color:var(--muted)]">{demoCopy.campaigns.reviewBlockedMessage}</p>
+              <p class="m-0 text-sm text-[color:var(--muted)]">{runtimeCopy.campaigns.reviewBlockedMessage}</p>
             {/if}
           </div>
         </section>
@@ -841,8 +841,8 @@
 
         <section class="band grid gap-5 px-6 py-6">
           <div class="grid gap-2">
-            <p class="eyebrow">{demoCopy.campaigns.readinessEyebrow}</p>
-            <h3 class="font-display text-[1.65rem] leading-tight">{demoCopy.campaigns.readinessTitle}</h3>
+            <p class="eyebrow">{runtimeCopy.campaigns.readinessEyebrow}</p>
+            <h3 class="font-display text-[1.65rem] leading-tight">{runtimeCopy.campaigns.readinessTitle}</h3>
           </div>
 
           <div class="grid gap-3 border-t border-[color:var(--line)] pt-4">
@@ -865,8 +865,8 @@
 
         <section class="band grid gap-5 px-6 py-6">
           <div class="grid gap-2">
-            <p class="eyebrow">{demoCopy.campaigns.invitesEyebrow}</p>
-            <h3 class="font-display text-[1.65rem] leading-tight">{demoCopy.campaigns.invitesTitle}</h3>
+            <p class="eyebrow">{runtimeCopy.campaigns.invitesEyebrow}</p>
+            <h3 class="font-display text-[1.65rem] leading-tight">{runtimeCopy.campaigns.invitesTitle}</h3>
           </div>
 
           <form class="grid gap-3 md:grid-cols-[1fr_auto]" on:submit|preventDefault={createInvite}>
@@ -877,12 +877,12 @@
               class="field"
             />
             <button class="button-primary" disabled={invitePending || !canCreateInvites}>
-              {invitePending ? 'Creating...' : demoCopy.campaigns.createInviteLabel}
+              {invitePending ? 'Creating...' : runtimeCopy.campaigns.createInviteLabel}
             </button>
           </form>
 
           <p class="m-0 text-sm text-[color:var(--muted)]">
-            {invitesRedeemable ? demoCopy.campaigns.liveInviteHint : demoCopy.campaigns.reviewingInviteHint}
+            {invitesRedeemable ? runtimeCopy.campaigns.liveInviteHint : runtimeCopy.campaigns.reviewingInviteHint}
           </p>
 
           {#if bundle.invites && bundle.invites.length > 0}
@@ -905,7 +905,7 @@
                       </a>
                       {#if invite.session_id}
                         <a class="text-xs text-moss" href={`/admin/campaigns/${campaignId}/sessions/${invite.session_id}`}>
-                          {demoCopy.campaigns.openTranscriptLabel}
+                          {runtimeCopy.campaigns.openTranscriptLabel}
                         </a>
                       {/if}
                     </div>
@@ -916,7 +916,7 @@
                         disabled={revokingInviteId === invite.id}
                         on:click={() => revokeInvite(invite.id)}
                       >
-                        {revokingInviteId === invite.id ? 'Revoking...' : demoCopy.campaigns.revokeInviteLabel}
+                        {revokingInviteId === invite.id ? 'Revoking...' : runtimeCopy.campaigns.revokeInviteLabel}
                       </button>
                     {/if}
                   </div>
@@ -924,14 +924,14 @@
               {/each}
             </div>
           {:else}
-            <p class="m-0 text-sm text-[color:var(--muted)]">{demoCopy.campaigns.emptyInvites}</p>
+            <p class="m-0 text-sm text-[color:var(--muted)]">{runtimeCopy.campaigns.emptyInvites}</p>
           {/if}
         </section>
 
         <section class="band grid gap-4 px-6 py-6">
           <div class="grid gap-2">
-            <p class="eyebrow">{demoCopy.campaigns.sessionsEyebrow}</p>
-            <h3 class="font-display text-[1.65rem] leading-tight">{demoCopy.campaigns.sessionsTitle}</h3>
+            <p class="eyebrow">{runtimeCopy.campaigns.sessionsEyebrow}</p>
+            <h3 class="font-display text-[1.65rem] leading-tight">{runtimeCopy.campaigns.sessionsTitle}</h3>
           </div>
 
           {#if bundle.sessions && bundle.sessions.length > 0}
@@ -946,7 +946,7 @@
                       </span>
                     </div>
                     <a class="text-xs text-moss" href={`/admin/campaigns/${campaignId}/sessions/${session.id}`}>
-                      {demoCopy.campaigns.openTranscriptLabel}
+                      {runtimeCopy.campaigns.openTranscriptLabel}
                     </a>
                   </div>
                   <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">{sessionSummary(session)}</p>
@@ -954,7 +954,7 @@
               {/each}
             </div>
           {:else}
-            <p class="m-0 text-sm text-[color:var(--muted)]">{demoCopy.campaigns.emptySessions}</p>
+            <p class="m-0 text-sm text-[color:var(--muted)]">{runtimeCopy.campaigns.emptySessions}</p>
           {/if}
         </section>
 

@@ -52,8 +52,8 @@
     <section class="band-soft grid gap-4 px-5 py-5">
       <p class="eyebrow">{runtimeContext?.ui.home.bundle_panel_title ?? 'Mounted bundle'}</p>
       <ul class="m-0 grid gap-3 pl-4 text-sm leading-7 text-[color:var(--text)]">
-        <li>Active product: {runtimeContext?.bundle_name ?? 'Agentic Survey Demo'}.</li>
-        <li>Bundle slug: `{runtimeContext?.bundle_slug ?? 'demo'}`.</li>
+        <li>Active product: {runtimeContext?.bundle_name ?? 'Unavailable'}.</li>
+        <li>Bundle slug: `{runtimeContext?.bundle_slug ?? 'unavailable'}`.</li>
         <li>Declared seed campaigns: {runtimeContext?.campaign_seed_count ?? 0}.</li>
         <li>Swap products with `SURVEY_PRODUCT_BUNDLE_DIR`.</li>
       </ul>

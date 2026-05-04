@@ -1,4 +1,4 @@
-export const demoCopy = {
+export const runtimeCopy = {
   campaigns: {
     overviewEyebrow: 'Campaign overview',
     overviewTitle: 'See what is live, what is ready, and where Mira still needs guidance.',

@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from agentic_survey.admin_surfaces import ADMIN_SURFACES, is_known_surface
 from agentic_survey.domain.outline import (
     DecisionGate,
     MicroFormField,
@@ -72,6 +73,34 @@ class BundleAdminCopy(BaseModel):
     current_path_description: str = (
         "Sign in, review campaigns, launch seeded studies, move drafts live, and inspect participant transcripts from the same workspace."
     )
+    surfaces: list[str] | None = None
+
+    @field_validator("surfaces", mode="before")
+    @classmethod
+    def validate_surfaces(cls, value: Any) -> list[str] | None:
+        if value is None:
+            return None
+        canonical = ", ".join(ADMIN_SURFACES)
+        if not isinstance(value, list) or len(value) == 0:
+            raise ValueError(
+                f"ui.admin.surfaces must be a non-empty list of known surface keys: {canonical}"
+            )
+
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                raise ValueError(
+                    f"ui.admin.surfaces entries must be strings from the known surface keys: {canonical}"
+                )
+            if not is_known_surface(item):
+                raise ValueError(
+                    f"Unknown admin surface '{item}' in ui.admin.surfaces. Known surfaces: {canonical}"
+                )
+            if item not in seen:
+                normalized.append(item)
+                seen.add(item)
+        return normalized
 
 
 class BundleInviteCopy(BaseModel):

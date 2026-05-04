@@ -17,6 +17,7 @@ class RuntimeContextResponse(BaseModel):
     declared_public_base_url: str | None = None
     branding: BundleBranding
     ui: BundleCopy
+    admin_surfaces_allowlist: list[str] | None = None
     campaign_seed_count: int
 
 
@@ -43,5 +44,6 @@ async def get_runtime_context(
         declared_public_base_url=manifest.public_base_url or None,
         branding=manifest.branding,
         ui=manifest.ui,
+        admin_surfaces_allowlist=manifest.ui.admin.surfaces,
         campaign_seed_count=len(manifest.campaigns),
     )

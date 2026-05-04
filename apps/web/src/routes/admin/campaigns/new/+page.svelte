@@ -5,7 +5,7 @@
 
   import { ApiError, postJson } from '$lib/api';
   import { getAdminSession } from '$lib/admin';
-  import { demoCopy } from '$lib/demo-copy';
+  import { runtimeCopy } from '$lib/runtime-copy';
   import { getBundleCatalog, getModelCatalog } from '$lib/runtime';
   import type { BundleCatalogResponse, Campaign, CatalogEntry } from '$lib/types';
 
@@ -105,10 +105,10 @@
 <section class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
   <form class="band grid gap-6 px-6 py-7 md:px-8" on:submit|preventDefault={createCampaign}>
     <div class="grid gap-3">
-      <p class="eyebrow">{demoCopy.campaigns.blankPathEyebrow}</p>
-      <h2 class="section-title md:text-[2.8rem]">{demoCopy.campaigns.blankPathTitle}</h2>
+      <p class="eyebrow">{runtimeCopy.campaigns.blankPathEyebrow}</p>
+      <h2 class="section-title md:text-[2.8rem]">{runtimeCopy.campaigns.blankPathTitle}</h2>
       <p class="section-copy">
-        {demoCopy.campaigns.blankPathDescription}
+        {runtimeCopy.campaigns.blankPathDescription}
       </p>
     </div>
 
@@ -163,13 +163,13 @@
       class="button-primary w-fit"
       disabled={pending || !title.trim() || minN < 1 || maxN < minN}
     >
-      {pending ? 'Starting draft...' : demoCopy.campaigns.createDraftLabel}
+      {pending ? 'Starting draft...' : runtimeCopy.campaigns.createDraftLabel}
     </button>
   </form>
 
   <aside class="grid content-start gap-4">
     <section class="band-soft grid gap-3 px-5 py-5">
-      <p class="eyebrow">{demoCopy.campaigns.readinessEyebrow}</p>
+      <p class="eyebrow">{runtimeCopy.campaigns.readinessEyebrow}</p>
       <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">
         Mira turns a manual brief into a reviewable outline, updates it after every operator turn, and keeps the review gate visible while you design.
       </p>
@@ -177,9 +177,9 @@
 
     {#if catalog}
       <section class="band-soft grid gap-3 px-5 py-5">
-        <p class="eyebrow">{demoCopy.campaigns.seedPathEyebrow}</p>
+        <p class="eyebrow">{runtimeCopy.campaigns.seedPathEyebrow}</p>
         <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">
-          Mounted product: {catalog.bundle.name}. {demoCopy.campaigns.seedPathDescription}
+          Mounted product: {catalog.bundle.name}. {runtimeCopy.campaigns.seedPathDescription}
         </p>
 
         <div class="grid gap-3">
@@ -198,7 +198,7 @@
                 disabled={Boolean(seedPending)}
                 on:click={() => createFromSeed(seed.slug)}
               >
-                {seedPending === seed.slug ? 'Creating...' : demoCopy.campaigns.startFromSeedLabel}
+                {seedPending === seed.slug ? 'Creating...' : runtimeCopy.campaigns.startFromSeedLabel}
               </button>
             </article>
           {/each}

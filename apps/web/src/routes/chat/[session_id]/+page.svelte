@@ -4,7 +4,7 @@
 
   import { ApiError, getJson, postJson } from '$lib/api';
   import ChatPane from '$lib/components/ChatPane.svelte';
-  import { demoCopy } from '$lib/demo-copy';
+  import { runtimeCopy } from '$lib/runtime-copy';
   import type {
     BrainBIntent,
     InterviewSessionRecord,
@@ -24,37 +24,37 @@
   $: sessionId = $page.params.session_id ?? '';
   $: bundleChat = $page.data.runtimeContext?.ui.chat ?? null;
   $: chatCopy = {
-    header_eyebrow: bundleChat?.header_eyebrow ?? demoCopy.chat.header_eyebrow,
-    header_wordmark: bundleChat?.header_wordmark ?? demoCopy.chat.header_wordmark,
-    header_subline: bundleChat?.header_subline ?? demoCopy.chat.header_subline,
-    page_title: bundleChat?.page_title ?? demoCopy.chat.page_title,
-    conversation_heading: bundleChat?.conversation_heading ?? demoCopy.chat.conversation_heading,
+    header_eyebrow: bundleChat?.header_eyebrow ?? runtimeCopy.chat.header_eyebrow,
+    header_wordmark: bundleChat?.header_wordmark ?? runtimeCopy.chat.header_wordmark,
+    header_subline: bundleChat?.header_subline ?? runtimeCopy.chat.header_subline,
+    page_title: bundleChat?.page_title ?? runtimeCopy.chat.page_title,
+    conversation_heading: bundleChat?.conversation_heading ?? runtimeCopy.chat.conversation_heading,
     transcript_locked_label:
-      bundleChat?.transcript_locked_label ?? demoCopy.chat.transcript_locked_label,
-    agent_composing_label: bundleChat?.agent_composing_label ?? demoCopy.chat.agent_composing_label,
-    working_notes_eyebrow: bundleChat?.working_notes_eyebrow ?? demoCopy.chat.working_notes_eyebrow,
-    working_notes_heading: bundleChat?.working_notes_heading ?? demoCopy.chat.working_notes_heading,
-    retrieved_heading: bundleChat?.retrieved_heading ?? demoCopy.chat.retrieved_heading,
+      bundleChat?.transcript_locked_label ?? runtimeCopy.chat.transcript_locked_label,
+    agent_composing_label: bundleChat?.agent_composing_label ?? runtimeCopy.chat.agent_composing_label,
+    working_notes_eyebrow: bundleChat?.working_notes_eyebrow ?? runtimeCopy.chat.working_notes_eyebrow,
+    working_notes_heading: bundleChat?.working_notes_heading ?? runtimeCopy.chat.working_notes_heading,
+    retrieved_heading: bundleChat?.retrieved_heading ?? runtimeCopy.chat.retrieved_heading,
     retrieved_description_singular:
-      bundleChat?.retrieved_description_singular ?? demoCopy.chat.retrieved_description_singular,
+      bundleChat?.retrieved_description_singular ?? runtimeCopy.chat.retrieved_description_singular,
     retrieved_description_plural:
-      bundleChat?.retrieved_description_plural ?? demoCopy.chat.retrieved_description_plural,
-    concepts_heading: bundleChat?.concepts_heading ?? demoCopy.chat.concepts_heading,
-    concepts_empty: bundleChat?.concepts_empty ?? demoCopy.chat.concepts_empty,
-    turn_counter_template: bundleChat?.turn_counter_template ?? demoCopy.chat.turn_counter_template,
-    active_footer: bundleChat?.active_footer ?? demoCopy.chat.active_footer,
-    paused_footer: bundleChat?.paused_footer ?? demoCopy.chat.paused_footer,
-    finished_footer: bundleChat?.finished_footer ?? demoCopy.chat.finished_footer,
+      bundleChat?.retrieved_description_plural ?? runtimeCopy.chat.retrieved_description_plural,
+    concepts_heading: bundleChat?.concepts_heading ?? runtimeCopy.chat.concepts_heading,
+    concepts_empty: bundleChat?.concepts_empty ?? runtimeCopy.chat.concepts_empty,
+    turn_counter_template: bundleChat?.turn_counter_template ?? runtimeCopy.chat.turn_counter_template,
+    active_footer: bundleChat?.active_footer ?? runtimeCopy.chat.active_footer,
+    paused_footer: bundleChat?.paused_footer ?? runtimeCopy.chat.paused_footer,
+    finished_footer: bundleChat?.finished_footer ?? runtimeCopy.chat.finished_footer,
     session_complete_eyebrow:
-      bundleChat?.session_complete_eyebrow ?? demoCopy.chat.session_complete_eyebrow,
-    return_home_label: bundleChat?.return_home_label ?? demoCopy.chat.return_home_label,
-    empty_state: bundleChat?.empty_state ?? demoCopy.chat.empty_state,
-    placeholder_default: bundleChat?.placeholder_default ?? demoCopy.chat.placeholder_default,
+      bundleChat?.session_complete_eyebrow ?? runtimeCopy.chat.session_complete_eyebrow,
+    return_home_label: bundleChat?.return_home_label ?? runtimeCopy.chat.return_home_label,
+    empty_state: bundleChat?.empty_state ?? runtimeCopy.chat.empty_state,
+    placeholder_default: bundleChat?.placeholder_default ?? runtimeCopy.chat.placeholder_default,
     placeholder_with_chips:
-      bundleChat?.placeholder_with_chips ?? demoCopy.chat.placeholder_with_chips,
-    submit_idle: bundleChat?.submit_idle ?? demoCopy.chat.submit_idle,
-    submit_pending: bundleChat?.submit_pending ?? demoCopy.chat.submit_pending,
-    submit_finished: bundleChat?.submit_finished ?? demoCopy.chat.submit_finished
+      bundleChat?.placeholder_with_chips ?? runtimeCopy.chat.placeholder_with_chips,
+    submit_idle: bundleChat?.submit_idle ?? runtimeCopy.chat.submit_idle,
+    submit_pending: bundleChat?.submit_pending ?? runtimeCopy.chat.submit_pending,
+    submit_finished: bundleChat?.submit_finished ?? runtimeCopy.chat.submit_finished
   };
   $: isFinished = bundle?.session.status === 'finished';
   $: isPaused = bundle?.session.status === 'paused';

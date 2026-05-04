@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
 
   import { ApiError, getJson, postJson } from '$lib/api';
-  import { demoCopy } from '$lib/demo-copy';
+  import { runtimeCopy } from '$lib/runtime-copy';
   import type { InviteInfoResponse, MicroFormField, RedeemInviteResponse } from '$lib/types';
 
   let info: InviteInfoResponse | null = null;
@@ -19,42 +19,42 @@
   $: token = $page.params.token ?? '';
   $: bundleInvite = $page.data.runtimeContext?.ui.invite ?? null;
   $: inviteCopy = {
-    header_eyebrow: bundleInvite?.header_eyebrow ?? demoCopy.invite.header_eyebrow,
-    header_wordmark: bundleInvite?.header_wordmark ?? demoCopy.invite.header_wordmark,
-    header_subline: bundleInvite?.header_subline ?? demoCopy.invite.header_subline,
-    page_title: bundleInvite?.page_title ?? demoCopy.invite.page_title,
-    consent_title: bundleInvite?.consent_title ?? demoCopy.invite.consent_title,
-    anonymous_title: bundleInvite?.anonymous_title ?? demoCopy.invite.anonymous_title,
+    header_eyebrow: bundleInvite?.header_eyebrow ?? runtimeCopy.invite.header_eyebrow,
+    header_wordmark: bundleInvite?.header_wordmark ?? runtimeCopy.invite.header_wordmark,
+    header_subline: bundleInvite?.header_subline ?? runtimeCopy.invite.header_subline,
+    page_title: bundleInvite?.page_title ?? runtimeCopy.invite.page_title,
+    consent_title: bundleInvite?.consent_title ?? runtimeCopy.invite.consent_title,
+    anonymous_title: bundleInvite?.anonymous_title ?? runtimeCopy.invite.anonymous_title,
     anonymous_description:
-      bundleInvite?.anonymous_description ?? demoCopy.invite.anonymous_description,
-    named_title: bundleInvite?.named_title ?? demoCopy.invite.named_title,
-    named_description: bundleInvite?.named_description ?? demoCopy.invite.named_description,
-    micro_form_eyebrow: bundleInvite?.micro_form_eyebrow ?? demoCopy.invite.micro_form_eyebrow,
+      bundleInvite?.anonymous_description ?? runtimeCopy.invite.anonymous_description,
+    named_title: bundleInvite?.named_title ?? runtimeCopy.invite.named_title,
+    named_description: bundleInvite?.named_description ?? runtimeCopy.invite.named_description,
+    micro_form_eyebrow: bundleInvite?.micro_form_eyebrow ?? runtimeCopy.invite.micro_form_eyebrow,
     micro_form_description:
-      bundleInvite?.micro_form_description ?? demoCopy.invite.micro_form_description,
+      bundleInvite?.micro_form_description ?? runtimeCopy.invite.micro_form_description,
     micro_form_required_hint:
-      bundleInvite?.micro_form_required_hint ?? demoCopy.invite.micro_form_required_hint,
+      bundleInvite?.micro_form_required_hint ?? runtimeCopy.invite.micro_form_required_hint,
     micro_form_answer_note:
-      bundleInvite?.micro_form_answer_note ?? demoCopy.invite.micro_form_answer_note,
-    start_button_idle: bundleInvite?.start_button_idle ?? demoCopy.invite.start_button_idle,
+      bundleInvite?.micro_form_answer_note ?? runtimeCopy.invite.micro_form_answer_note,
+    start_button_idle: bundleInvite?.start_button_idle ?? runtimeCopy.invite.start_button_idle,
     start_button_pending:
-      bundleInvite?.start_button_pending ?? demoCopy.invite.start_button_pending,
-    next_eyebrow: bundleInvite?.next_eyebrow ?? demoCopy.invite.next_eyebrow,
+      bundleInvite?.start_button_pending ?? runtimeCopy.invite.start_button_pending,
+    next_eyebrow: bundleInvite?.next_eyebrow ?? runtimeCopy.invite.next_eyebrow,
     next_steps:
       bundleInvite && bundleInvite.next_steps.length > 0
         ? bundleInvite.next_steps
-        : [...demoCopy.invite.next_steps],
-    closed_title: bundleInvite?.closed_title ?? demoCopy.invite.closed_title,
+        : [...runtimeCopy.invite.next_steps],
+    closed_title: bundleInvite?.closed_title ?? runtimeCopy.invite.closed_title,
     closed_status_eyebrow:
-      bundleInvite?.closed_status_eyebrow ?? demoCopy.invite.closed_status_eyebrow,
+      bundleInvite?.closed_status_eyebrow ?? runtimeCopy.invite.closed_status_eyebrow,
     closed_status_template:
-      bundleInvite?.closed_status_template ?? demoCopy.invite.closed_status_template,
+      bundleInvite?.closed_status_template ?? runtimeCopy.invite.closed_status_template,
     closed_used_message:
-      bundleInvite?.closed_used_message ?? demoCopy.invite.closed_used_message,
+      bundleInvite?.closed_used_message ?? runtimeCopy.invite.closed_used_message,
     closed_revoked_message:
-      bundleInvite?.closed_revoked_message ?? demoCopy.invite.closed_revoked_message,
+      bundleInvite?.closed_revoked_message ?? runtimeCopy.invite.closed_revoked_message,
     closed_fresh_link_message:
-      bundleInvite?.closed_fresh_link_message ?? demoCopy.invite.closed_fresh_link_message
+      bundleInvite?.closed_fresh_link_message ?? runtimeCopy.invite.closed_fresh_link_message
   };
   $: inviteInactiveMessage =
     info?.status === 'used'

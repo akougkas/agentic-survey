@@ -180,6 +180,7 @@ export interface BundleHomeCopy {
 }
 
 export interface BundleAdminCopy {
+  surfaces?: string[] | null;
   nav_label: string;
   workspace_eyebrow: string;
   workspace_title: string;
@@ -488,6 +489,7 @@ export interface RuntimeContextResponse {
   declared_public_base_url: string | null;
   branding: BundleBranding;
   ui: BundleUiCopy;
+  admin_surfaces_allowlist?: string[] | null;
   campaign_seed_count: number;
 }
 

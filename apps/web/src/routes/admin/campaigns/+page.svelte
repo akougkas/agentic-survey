@@ -6,7 +6,7 @@
   import { ApiError, getJson, postJson } from '$lib/api';
   import { campaignActivityLabel, campaignSourceLabel, campaignStateLabel, campaignStateTone } from '$lib/campaign-ui';
   import { getAdminSession } from '$lib/admin';
-  import { demoCopy } from '$lib/demo-copy';
+  import { runtimeCopy } from '$lib/runtime-copy';
   import type { Campaign, CampaignOverviewItem, CampaignOverviewResponse } from '$lib/types';
 
   let overview: CampaignOverviewResponse | null = null;
@@ -68,8 +68,8 @@
 
   function reviewSummary(item: CampaignOverviewItem): string {
     if (item.latest_outline_revision?.summary) return item.latest_outline_revision.summary;
-    if (item.campaign.source === 'seed') return demoCopy.campaigns.seededReadyMessage;
-    return demoCopy.campaigns.noSummaryYet;
+    if (item.campaign.source === 'seed') return runtimeCopy.campaigns.seededReadyMessage;
+    return runtimeCopy.campaigns.noSummaryYet;
   }
 </script>
 
@@ -81,26 +81,26 @@
   <section class="grid gap-6">
     <article class="band grid gap-5 px-6 py-7 md:px-8">
       <div class="grid gap-3">
-        <p class="eyebrow">{demoCopy.campaigns.overviewEyebrow}</p>
-        <h2 class="section-title md:text-[2.8rem]">{demoCopy.campaigns.overviewTitle}</h2>
-        <p class="section-copy">{demoCopy.campaigns.overviewDescription}</p>
+        <p class="eyebrow">{runtimeCopy.campaigns.overviewEyebrow}</p>
+        <h2 class="section-title md:text-[2.8rem]">{runtimeCopy.campaigns.overviewTitle}</h2>
+        <p class="section-copy">{runtimeCopy.campaigns.overviewDescription}</p>
       </div>
 
       <div class="metric-grid border-t border-[color:var(--line)] pt-5">
         <article class="metric-card">
-          <p class="label m-0">{demoCopy.campaigns.totalCampaignsLabel}</p>
+          <p class="label m-0">{runtimeCopy.campaigns.totalCampaignsLabel}</p>
           <p class="m-0 font-display text-[2rem] leading-none">{overview.summary.total_campaigns}</p>
         </article>
         <article class="metric-card">
-          <p class="label m-0">{demoCopy.campaigns.reviewReadyLabel}</p>
+          <p class="label m-0">{runtimeCopy.campaigns.reviewReadyLabel}</p>
           <p class="m-0 font-display text-[2rem] leading-none">{overview.summary.review_ready_count}</p>
         </article>
         <article class="metric-card">
-          <p class="label m-0">{demoCopy.campaigns.liveCampaignsLabel}</p>
+          <p class="label m-0">{runtimeCopy.campaigns.liveCampaignsLabel}</p>
           <p class="m-0 font-display text-[2rem] leading-none">{overview.summary.live_campaign_count}</p>
         </article>
         <article class="metric-card">
-          <p class="label m-0">{demoCopy.campaigns.activeSessionsLabel}</p>
+          <p class="label m-0">{runtimeCopy.campaigns.activeSessionsLabel}</p>
           <p class="m-0 font-display text-[2rem] leading-none">{overview.summary.active_session_count}</p>
         </article>
       </div>
@@ -109,20 +109,20 @@
     <section class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <section class="band grid gap-5 px-6 py-7 md:px-8">
         <div class="grid gap-2">
-          <p class="eyebrow">{demoCopy.campaigns.blankPathEyebrow}</p>
-          <h3 class="font-display text-[1.8rem] leading-tight">{demoCopy.campaigns.blankPathTitle}</h3>
-          <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">{demoCopy.campaigns.blankPathDescription}</p>
+          <p class="eyebrow">{runtimeCopy.campaigns.blankPathEyebrow}</p>
+          <h3 class="font-display text-[1.8rem] leading-tight">{runtimeCopy.campaigns.blankPathTitle}</h3>
+          <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">{runtimeCopy.campaigns.blankPathDescription}</p>
         </div>
         <div class="flex flex-wrap gap-3">
-          <a class="button-primary" href="/admin/campaigns/new">{demoCopy.campaigns.createDraftLabel}</a>
+          <a class="button-primary" href="/admin/campaigns/new">{runtimeCopy.campaigns.createDraftLabel}</a>
         </div>
       </section>
 
       <aside class="band-soft grid content-start gap-4 px-5 py-5">
         <div class="grid gap-2">
-          <p class="eyebrow">{demoCopy.campaigns.seedPathEyebrow}</p>
-          <h3 class="font-display text-[1.65rem] leading-tight">{demoCopy.campaigns.seedPathTitle}</h3>
-          <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">{demoCopy.campaigns.seedPathDescription}</p>
+          <p class="eyebrow">{runtimeCopy.campaigns.seedPathEyebrow}</p>
+          <h3 class="font-display text-[1.65rem] leading-tight">{runtimeCopy.campaigns.seedPathTitle}</h3>
+          <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">{runtimeCopy.campaigns.seedPathDescription}</p>
         </div>
 
         {#if overview.seeds.length > 0}
@@ -140,7 +140,7 @@
                   disabled={Boolean(seedPending)}
                   on:click={() => createFromSeed(seed.slug)}
                 >
-                  {seedPending === seed.slug ? 'Creating...' : demoCopy.campaigns.startFromSeedLabel}
+                  {seedPending === seed.slug ? 'Creating...' : runtimeCopy.campaigns.startFromSeedLabel}
                 </button>
               </article>
             {/each}
@@ -195,7 +195,7 @@
                 <div class="grid gap-3 text-right">
                   <p class="label m-0">Updated {campaignActivityLabel(item)}</p>
                   <a class="button-primary" href={`/admin/campaigns/${item.campaign.id}`}>
-                    {demoCopy.campaigns.openCampaignLabel}
+                    {runtimeCopy.campaigns.openCampaignLabel}
                   </a>
                 </div>
               </div>

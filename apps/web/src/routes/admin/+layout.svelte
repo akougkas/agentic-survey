@@ -1,8 +1,14 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { adminLinks } from '$lib/admin';
+  import { adminLinks, hrefWithDebug, visibleAdminLinks } from '$lib/admin-surfaces';
 
   $: runtimeContext = $page.data.runtimeContext ?? null;
+  $: debugAdmin = $page.url.searchParams.get('debug') === '1';
+  $: visibleLinks = visibleAdminLinks(
+    adminLinks,
+    runtimeContext?.admin_surfaces_allowlist,
+    debugAdmin
+  );
 </script>
 
 <section class="grid gap-6">
@@ -13,8 +19,10 @@
     </div>
 
     <nav class="flex flex-wrap gap-1 md:justify-end">
-      {#each adminLinks as link}
-        <a class="nav-link" href={link.href}>{link.label}</a>
+      {#each visibleLinks as link}
+        <a class="nav-link" href={hrefWithDebug(link.href, debugAdmin)} data-surface={link.surface}>
+          {link.label}
+        </a>
       {/each}
     </nav>
   </header>

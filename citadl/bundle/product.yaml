@@ -40,6 +40,7 @@ ui:
       respondent's role, domain, and fluency. She is not a form; she is a
       conversation.
   admin:
+    surfaces: [catalog, campaigns, sessions, transcripts, answers, invites]
     nav_label: CITADL Console
     workspace_eyebrow: CITADL Operator Workspace
     workspace_title: CITADL Community Pulse
