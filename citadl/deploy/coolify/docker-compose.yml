@@ -37,6 +37,7 @@ x-api-environment: &api-environment
 services:
   surrealdb:
     image: surrealdb/surrealdb:v2
+    user: "0:0"
     command:
       - start
       - --log
@@ -76,7 +77,7 @@ services:
       - traefik.enable=true
       - traefik.docker.network=coolify
       - traefik.http.routers.citadl-surveys-api.rule=Host(`citadl.gnosis.run`) && PathPrefix(`/api`)
-      - traefik.http.routers.citadl-surveys-api.entrypoints=web
+      - traefik.http.routers.citadl-surveys-api.entrypoints=http
       - traefik.http.routers.citadl-surveys-api.priority=100
       - traefik.http.services.citadl-surveys-api.loadbalancer.server.port=8100
 
@@ -111,7 +112,7 @@ services:
       - traefik.enable=true
       - traefik.docker.network=coolify
       - traefik.http.routers.citadl-surveys.rule=Host(`citadl.gnosis.run`)
-      - traefik.http.routers.citadl-surveys.entrypoints=web
+      - traefik.http.routers.citadl-surveys.entrypoints=http
       - traefik.http.routers.citadl-surveys.priority=10
       - traefik.http.services.citadl-surveys.loadbalancer.server.port=3000
 
