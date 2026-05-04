@@ -1,36 +1,35 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import '../app.css';
   import type { LayoutData } from './$types';
 
   export let data: LayoutData;
 
-  const links = [
-    { href: '/', label: 'Portal' },
-    { href: '/admin/login?next=%2Fadmin%2Fcampaigns', label: data?.runtimeContext?.ui.admin.nav_label ?? 'Workspace' },
-    { href: '/chat', label: 'Interview' }
-  ];
-
   $: runtimeContext = data?.runtimeContext ?? null;
+  $: pathname = $page.url.pathname;
+  $: isAdminRoute = pathname.startsWith('/admin');
+  $: wordmark = runtimeContext?.branding.eyebrow ?? runtimeContext?.runtime_name ?? 'Agentic Survey';
+  $: pageTitle = runtimeContext?.app_name ?? 'Agentic Survey';
 </script>
 
 <svelte:head>
-  <title>{runtimeContext?.app_name ?? 'Agentic Survey'}</title>
+  <title>{pageTitle}</title>
   <link rel="icon" href="/favicon.svg" />
 </svelte:head>
 
-<div class="shell grid gap-6">
-  <header class="grid gap-5 border-b border-[color:var(--line)] pb-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-    <div class="grid gap-2">
-      <p class="eyebrow">{runtimeContext?.branding.eyebrow ?? 'Agentic Survey'}</p>
-      <h1 class="page-title max-w-3xl">{runtimeContext?.app_name ?? 'Agentic Survey'}</h1>
-    </div>
+{#if isAdminRoute}
+  <div class="shell shell--admin grid gap-6">
+    <slot />
+  </div>
+{:else}
+  <div class="shell shell--participant grid gap-8">
+    <header class="participant-mast">
+      <a class="participant-wordmark" href="/" aria-label="Home">{wordmark}</a>
+      <a class="participant-attribution" href="/about">
+        <span class="hidden sm:inline">Powered by </span>Agentic Survey
+      </a>
+    </header>
 
-    <nav class="flex flex-wrap gap-1 md:justify-end">
-      {#each links as link}
-        <a class="nav-link" href={link.href}>{link.label}</a>
-      {/each}
-    </nav>
-  </header>
-
-  <slot />
-</div>
+    <slot />
+  </div>
+{/if}

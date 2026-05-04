@@ -5,7 +5,7 @@
 
   import { ApiError, getJson, postJson } from '$lib/api';
   import { runtimeCopy } from '$lib/runtime-copy';
-  import type { InviteInfoResponse, MicroFormField, RedeemInviteResponse } from '$lib/types';
+  import type { InviteInfoResponse, RedeemInviteResponse } from '$lib/types';
 
   let info: InviteInfoResponse | null = null;
   let token = '';
@@ -19,9 +19,6 @@
   $: token = $page.params.token ?? '';
   $: bundleInvite = $page.data.runtimeContext?.ui.invite ?? null;
   $: inviteCopy = {
-    header_eyebrow: bundleInvite?.header_eyebrow ?? runtimeCopy.invite.header_eyebrow,
-    header_wordmark: bundleInvite?.header_wordmark ?? runtimeCopy.invite.header_wordmark,
-    header_subline: bundleInvite?.header_subline ?? runtimeCopy.invite.header_subline,
     page_title: bundleInvite?.page_title ?? runtimeCopy.invite.page_title,
     consent_title: bundleInvite?.consent_title ?? runtimeCopy.invite.consent_title,
     anonymous_title: bundleInvite?.anonymous_title ?? runtimeCopy.invite.anonymous_title,
@@ -125,215 +122,145 @@
   <title>{inviteCopy.page_title}</title>
 </svelte:head>
 
-{#if inviteCopy.header_wordmark || inviteCopy.header_eyebrow || inviteCopy.header_subline}
-  <header class="grid gap-1 pb-4">
-    {#if inviteCopy.header_wordmark}
-      <p class="font-display text-[1.2rem] tracking-[0.14em] text-moss">
-        {inviteCopy.header_wordmark}
-      </p>
-    {/if}
-    {#if inviteCopy.header_eyebrow}
-      <p class="eyebrow">{inviteCopy.header_eyebrow}</p>
-    {/if}
-    {#if inviteCopy.header_subline}
-      <p class="text-sm text-[color:var(--muted)]">{inviteCopy.header_subline}</p>
-    {/if}
-  </header>
-{/if}
-
 {#if loading}
-  <article class="band px-6 py-6 text-sm text-[color:var(--muted)]">Looking up the invitation...</article>
+  <article class="invite-loading">Looking up the invitation...</article>
 {:else if !info}
-  <article class="band px-6 py-6 text-sm text-ember">{error || 'Invitation not found.'}</article>
+  <article class="invite-error">{error || 'Invitation not found.'}</article>
 {:else if info.status !== 'active'}
-  <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-    <article class="band grid gap-5 px-6 py-7 md:px-8">
-      <div class="grid gap-3">
-        <p class="eyebrow">{info.campaign_title}</p>
-        <h2 class="section-title md:text-[2.8rem]">{inviteCopy.closed_title}</h2>
-        <p class="section-copy">{inviteInactiveMessage}</p>
-      </div>
+  <article class="invite-page invite-page--closed">
+    <header class="invite-header">
+      <p class="eyebrow">{info.campaign_title}</p>
+      <h1 class="invite-title">{inviteCopy.closed_title}</h1>
+    </header>
 
-      <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">
-        {inviteCopy.closed_fresh_link_message}
-      </p>
-
-      <a class="button-primary w-fit" href="/">Back to home</a>
-    </article>
-
-    <aside class="grid content-start gap-4">
-      <section class="band-soft grid gap-3 px-5 py-5">
-        <p class="eyebrow">{inviteCopy.closed_status_eyebrow}</p>
-        <p class="m-0 text-sm leading-7 text-[color:var(--text)]">
-          {inviteCopy.closed_status_template.replace('{status}', info.status)}
-        </p>
-      </section>
-    </aside>
-  </section>
+    <p class="invite-prose">{inviteInactiveMessage}</p>
+    <p class="invite-meta">
+      <span class="label">{inviteCopy.closed_status_eyebrow}:</span>
+      <span>{inviteCopy.closed_status_template.replace('{status}', info.status)}</span>
+    </p>
+    <p class="invite-prose">{inviteCopy.closed_fresh_link_message}</p>
+    <a class="button-primary w-fit" href="/">Back to home</a>
+  </article>
 {:else}
-  <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-    <article class="band grid gap-6 px-6 py-7 md:px-8">
-      <div class="grid gap-3">
-        <p class="eyebrow">{info.campaign_title}</p>
-        <h2 class="section-title md:text-[2.8rem]">{inviteCopy.consent_title}</h2>
-        <p class="section-copy">{info.consent_language}</p>
-      </div>
+  <article class="invite-page">
+    <header class="invite-header">
+      <p class="eyebrow">{info.campaign_title}</p>
+      <h1 class="invite-title">{inviteCopy.consent_title}</h1>
+    </header>
 
-      <form class="grid gap-4" on:submit|preventDefault={redeem}>
+    <p class="invite-prose">{info.consent_language}</p>
+
+    <form class="invite-form" on:submit|preventDefault={redeem}>
+      <fieldset class="consent-modes">
+        <legend class="label consent-modes-legend">Choose how to contribute</legend>
+
         <label
-          class={`rounded-[8px] px-5 py-5 transition ${
-            consentMode === 'anonymous'
-              ? 'bg-[color:rgba(126,184,141,0.08)] ring-1 ring-[color:rgba(126,184,141,0.36)]'
-              : 'bg-[color:rgba(255,255,255,0.02)] ring-1 ring-[color:rgba(232,224,207,0.12)]'
-          }`}
+          class="consent-card"
+          class:consent-card--active={consentMode === 'anonymous'}
         >
-          <div class="flex items-start gap-3">
-            <input type="radio" class="sr-only" bind:group={consentMode} value="anonymous" />
-            {#if consentMode === 'anonymous'}
-              <svg aria-hidden="true" viewBox="0 0 20 20" class="mt-1 h-4 w-4 shrink-0 text-moss" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="10" cy="10" r="8.5" fill="rgba(126,184,141,0.16)" />
-                <path d="M6.2 10.4l2.6 2.6 5-5.6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            {:else}
-              <span aria-hidden="true" class="mt-1 h-4 w-4 shrink-0 rounded-full border border-[color:rgba(232,224,207,0.28)]"></span>
-            {/if}
-            <div class="grid gap-2">
-              <h3 class="font-display text-[1.7rem] leading-tight">{inviteCopy.anonymous_title}</h3>
-              <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">
-                {inviteCopy.anonymous_description}
-              </p>
-            </div>
-          </div>
+          <input type="radio" bind:group={consentMode} value="anonymous" />
+          <span class="consent-card-marker" aria-hidden="true"></span>
+          <span class="consent-card-body">
+            <span class="consent-card-title">{inviteCopy.anonymous_title}</span>
+            <span class="consent-card-description">{inviteCopy.anonymous_description}</span>
+          </span>
         </label>
 
         <label
-          class={`rounded-[8px] px-5 py-5 transition ${
-            consentMode === 'named'
-              ? 'bg-[color:rgba(126,184,141,0.08)] ring-1 ring-[color:rgba(126,184,141,0.36)]'
-              : 'bg-[color:rgba(255,255,255,0.02)] ring-1 ring-[color:rgba(232,224,207,0.12)]'
-          }`}
+          class="consent-card"
+          class:consent-card--active={consentMode === 'named'}
         >
-          <div class="flex items-start gap-3">
-            <input type="radio" class="sr-only" bind:group={consentMode} value="named" />
+          <input type="radio" bind:group={consentMode} value="named" />
+          <span class="consent-card-marker" aria-hidden="true"></span>
+          <span class="consent-card-body">
+            <span class="consent-card-title">{inviteCopy.named_title}</span>
+            <span class="consent-card-description">{inviteCopy.named_description}</span>
             {#if consentMode === 'named'}
-              <svg aria-hidden="true" viewBox="0 0 20 20" class="mt-1 h-4 w-4 shrink-0 text-moss" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="10" cy="10" r="8.5" fill="rgba(126,184,141,0.16)" />
-                <path d="M6.2 10.4l2.6 2.6 5-5.6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            {:else}
-              <span aria-hidden="true" class="mt-1 h-4 w-4 shrink-0 rounded-full border border-[color:rgba(232,224,207,0.28)]"></span>
+              <input
+                type="text"
+                bind:value={identityLabel}
+                placeholder="Name or preferred citation"
+                class="field consent-card-field"
+                aria-label="Identity label"
+              />
             {/if}
-            <div class="grid gap-3">
-              <h3 class="font-display text-[1.7rem] leading-tight">{inviteCopy.named_title}</h3>
-              <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">
-                {inviteCopy.named_description}
-              </p>
-              {#if consentMode === 'named'}
+          </span>
+        </label>
+      </fieldset>
+
+      {#if microFormFields.length > 0}
+        <section class="micro-form">
+          <header class="micro-form-header">
+            <p class="eyebrow">{inviteCopy.micro_form_eyebrow}</p>
+            <p class="invite-prose invite-prose--small">{inviteCopy.micro_form_description}</p>
+          </header>
+
+          {#each microFormFields as field (field.key)}
+            <div class="micro-form-field">
+              <label class="micro-form-label" for={`mf-${field.key}`}>
+                {field.label}{#if field.required}<span aria-hidden="true" class="required-mark">*</span>{/if}
+              </label>
+              {#if field.field_type === 'long_text'}
+                <textarea
+                  id={`mf-${field.key}`}
+                  rows="4"
+                  bind:value={microFormAnswers[field.key]}
+                  class="field min-h-[7rem]"
+                  required={field.required}
+                ></textarea>
+                <p class="micro-form-note">{inviteCopy.micro_form_answer_note}</p>
+              {:else if field.field_type === 'single_select'}
+                <div class="grid gap-2">
+                  {#each field.options ?? [] as option (option)}
+                    {@const isSelected = microFormAnswers[field.key] === option}
+                    <label class="select-row" class:select-row--active={isSelected}>
+                      <input
+                        type="radio"
+                        name={`mf-${field.key}`}
+                        value={option}
+                        bind:group={microFormAnswers[field.key]}
+                      />
+                      <span class="consent-card-marker" aria-hidden="true"></span>
+                      <span class="select-row-text">{option}</span>
+                    </label>
+                  {/each}
+                </div>
+              {:else}
                 <input
+                  id={`mf-${field.key}`}
                   type="text"
-                  bind:value={identityLabel}
-                  placeholder="Name or preferred citation"
+                  bind:value={microFormAnswers[field.key]}
                   class="field"
+                  required={field.required}
                 />
               {/if}
+              {#if field.required && firstMissingRequiredKey === field.key}
+                <p class="micro-form-note">{inviteCopy.micro_form_required_hint}</p>
+              {/if}
             </div>
-          </div>
-        </label>
-
-        {#if microFormFields.length > 0}
-          <div class="grid gap-1 border-t border-[color:var(--line)] pt-5">
-            <p class="eyebrow">{inviteCopy.micro_form_eyebrow}</p>
-            <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">
-              {inviteCopy.micro_form_description}
-            </p>
-          </div>
-
-          <section class="grid gap-4">
-            {#each microFormFields as field (field.key)}
-              <div class="grid gap-2">
-                <label class="label" for={`mf-${field.key}`}>
-                  {field.label}{#if field.required}<span aria-hidden="true" class="ml-1 text-ember">*</span>{/if}
-                </label>
-                {#if field.field_type === 'long_text'}
-                  <textarea
-                    id={`mf-${field.key}`}
-                    rows="5"
-                    bind:value={microFormAnswers[field.key]}
-                    class="field min-h-[8rem]"
-                    required={field.required}
-                  ></textarea>
-                  <p class="m-0 text-xs text-[color:var(--muted)]">
-                    {inviteCopy.micro_form_answer_note}
-                  </p>
-                {:else if field.field_type === 'single_select'}
-                  <div class="grid gap-2">
-                    {#each field.options ?? [] as option (option)}
-                      {@const isSelected = microFormAnswers[field.key] === option}
-                      <label
-                        class={`flex items-start gap-3 rounded-[8px] px-4 py-3 transition ${
-                          isSelected
-                            ? 'bg-[color:rgba(126,184,141,0.08)] ring-1 ring-[color:rgba(126,184,141,0.36)]'
-                            : 'bg-[color:rgba(255,255,255,0.02)] ring-1 ring-[color:rgba(232,224,207,0.12)]'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          class="sr-only"
-                          name={`mf-${field.key}`}
-                          value={option}
-                          bind:group={microFormAnswers[field.key]}
-                        />
-                        {#if isSelected}
-                          <svg aria-hidden="true" viewBox="0 0 20 20" class="mt-0.5 h-4 w-4 shrink-0 text-moss" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="10" cy="10" r="8.5" fill="rgba(126,184,141,0.16)" />
-                            <path d="M6.2 10.4l2.6 2.6 5-5.6" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                        {:else}
-                          <span aria-hidden="true" class="mt-0.5 h-4 w-4 shrink-0 rounded-full border border-[color:rgba(232,224,207,0.28)]"></span>
-                        {/if}
-                        <span class="text-sm leading-6 text-[color:var(--text)]">{option}</span>
-                      </label>
-                    {/each}
-                  </div>
-                {:else}
-                  <input
-                    id={`mf-${field.key}`}
-                    type="text"
-                    bind:value={microFormAnswers[field.key]}
-                    class="field"
-                    required={field.required}
-                  />
-                {/if}
-                {#if field.required && firstMissingRequiredKey === field.key}
-                  <p class="m-0 text-xs text-[color:var(--muted)]">{inviteCopy.micro_form_required_hint}</p>
-                {/if}
-              </div>
-            {/each}
-          </section>
-        {/if}
-
-        {#if error}
-          <p class="m-0 text-sm text-ember">{error}</p>
-        {/if}
-
-        <button
-          class="button-primary w-full md:w-fit"
-          disabled={redeeming || info.status !== 'active' || (consentMode === 'named' && !identityLabel.trim()) || !microFormComplete}
-        >
-          {redeeming ? inviteCopy.start_button_pending : inviteCopy.start_button_idle}
-        </button>
-      </form>
-    </article>
-
-    <aside class="grid content-start gap-4">
-      <section class="band-soft grid gap-3 px-5 py-5">
-        <p class="eyebrow">{inviteCopy.next_eyebrow}</p>
-        <ol class="m-0 grid gap-3 pl-5 text-sm leading-7 text-[color:var(--text)]">
-          {#each inviteCopy.next_steps as step}
-            <li>{step}</li>
           {/each}
-        </ol>
-      </section>
+        </section>
+      {/if}
+
+      {#if error}
+        <p class="invite-error-inline">{error}</p>
+      {/if}
+
+      <button
+        class="button-primary invite-submit"
+        disabled={redeeming || info.status !== 'active' || (consentMode === 'named' && !identityLabel.trim()) || !microFormComplete}
+      >
+        {redeeming ? inviteCopy.start_button_pending : inviteCopy.start_button_idle}
+      </button>
+    </form>
+
+    <aside class="invite-runs">
+      <p class="eyebrow">{inviteCopy.next_eyebrow}</p>
+      <ol class="invite-runs-list">
+        {#each inviteCopy.next_steps as step}
+          <li>{step}</li>
+        {/each}
+      </ol>
     </aside>
-  </section>
+  </article>
 {/if}

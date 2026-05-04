@@ -19,6 +19,7 @@
   const dispatch = createEventDispatcher<{
     submit: { content: string };
     resume: undefined;
+    end: undefined;
   }>();
 
   let draft = '';
@@ -69,6 +70,10 @@
     return stripTrailingChipEcho(content, activePrompt.options ?? []);
   }
 
+  function isDiscussChip(option: string): boolean {
+    return option.trim() === 'Discuss this more.';
+  }
+
   function handleSubmit(): void {
     const content = draft.trim();
     if (!content || disabled || pending || paused) {
@@ -93,103 +98,118 @@
     dispatch('resume');
   }
 
+  function handleEnd(): void {
+    if (disabled || pending) {
+      return;
+    }
+    dispatch('end');
+  }
+
+  $: anchorChips = (activePrompt?.options ?? []).filter((o) => !isDiscussChip(o));
+  $: discussChip = (activePrompt?.options ?? []).find((o) => isDiscussChip(o)) ?? null;
+  $: visibleMessages = messages.filter((m) => (m?.content ?? '').trim().length > 0);
+
   afterUpdate(() => {
     if (!transcriptEl) return;
-    if (messages.length === seenMessageCount && pending === seenPending) return;
-    seenMessageCount = messages.length;
+    if (visibleMessages.length === seenMessageCount && pending === seenPending) return;
+    seenMessageCount = visibleMessages.length;
     seenPending = pending;
     transcriptEl.scrollTop = transcriptEl.scrollHeight;
   });
 </script>
 
-<section class="band flex min-h-[36rem] flex-col overflow-hidden">
-  <header class="flex items-start justify-between gap-4 border-b border-[color:var(--line)] px-5 py-5 md:px-6">
-    <div class="grid gap-1">
+<section class="transcript">
+  <header class="transcript-head">
+    <div class="transcript-head-left">
       <p class="eyebrow">{title}</p>
-      <h2 class="section-title text-[1.8rem] md:text-[2rem]">Conversation</h2>
+      <p class="transcript-counter">
+        {#if pending}
+          <span class="dot-pulse"><span></span><span></span><span></span></span>
+          <span>{agentName} is thinking</span>
+        {:else if disabled}
+          <span>Transcript locked</span>
+        {:else}
+          <span>{visibleMessages.length} turns</span>
+        {/if}
+      </p>
     </div>
-    <div class="flex items-center gap-2 text-right">
-      {#if pending}
-        <span class="dot-pulse"><span></span><span></span><span></span></span>
-        <span class="label m-0">{agentName} is thinking</span>
-      {:else if disabled}
-        <span class="label m-0">Transcript locked</span>
-      {:else}
-        <span class="label m-0">{messages.length} turns</span>
-      {/if}
-    </div>
+    <button
+      type="button"
+      class="transcript-end"
+      disabled={disabled || pending}
+      on:click={handleEnd}
+    >
+      End conversation
+    </button>
   </header>
 
-  <div bind:this={transcriptEl} class="flex-1 overflow-y-auto px-5 py-6 md:px-6">
-    <div class="grid gap-4">
-      {#if messages.length === 0}
-        <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">{emptyState}</p>
-      {:else}
-        {#each messages as message}
-          <article
-            class={`max-w-[44rem] rounded-[8px] px-5 py-4 ${
-              isAgent(message.role)
-                ? 'border-l-2 border-[color:rgba(126,184,141,0.46)] bg-[color:rgba(126,184,141,0.08)]'
-                : 'ml-auto border-l-2 border-[color:rgba(220,125,78,0.45)] bg-[color:rgba(232,224,207,0.04)]'
-            }`}
-          >
-            <p class="font-mono text-[11px] uppercase tracking-[0.16em] text-[color:var(--muted)] mb-2">
-              {isAgent(message.role) ? agentName : participantName}
-            </p>
-            <p class="m-0 whitespace-pre-wrap text-[15px] leading-[1.75] text-[color:var(--text)]">
-              {isAgent(message.role) ? renderAgentContent(message.content) : message.content}
-            </p>
-          </article>
-        {/each}
-        {#if pending}
-          <article
-            class="max-w-[44rem] rounded-[8px] border-l-2 border-[color:rgba(126,184,141,0.46)] bg-[color:rgba(126,184,141,0.08)] px-5 py-4"
-          >
-            <p class="font-mono text-[11px] uppercase tracking-[0.16em] text-[color:var(--muted)] mb-2">
-              {agentName}
-            </p>
-            <div class="flex items-center gap-2">
-              <span class="dot-pulse"><span></span><span></span><span></span></span>
-              <span class="text-[15px] italic leading-[1.75] text-[color:var(--muted)]">is thinking…</span>
-            </div>
-          </article>
-        {/if}
+  <div bind:this={transcriptEl} class="transcript-body">
+    {#if visibleMessages.length === 0}
+      <p class="transcript-empty">{emptyState}</p>
+    {:else}
+      {#each visibleMessages as message (message)}
+        {@const agent = isAgent(message.role)}
+        <article class="turn" class:turn--agent={agent} class:turn--participant={!agent}>
+          <p class="turn-role">{agent ? agentName : participantName}</p>
+          <p class="turn-body">
+            {agent ? renderAgentContent(message.content) : message.content}
+          </p>
+        </article>
+      {/each}
+      {#if pending}
+        <article class="turn turn--agent turn--pending">
+          <p class="turn-role">{agentName}</p>
+          <p class="turn-body turn-body--muted">
+            <span class="dot-pulse"><span></span><span></span><span></span></span>
+            <span>is thinking…</span>
+          </p>
+        </article>
       {/if}
-    </div>
+    {/if}
   </div>
 
-  <footer class="grid gap-4 border-t border-[color:var(--line)] px-5 py-4 md:px-6">
+  <footer class="transcript-foot">
     {#if footerNote}
-      <p class="m-0 text-sm text-[color:var(--muted)]">{footerNote}</p>
+      <p class="transcript-footnote">{footerNote}</p>
     {/if}
 
-    {#if activePrompt && activePrompt.options.length}
-      <div class="chip-list">
-        {#each activePrompt.options as option}
+    {#if activePrompt && (anchorChips.length || discussChip)}
+      <div class="chip-row">
+        {#each anchorChips as option}
           <button
             type="button"
-            class={`chip ${option === 'Discuss this more.' ? 'chip--discuss' : ''}`}
+            class="chip"
             disabled={disabled || pending || paused}
             on:click={() => submitChip(option)}
           >
             {option}
           </button>
         {/each}
+        {#if discussChip}
+          <button
+            type="button"
+            class="chip-discuss"
+            disabled={disabled || pending || paused}
+            on:click={() => submitChip(discussChip)}
+          >
+            {discussChip}
+          </button>
+        {/if}
       </div>
     {/if}
 
-    <form class="grid gap-3 md:grid-cols-[1fr_auto]" on:submit|preventDefault={handleSubmit}>
+    <form class="transcript-compose" on:submit|preventDefault={handleSubmit}>
       <textarea
-        rows="4"
+        rows="3"
         bind:value={draft}
         disabled={disabled || pending || paused}
         class="field min-h-[5rem] resize-none"
         placeholder={activePrompt && activePrompt.options.length
-          ? 'Tap a quick anchor above, or type your own answer'
+          ? 'Tap an anchor above, or type your own answer'
           : placeholder}
       ></textarea>
       <button
-        class="button-primary md:self-end"
+        class="button-primary transcript-submit"
         disabled={disabled || pending || paused || !draft.trim()}
       >
         {pending ? 'Working...' : submitLabel}

@@ -20,15 +20,14 @@
   let sendPending = false;
   let resumePending = false;
   let error = '';
+  let workingNotesOpen = true;
+  let endModalOpen = false;
+  let endPending = false;
 
   $: sessionId = $page.params.session_id ?? '';
   $: bundleChat = $page.data.runtimeContext?.ui.chat ?? null;
   $: chatCopy = {
-    header_eyebrow: bundleChat?.header_eyebrow ?? runtimeCopy.chat.header_eyebrow,
-    header_wordmark: bundleChat?.header_wordmark ?? runtimeCopy.chat.header_wordmark,
-    header_subline: bundleChat?.header_subline ?? runtimeCopy.chat.header_subline,
     page_title: bundleChat?.page_title ?? runtimeCopy.chat.page_title,
-    conversation_heading: bundleChat?.conversation_heading ?? runtimeCopy.chat.conversation_heading,
     transcript_locked_label:
       bundleChat?.transcript_locked_label ?? runtimeCopy.chat.transcript_locked_label,
     agent_composing_label: bundleChat?.agent_composing_label ?? runtimeCopy.chat.agent_composing_label,
@@ -93,7 +92,6 @@
         ? 'brass'
         : 'neutral'
     : 'neutral';
-  $: sessionTitle = bundle ? truncate(bundle.campaign.title, 60) : '';
   $: attributionLabel = bundle
     ? bundle.session.consent_mode === 'anonymous'
       ? 'Anonymous'
@@ -146,9 +144,6 @@
     outlineAxes: string[],
     nextPlan: BrainBIntent | null
   ): Array<{ key: string; score: number; fullLabel: string }> {
-    // Prefer the freshest pre-plan if present; otherwise fall back to the
-    // latest agent turn's committed intent (which is what rendered the
-    // current visible reply).
     const plannedCoverage = nextPlan?.axes_coverage;
     const latestTurn = [...turns]
       .reverse()
@@ -204,10 +199,6 @@
     return prompts;
   }
 
-  // --- SSE plumbing -------------------------------------------------------
-  // One persistent EventSource per session. The browser handles Last-Event-ID
-  // replay on reconnect automatically; we only need to reopen the socket with
-  // a modest backoff when the server drops us.
   let eventSource: EventSource | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelayMs = 1000;
@@ -271,9 +262,6 @@
       case 'concepts_extracted':
       case 'graph_delta':
       case 'turn_complete':
-        // No-op on the chat page: validator_scored already carries the
-        // concept payload, the admin graph view owns graph_delta, and the
-        // POST response already closed the foreground turn.
         return;
       case 'session_finished': {
         const closeReason =
@@ -344,6 +332,9 @@
   }
 
   onMount(async () => {
+    if (typeof window !== 'undefined') {
+      workingNotesOpen = window.matchMedia('(min-width: 1024px)').matches;
+    }
     try {
       bundle = await getJson<SessionBundleResponse>(`/sessions/${encodeURIComponent(sessionId)}`);
       if (bundle.session.turns.length === 0) {
@@ -415,7 +406,7 @@
     if (!bundle || isFinished) {
       return;
     }
-    sendPending = true;
+    endPending = true;
     error = '';
     try {
       const finishedSession = await postJson<InterviewSessionRecord>(
@@ -426,10 +417,11 @@
         ...bundle,
         session: { ...bundle.session, ...finishedSession }
       };
+      endModalOpen = false;
     } catch (caught) {
       error = caught instanceof ApiError ? caught.message : 'Unable to end the conversation right now.';
     } finally {
-      sendPending = false;
+      endPending = false;
     }
   }
 
@@ -451,34 +443,39 @@
       resumePending = false;
     }
   }
+
+  function openEndModal(): void {
+    if (isFinished || endPending) {
+      return;
+    }
+    endModalOpen = true;
+  }
+
+  function closeEndModal(): void {
+    if (endPending) {
+      return;
+    }
+    endModalOpen = false;
+  }
+
+  function handleBackdropKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeEndModal();
+    }
+  }
 </script>
 
 <svelte:head>
   <title>{chatCopy.page_title}</title>
 </svelte:head>
 
-{#if chatCopy.header_wordmark || chatCopy.header_eyebrow || chatCopy.header_subline}
-  <header class="grid gap-1 pb-4">
-    {#if chatCopy.header_wordmark}
-      <p class="font-display text-[1.2rem] tracking-[0.14em] text-moss">
-        {chatCopy.header_wordmark}
-      </p>
-    {/if}
-    {#if chatCopy.header_eyebrow}
-      <p class="eyebrow">{chatCopy.header_eyebrow}</p>
-    {/if}
-    {#if chatCopy.header_subline}
-      <p class="text-sm text-[color:var(--muted)]">{chatCopy.header_subline}</p>
-    {/if}
-  </header>
-{/if}
-
 {#if loading}
-  <article class="band px-6 py-6 text-sm text-[color:var(--muted)]">Loading session...</article>
+  <article class="chat-shell-message">Loading session...</article>
 {:else if !bundle}
-  <article class="band px-6 py-6 text-sm text-ember">{error || 'Session not available.'}</article>
+  <article class="chat-shell-message chat-shell-message--error">{error || 'Session not available.'}</article>
 {:else}
-  <section class="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_22rem]">
+  <section class="chat-grid">
     <ChatPane
       title={bundle.campaign.title}
       messages={bundle.session.turns}
@@ -495,93 +492,116 @@
       footerNote={footerNote}
       on:submit={submitTurn}
       on:resume={resumeSession}
+      on:end={openEndModal}
     />
 
-    <aside class="grid content-start gap-4">
-      <section class="band grid gap-5 px-5 py-5">
-        <div class="grid gap-1">
-          <p class="eyebrow">{chatCopy.working_notes_eyebrow}</p>
-          <p class="label">{chatCopy.working_notes_heading}</p>
-        </div>
+    <aside class="chat-aside">
+      <details class="working-notes" bind:open={workingNotesOpen}>
+        <summary class="working-notes-summary">
+          <span class="eyebrow">{chatCopy.working_notes_eyebrow}</span>
+          <span class="working-notes-toggle" aria-hidden="true">▾</span>
+        </summary>
+        <div class="working-notes-body">
+          <ul class="rubric-grid">
+            {#each rubricRows as row (row.key)}
+              <li class="rubric-row" title={row.fullLabel}>
+                <span class="rubric-key">{row.key}</span>
+                <span class="rubric-bar">
+                  {#if row.score > 0}
+                    <span
+                      class="rubric-bar-fill"
+                      style={`width:${Math.min(100, Math.max(0, row.score * 100))}%`}
+                    ></span>
+                  {/if}
+                </span>
+                <span class="rubric-pct">
+                  {row.score > 0 ? `${Math.round(row.score * 100)}%` : '—'}
+                </span>
+              </li>
+            {/each}
+          </ul>
 
-        <div class="grid gap-2">
-          {#each rubricRows as row (row.key)}
-            <div class="flex items-center gap-3" title={row.fullLabel}>
-              <span class="w-8 font-mono text-xs text-[color:var(--muted)]">{row.key}</span>
-              <span class="h-1.5 flex-1 overflow-hidden rounded-full bg-[color:rgba(232,224,207,0.08)]">
-                {#if row.score > 0}
-                  <span
-                    class="block h-full rounded-full bg-[color:rgba(126,184,141,0.56)]"
-                    style={`width:${Math.min(100, Math.max(0, row.score * 100))}%`}
-                  ></span>
-                {/if}
-              </span>
-              <span class="w-10 text-right font-mono text-xs text-[color:var(--muted)]">
-                {row.score > 0 ? `${Math.round(row.score * 100)}%` : '—'}
-              </span>
-            </div>
-          {/each}
-        </div>
-
-        {#if sendPending}
-          <div class="flex items-center gap-2 px-1">
-            <span class="dot-pulse"><span></span><span></span><span></span></span>
-            <span class="text-xs text-[color:var(--muted)]">{chatCopy.agent_composing_label}</span>
-          </div>
-        {:else if latestAgentIntent?.retrieval_used}
-          <div class="grid gap-1 rounded-[8px] border border-[color:rgba(126,184,141,0.36)] bg-[color:rgba(126,184,141,0.08)] px-3 py-2">
-            <p class="label m-0 text-moss">{chatCopy.retrieved_heading}</p>
-            <p class="m-0 text-xs leading-6 text-[color:var(--text)]">
-              {retrievalMessage}
+          {#if sendPending}
+            <p class="working-notes-status">
+              <span class="dot-pulse"><span></span><span></span><span></span></span>
+              <span>{chatCopy.agent_composing_label}</span>
             </p>
-          </div>
-        {/if}
-
-        <div class="grid gap-2">
-          <p class="label">Questions Mira has captured so far</p>
-          <p class="m-0 text-xs leading-6 text-[color:var(--muted)]">
-            {satisfiedQuestionCountText}
-          </p>
-          {#if satisfiedQuestionPrompts.length > 0}
-            <div class="grid max-h-44 gap-2 overflow-y-auto pr-1">
-              {#each satisfiedQuestionPrompts as prompt}
-                <p class="m-0 rounded-[8px] border border-[color:rgba(232,224,207,0.1)] bg-[color:rgba(232,224,207,0.03)] px-3 py-2 text-xs leading-5 text-[color:var(--text)]">
-                  {prompt}
-                </p>
-              {/each}
-            </div>
+          {:else if latestAgentIntent?.retrieval_used}
+            <p class="working-notes-retrieved">
+              <span class="label">{chatCopy.retrieved_heading}</span>
+              <span>{retrievalMessage}</span>
+            </p>
           {/if}
-        </div>
 
-        <p class="m-0 text-xs text-[color:var(--muted)]">
-          {turnCounterText}
-        </p>
-      </section>
-
-      <section class="band-soft grid gap-3 px-5 py-4">
-        <p class="eyebrow">Session</p>
-        <h2 class="font-display text-[1.5rem] leading-tight">{sessionTitle}</h2>
-        <div class="flex flex-wrap items-center gap-3">
-          <span class="status-badge" data-tone={statusTone}>{bundle.session.status}</span>
-          <span class="text-xs text-[color:var(--muted)]">{attributionLabel}</span>
+          <p class="working-notes-meta">
+            <span>{satisfiedQuestionCountText}</span>
+            <span aria-hidden="true">·</span>
+            <span>{turnCounterText}</span>
+          </p>
         </div>
-      </section>
+      </details>
+
+      <p class="session-meta">
+        <span class="status-badge" data-tone={statusTone}>{bundle.session.status}</span>
+        <span>{attributionLabel}</span>
+      </p>
 
       {#if isFinished && closingTurn}
-        <section class="info-banner grid gap-3">
-          <div class="grid gap-1">
-            <p class="eyebrow">{chatCopy.session_complete_eyebrow}</p>
-            <p class="text-sm leading-7 text-[color:var(--text)]">{closingTurn.content}</p>
-          </div>
-          <div class="flex justify-end">
-            <a class="button-secondary" href="/">{chatCopy.return_home_label}</a>
-          </div>
+        <section class="closing-card">
+          <p class="eyebrow">{chatCopy.session_complete_eyebrow}</p>
+          <p class="closing-card-body">{closingTurn.content}</p>
+          <a class="button-secondary closing-card-cta" href="/">{chatCopy.return_home_label}</a>
         </section>
       {/if}
 
       {#if error}
-        <section class="px-1 text-sm text-ember">{error}</section>
+        <p class="chat-error">{error}</p>
       {/if}
     </aside>
   </section>
+
+  {#if endModalOpen}
+    <div
+      class="modal-backdrop"
+      role="presentation"
+      tabindex="-1"
+      on:click={closeEndModal}
+      on:keydown={handleBackdropKeydown}
+    >
+      <div
+        class="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="end-modal-title"
+        tabindex="-1"
+        on:click|stopPropagation
+        on:keydown|stopPropagation={handleBackdropKeydown}
+      >
+        <p class="eyebrow">End conversation</p>
+        <h2 id="end-modal-title" class="modal-title">Close this session?</h2>
+        <p class="modal-body">
+          Mira will mark the transcript complete and stop asking follow-up questions.
+          You can still revisit this URL to read what was recorded.
+        </p>
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="button-secondary"
+            disabled={endPending}
+            on:click={closeEndModal}
+          >
+            Keep talking
+          </button>
+          <button
+            type="button"
+            class="button-danger"
+            disabled={endPending}
+            on:click={finishSession}
+          >
+            {endPending ? 'Closing…' : 'End conversation'}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 {/if}
