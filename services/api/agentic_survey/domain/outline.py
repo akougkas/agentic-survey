@@ -42,12 +42,15 @@ class RiskEntry(BaseModel):
 class SurveyQuestion(BaseModel):
     id: str
     tier: str = ""
-    prompt: str
     kind: str = "open"
+    prompt: str
     options: list[str] = Field(default_factory=list)
     applies_to_roles: list[str] = Field(default_factory=list)
     axis_tag: str = ""
     notes: str = ""
+    follow_up_hints: list[str] = Field(default_factory=list)
+    saturation_signals: list[str] = Field(default_factory=list)
+    leading_language_avoid: list[str] = Field(default_factory=list)
 
     @field_validator("id", "prompt")
     @classmethod
