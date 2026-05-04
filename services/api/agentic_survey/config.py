@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -68,10 +69,15 @@ class Settings(BaseSettings):
     mini_endpoint_url: str = "http://mini:8080/v1"
     mini_model: str = "gemma-4-26B-A4B-it-Q4_K_M"
     dynamo_endpoint_url: str = "http://dynamo:1234/v1"
-    dynamo_model: str = "nemotron-cascade-2-30b-a3b-i1"
+    dynamo_model: str = "nvidia-nemotron-3-nano-omni-30b-a3b-reasoning"
+    dynamo_context_window_tokens: int = Field(default=600_000, ge=1)
     embedding_model: str = "text-embedding-nomic-embed-text-v2-moe"
     llm_enabled: bool = False
     llm_timeout_seconds: float = 60.0
+    llm_visible_reply_max_tokens: int = Field(default=512, ge=1)
+    llm_repair_completion_tokens: int = Field(default=1024, ge=1)
+    llm_reasoning_budget_tokens: int = Field(default=8192, ge=1)
+    llm_reasoning_final_response_tokens: int = Field(default=4096, ge=1)
 
 
 @lru_cache(maxsize=1)

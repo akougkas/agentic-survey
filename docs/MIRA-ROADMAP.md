@@ -117,7 +117,7 @@ Full details of each milestone, including files to create/modify and tests, are 
 
 Any future milestone should know these so they don't re-litigate:
 
-1. **LM Studio drops `tool_calls` when `response_format=json_schema` is on the same request.** Local models (tested: Nemotron Cascade 2 30B-A3B via LM Studio, direct probe) return empty content + empty tool_calls when both are set. Fix pattern now baked into `brain_b_loop.py`: send `tools` without `response_format` during tool-capable iterations; only apply `response_format` + `tool_choice="none"` on a terminal call when the model returns content that doesn't parse cleanly. If M2+ adds new tool surfaces (analyst, ingest), apply the same pattern.
+1. **LM Studio drops `tool_calls` when `response_format=json_schema` is on the same request.** Local Dynamo models via LM Studio return empty content + empty tool calls when both are set. Fix pattern now baked into `brain_b_loop.py`: send `tools` without `response_format` during tool-capable iterations; only apply `response_format` + `tool_choice="none"` on a terminal call when the model returns content that doesn't parse cleanly. If M2+ adds new tool surfaces (analyst, ingest), apply the same pattern.
 
 2. **`response_format` without `tools` still works.** Single-call mode (no registry) can send both freely. Verified by `test_single_turn_no_tool_calls_returns_intent`.
 
@@ -139,7 +139,7 @@ Any future milestone should know these so they don't re-litigate:
 
 11. **Cosmetic chip leaks.** Brain B sometimes emits chips wrapped in square brackets (`"[Add 'Movement']"`) and sometimes only 3 chips instead of 4. The normalizer appends `"Discuss this more."` regardless, but the bracket wrapping reaches the UI. Prompt fix in M7.
 
-12. **`~32s per Brain B turn with 2 tool calls.** Nemotron's reasoning trace dominates. Fine for design flow; the `RetrievalCache` in `engine/retrieval_cache.py` mitigates repeat queries during interviews. M4 vector retrieval will need query-embedding caching to stay under budget.
+12. **Brain B latency follows the reasoning budget.** Nemotron OMNI is configured with a 600K-token context window on dynamo, but Mira still caps completion output per role. Hidden reasoning uses `SURVEY_LLM_REASONING_BUDGET_TOKENS`; the request reserves `SURVEY_LLM_REASONING_FINAL_RESPONSE_TOKENS` beyond that so reasoning cannot consume the whole completion budget before the final JSON/probe is emitted. The `RetrievalCache` in `engine/retrieval_cache.py` mitigates repeat queries during interviews.
 
 13. **Bundle paths.** The active bundle is `citadl/bundle` (via `SURVEY_PRODUCT_BUNDLE_DIR`). The `from-seed` endpoint expects `seed_slug`, not `slug` — field name landmine.
 

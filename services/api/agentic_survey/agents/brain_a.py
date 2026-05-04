@@ -7,6 +7,7 @@ from typing import Any, AsyncIterator
 from agentic_survey.domain.intent import BrainBIntent
 from agentic_survey.domain.outline import OutlineArtifact
 from agentic_survey.domain.tools import GetUserInputOptions
+from agentic_survey.llm.reasoning import set_lmstudio_thinking, visible_reply_max_tokens
 
 __all__ = ["build_scaffold_intent", "stream_brain_a"]
 
@@ -187,12 +188,15 @@ async def stream_brain_a(
         }
     )
 
-    stream = await router.acompletion(
-        model=role,
-        messages=messages,
-        stream=True,
-        metadata={"surface": "designer", "brain": "A"},
-    )
+    request: dict[str, Any] = {
+        "model": role,
+        "messages": messages,
+        "stream": True,
+        "max_tokens": visible_reply_max_tokens(),
+        "metadata": {"surface": "designer", "brain": "A"},
+    }
+    set_lmstudio_thinking(request, enabled=False)
+    stream = await router.acompletion(**request)
     async for chunk in stream:
         text = _extract_chunk_text(chunk)
         if text:

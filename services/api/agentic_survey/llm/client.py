@@ -14,7 +14,11 @@ from agentic_survey.llm.catalog import (
     resolve as resolve_catalog,
 )
 from agentic_survey.llm.pool import AgentRole, EndpointConfig, EndpointPool
-from agentic_survey.llm.reasoning import apply_reasoning_settings
+from agentic_survey.llm.reasoning import (
+    apply_reasoning_settings,
+    repair_completion_tokens,
+    set_lmstudio_thinking,
+)
 from agentic_survey.llm.router import LiteLLMRouter, LiteLLMRouterError, get_litellm_router
 from agentic_survey.repository import Campaign, InMemoryRepository, get_repository
 
@@ -202,6 +206,7 @@ class LLMClient:
             extra_body=extra_body,
             metadata_extra=metadata_extra,
             resolution=resolution,
+            disable_reasoning=False,
         )
         if completion.content:
             return completion
@@ -224,11 +229,12 @@ class LLMClient:
             model_name=model_name,
             messages=repair_messages,
             temperature=max(0.0, temperature - 0.2),
-            max_tokens=max_tokens,
+            max_tokens=repair_completion_tokens(),
             response_format=response_format,
             extra_body=extra_body,
             metadata_extra=metadata_extra,
             resolution=resolution,
+            disable_reasoning=True,
         )
         if retry_completion.content:
             return retry_completion
@@ -248,6 +254,7 @@ class LLMClient:
         extra_body: dict | None,
         metadata_extra: dict[str, object] | None,
         resolution: CatalogResolution | None = None,
+        disable_reasoning: bool = False,
     ) -> ChatCompletion:
         metadata: dict[str, object] = {
             "surface": role.value,
@@ -268,7 +275,9 @@ class LLMClient:
             request["response_format"] = response_format
         if extra_body:
             request["extra_body"] = dict(extra_body)
-        if resolution is not None:
+        if disable_reasoning:
+            set_lmstudio_thinking(request, enabled=False)
+        elif resolution is not None:
             apply_reasoning_settings(resolution, request)
         start_time = datetime.now(tz=UTC)
         try:

@@ -25,6 +25,7 @@ from agentic_survey.engine.session_policy import (
     derive_objective_tags,
 )
 from agentic_survey.llm.router import LiteLLMRouter
+from agentic_survey.llm.reasoning import set_lmstudio_thinking, visible_reply_max_tokens
 from agentic_survey.repository import (
     Campaign,
     InMemoryRepository,
@@ -703,12 +704,15 @@ async def _stream_closing(
     ]
     messages.extend(transcript_tail)
 
-    stream = await router.acompletion(
-        model="mira-chatter",
-        messages=messages,
-        stream=True,
-        metadata={"surface": "interviewer", "brain": "A", "mode": "closing"},
-    )
+    request_payload: dict[str, Any] = {
+        "model": "mira-chatter",
+        "messages": messages,
+        "stream": True,
+        "max_tokens": visible_reply_max_tokens(),
+        "metadata": {"surface": "interviewer", "brain": "A", "mode": "closing"},
+    }
+    set_lmstudio_thinking(request_payload, enabled=False)
+    stream = await router.acompletion(**request_payload)
     chunks: list[str] = []
     async for chunk in stream:
         text = _extract_chunk_text(chunk)

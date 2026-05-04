@@ -37,7 +37,7 @@ class CatalogEntry(BaseModel):
     enabled: bool = True
     is_default: bool = False
     reasoning_mode: ReasoningMode = "off"
-    reasoning_budget_tokens: int | None = None
+    reasoning_budget_tokens: int | None = Field(default=None, ge=1)
     reasoning_kwarg: ReasoningKwarg = "none"
     created_at: str = Field(default_factory=_timestamp)
     updated_at: str = Field(default_factory=_timestamp)
@@ -70,6 +70,10 @@ def seed_entries() -> list[CatalogEntry]:
     mini_model = settings.mini_model
     dynamo_model = settings.dynamo_model
     embedding_model = settings.embedding_model
+    context_note = (
+        f"Dynamo host context window is configured as "
+        f"{settings.dynamo_context_window_tokens} tokens; per-call completion caps stay separate."
+    )
     return [
         CatalogEntry(
             catalog_id="mini-chatter",
@@ -78,7 +82,7 @@ def seed_entries() -> list[CatalogEntry]:
             model_id=mini_model,
             label=f"{mini_model} (Brain A on mini)",
             is_default=True,
-            reasoning_mode="on",
+            reasoning_mode="off",
             reasoning_kwarg="enable_thinking",
         ),
         CatalogEntry(
@@ -87,6 +91,7 @@ def seed_entries() -> list[CatalogEntry]:
             endpoint="dynamo",
             model_id=dynamo_model,
             label=f"{dynamo_model} (Brain B on dynamo)",
+            notes=context_note,
             is_default=True,
             reasoning_mode="on",
             reasoning_kwarg="enable_thinking",
@@ -97,9 +102,10 @@ def seed_entries() -> list[CatalogEntry]:
             endpoint="dynamo",
             model_id=dynamo_model,
             label=f"{dynamo_model} (Validator on dynamo, reasoning budget)",
+            notes=context_note,
             is_default=True,
             reasoning_mode="budget",
-            reasoning_budget_tokens=8192,
+            reasoning_budget_tokens=settings.llm_reasoning_budget_tokens,
             reasoning_kwarg="enable_thinking",
         ),
         CatalogEntry(
@@ -108,6 +114,7 @@ def seed_entries() -> list[CatalogEntry]:
             endpoint="dynamo",
             model_id=dynamo_model,
             label=f"{dynamo_model} (Analyst on dynamo)",
+            notes=context_note,
             is_default=True,
             reasoning_mode="on",
             reasoning_kwarg="enable_thinking",
@@ -118,6 +125,7 @@ def seed_entries() -> list[CatalogEntry]:
             endpoint="dynamo",
             model_id=dynamo_model,
             label=f"{dynamo_model} (Ingest on dynamo)",
+            notes=context_note,
             is_default=True,
             reasoning_mode="off",
             reasoning_kwarg="enable_thinking",

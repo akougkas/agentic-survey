@@ -11,6 +11,10 @@ from pydantic import ValidationError
 
 from agentic_survey.agents.tools.registry import ToolDispatchError, ToolRegistry
 from agentic_survey.domain.intent import AxisCoverage, BrainBIntent, QuestionCoverage
+from agentic_survey.llm.reasoning import (
+    reasoning_completion_tokens,
+    set_lmstudio_thinking,
+)
 
 __all__ = [
     "BrainBLoopError",
@@ -439,10 +443,12 @@ async def run_brain_b_with_tools(
     max_iterations = max_tool_calls + max_parse_retries + 2
     for iteration in range(max_iterations):
         terminal_only = not tools_schema or parse_retries > 0
+        completion_token_budget = reasoning_completion_tokens()
         completion_kwargs: dict[str, Any] = {
             "model": "mira-scientist",
             "messages": messages,
             "stream": False,
+            "max_tokens": completion_token_budget,
             "metadata": {
                 "surface": surface,
                 "brain": "B",
@@ -450,6 +456,11 @@ async def run_brain_b_with_tools(
                 "terminal_only": terminal_only,
             },
         }
+        set_lmstudio_thinking(
+            completion_kwargs,
+            enabled=True,
+            min_tokens=completion_token_budget,
+        )
         if terminal_only:
             completion_kwargs["response_format"] = _brain_b_response_format()
             if tools_schema:
