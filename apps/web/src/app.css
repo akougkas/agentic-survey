@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =============================================================
+   1. BASE + THEME
+   ============================================================= */
+
 @layer base {
   :root {
     color-scheme: dark;
@@ -13,6 +17,7 @@
     --moss: #7eb88d;
     --ember: #dc7d4e;
     --brass: #a79252;
+    --focus: rgba(126, 184, 141, 0.85);
   }
 
   html {
@@ -38,7 +43,29 @@
   select {
     font: inherit;
   }
+
+  :where(button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"]))
+    :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  button:focus-visible,
+  [href]:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [tabindex]:not([tabindex="-1"]):focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
 }
+
+/* =============================================================
+   2. LAYOUT PRIMITIVES
+   ============================================================= */
 
 @layer components {
   .shell {
@@ -49,12 +76,22 @@
     @apply max-w-[64rem];
   }
 
+  .skip-link {
+    @apply sr-only z-50 rounded-[6px] border border-[color:rgba(126,184,141,0.6)] bg-[color:rgba(20,22,20,0.92)] px-4 py-2 font-mono text-[12px] uppercase tracking-[0.18em] text-moss;
+  }
+
+  .skip-link:focus,
+  .skip-link:focus-visible {
+    @apply not-sr-only fixed left-4 top-4 no-underline;
+  }
+
   .participant-mast {
     @apply flex items-baseline justify-between gap-6 border-b border-[color:var(--line)] pb-4;
   }
 
   .participant-wordmark {
-    @apply font-mono text-[12px] uppercase tracking-[0.32em] text-moss no-underline;
+    @apply inline-flex items-center font-mono text-[12px] uppercase tracking-[0.32em] text-moss no-underline transition;
+    min-height: 44px;
   }
 
   .participant-wordmark:hover {
@@ -62,12 +99,17 @@
   }
 
   .participant-attribution {
-    @apply font-mono text-[11px] uppercase tracking-[0.18em] text-[color:var(--muted)] no-underline transition;
+    @apply inline-flex items-center font-mono text-[11px] uppercase tracking-[0.18em] text-[color:var(--muted)] no-underline transition;
+    min-height: 44px;
   }
 
   .participant-attribution:hover {
     @apply text-chalk;
   }
+
+  /* =============================================================
+     3. EDITORIAL PRIMITIVES
+     ============================================================= */
 
   .prose-reader {
     @apply mx-auto grid max-w-[40rem] gap-5 py-6;
@@ -82,101 +124,110 @@
     @apply m-0 text-[17px] leading-[1.65] text-[color:var(--text)];
   }
 
-  .landing {
-    @apply grid gap-12 py-4 md:gap-16 md:py-6;
+  .eyebrow {
+    @apply font-mono text-xs uppercase tracking-[0.18em] text-moss;
   }
 
-  .landing-mast {
-    @apply grid gap-5;
+  .label {
+    @apply font-mono text-[11px] uppercase tracking-[0.16em] text-[color:var(--muted)];
   }
 
-  .landing-headline {
-    @apply m-0 max-w-[44rem] font-display leading-[1.08] text-[color:var(--text)];
-    font-size: clamp(1.5rem, 3.4vw + 0.55rem, 2.45rem);
-    text-wrap: balance;
+  .page-title {
+    @apply max-w-4xl font-display text-[2.8rem] leading-[1.02] md:text-[4.35rem];
   }
 
-  .landing-lede {
-    @apply m-0 max-w-[36rem] text-[16px] leading-[1.65] text-[color:var(--muted)] md:text-[17px];
+  .section-title {
+    @apply font-display text-[2rem] leading-tight md:text-[2.4rem];
   }
 
-  .landing-paths {
-    @apply grid gap-4 md:grid-cols-2 md:gap-5;
+  .section-copy {
+    @apply m-0 max-w-3xl text-[15px] leading-7 text-[color:var(--muted)] md:text-base;
   }
 
-  .landing-path {
-    @apply grid gap-3 border-t border-[color:var(--line)] py-6 no-underline transition;
+  /* =============================================================
+     4. FORM PRIMITIVES
+     ============================================================= */
+
+  .field {
+    @apply w-full rounded-[8px] border border-[color:var(--line)] bg-[color:rgba(18,20,18,0.74)] px-4 py-3 text-sm text-chalk outline-none transition;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
 
-  .landing-path:hover {
-    @apply border-[color:rgba(126,184,141,0.42)];
+  .field:focus {
+    border-color: rgba(126, 184, 141, 0.48);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.03),
+      0 0 0 1px rgba(126, 184, 141, 0.24);
   }
 
-  .landing-path-label {
-    @apply m-0;
+  .button-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-[8px] px-5 py-3 text-sm text-chalk transition disabled:cursor-not-allowed disabled:border-[color:var(--line)] disabled:text-[color:var(--muted)];
+    border: 1px solid rgba(126, 184, 141, 0.6);
+    background: rgba(126, 184, 141, 0.12);
+    min-height: 44px;
   }
 
-  .landing-path-title {
-    @apply m-0 max-w-[24rem] font-display text-[1.5rem] leading-[1.18] text-[color:var(--text)];
+  .button-primary:hover:not(:disabled) {
+    background: rgba(126, 184, 141, 0.18);
+    border-color: rgba(126, 184, 141, 0.8);
   }
 
-  .landing-path-cue {
-    @apply inline-flex items-center gap-2 font-mono text-[12px] uppercase tracking-[0.16em] text-moss;
+  .button-primary:active:not(:disabled) {
+    background: rgba(126, 184, 141, 0.24);
   }
 
-  .landing-path-arrow {
-    @apply transition;
+  .button-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-[8px] border border-[color:var(--line)] bg-transparent px-4 py-3 text-sm text-[color:var(--muted)] transition disabled:cursor-not-allowed disabled:text-[color:var(--muted)];
+    min-height: 44px;
   }
 
-  .landing-path:hover .landing-path-arrow {
-    @apply translate-x-1;
+  .button-secondary:hover:not(:disabled) {
+    border-color: rgba(232, 224, 207, 0.24);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.03);
   }
 
-  .landing-aside {
-    @apply grid max-w-[40rem] gap-3 border-t border-[color:var(--line)] pt-6;
+  .button-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-[8px] px-4 py-3 text-sm text-chalk transition disabled:cursor-not-allowed disabled:border-[color:var(--line)] disabled:text-[color:var(--muted)];
+    border: 1px solid rgba(220, 125, 78, 0.5);
+    background: rgba(220, 125, 78, 0.1);
+    min-height: 44px;
   }
 
-  .landing-aside-body {
-    @apply m-0 text-[15px] leading-[1.65] text-[color:var(--muted)];
+  .button-danger:hover:not(:disabled) {
+    background: rgba(220, 125, 78, 0.16);
+    border-color: rgba(220, 125, 78, 0.72);
   }
 
-  .invite-page {
-    @apply mx-auto grid w-full max-w-[40rem] gap-8 py-4 md:py-6;
+  .status-badge {
+    @apply inline-flex items-center rounded-[8px] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.14em];
+    border: 1px solid rgba(232, 224, 207, 0.16);
+    color: var(--text);
+    background: rgba(232, 224, 207, 0.05);
   }
 
-  .invite-loading,
-  .invite-error {
-    @apply mx-auto max-w-[40rem] py-10 text-[15px] leading-[1.65] text-[color:var(--muted)];
+  .status-badge[data-tone='moss'] {
+    border-color: rgba(126, 184, 141, 0.36);
+    background: rgba(126, 184, 141, 0.1);
+    color: #a6d5b2;
   }
 
-  .invite-error {
-    @apply text-ember;
+  .status-badge[data-tone='ember'] {
+    border-color: rgba(220, 125, 78, 0.4);
+    background: rgba(220, 125, 78, 0.1);
+    color: #e8a17f;
   }
 
-  .invite-header {
-    @apply grid gap-3;
+  .status-badge[data-tone='brass'] {
+    border-color: rgba(167, 146, 82, 0.38);
+    background: rgba(167, 146, 82, 0.1);
+    color: #cfbc82;
   }
 
-  .invite-title {
-    @apply m-0 font-display leading-[1.1] text-[color:var(--text)];
-    font-size: clamp(1.6rem, 3.2vw + 0.55rem, 2.4rem);
-    text-wrap: balance;
-  }
-
-  .invite-prose {
-    @apply m-0 whitespace-pre-line text-[17px] leading-[1.65] text-[color:var(--text)];
-  }
-
-  .invite-prose--small {
-    @apply text-[15px] text-[color:var(--muted)];
-  }
-
-  .invite-meta {
-    @apply m-0 flex flex-wrap items-baseline gap-2 text-[14px] leading-[1.55] text-[color:var(--muted)];
-  }
-
-  .invite-form {
-    @apply grid gap-7 border-t border-[color:var(--line)] pt-7;
+  .status-badge[data-tone='neutral'] {
+    border-color: rgba(232, 224, 207, 0.16);
+    background: rgba(232, 224, 207, 0.05);
+    color: var(--muted);
   }
 
   .consent-modes {
@@ -190,10 +241,16 @@
   .consent-card {
     @apply relative grid cursor-pointer grid-cols-[auto_1fr] items-start gap-3 rounded-[6px] border border-[color:var(--line)] px-4 py-4 transition;
     background: rgba(255, 255, 255, 0.015);
+    min-height: 44px;
   }
 
   .consent-card:hover {
     border-color: rgba(232, 224, 207, 0.24);
+  }
+
+  .consent-card:focus-within {
+    border-color: rgba(126, 184, 141, 0.55);
+    box-shadow: 0 0 0 1px rgba(126, 184, 141, 0.24);
   }
 
   .consent-card input[type='radio'] {
@@ -257,12 +314,18 @@
   }
 
   .select-row {
-    @apply relative grid cursor-pointer grid-cols-[auto_1fr] items-center gap-3 rounded-[6px] border border-[color:var(--line)] px-3 py-2.5 text-[14px] leading-[1.45] text-[color:var(--text)] transition;
+    @apply relative grid cursor-pointer grid-cols-[auto_1fr] items-center gap-3 rounded-[6px] border border-[color:var(--line)] px-3 py-3 text-[14px] leading-[1.45] text-[color:var(--text)] transition;
     background: rgba(255, 255, 255, 0.015);
+    min-height: 44px;
   }
 
   .select-row:hover {
     border-color: rgba(232, 224, 207, 0.24);
+  }
+
+  .select-row:focus-within {
+    border-color: rgba(126, 184, 141, 0.55);
+    box-shadow: 0 0 0 1px rgba(126, 184, 141, 0.24);
   }
 
   .select-row input[type='radio'] {
@@ -280,6 +343,126 @@
     box-shadow: 0 0 0 3px rgba(126, 184, 141, 0.18);
   }
 
+  /* =============================================================
+     5. LANDING SURFACE
+     ============================================================= */
+
+  .landing {
+    @apply grid gap-12 py-4 md:gap-16 md:py-6;
+  }
+
+  .landing-mast {
+    @apply grid gap-5;
+  }
+
+  .landing-headline {
+    @apply m-0 max-w-[44rem] font-display leading-[1.08] text-[color:var(--text)];
+    font-size: clamp(1.5rem, 3.4vw + 0.55rem, 2.45rem);
+    text-wrap: balance;
+  }
+
+  .landing-lede {
+    @apply m-0 max-w-[36rem] text-[16px] leading-[1.65] text-[color:var(--muted)] md:text-[17px];
+  }
+
+  .landing-paths {
+    @apply grid gap-4 md:grid-cols-2 md:gap-5;
+  }
+
+  .landing-path {
+    @apply grid gap-3 border-t border-[color:var(--line)] py-6 no-underline transition;
+    transition-property: border-color, background-color;
+    transition-duration: 220ms;
+    transition-timing-function: ease-out;
+  }
+
+  .landing-path:hover {
+    border-color: rgba(126, 184, 141, 0.42);
+    background: rgba(126, 184, 141, 0.04);
+  }
+
+  .landing-path:focus-visible {
+    border-color: rgba(126, 184, 141, 0.55);
+    background: rgba(126, 184, 141, 0.06);
+    outline: none;
+  }
+
+  .landing-path-label {
+    @apply m-0;
+  }
+
+  .landing-path-title {
+    @apply m-0 max-w-[24rem] font-display text-[1.5rem] leading-[1.18] text-[color:var(--text)];
+  }
+
+  .landing-path-cue {
+    @apply inline-flex items-center gap-2 font-mono text-[12px] uppercase tracking-[0.16em] text-moss;
+  }
+
+  .landing-path-arrow {
+    @apply transition;
+    transition: transform 140ms ease-out;
+  }
+
+  .landing-path:hover .landing-path-arrow {
+    transform: translateX(4px);
+  }
+
+  .landing-aside {
+    @apply grid max-w-[40rem] gap-3 border-t border-[color:var(--line)] pt-6;
+  }
+
+  .landing-aside-quote {
+    @apply m-0 max-w-[36rem] font-display text-[1.05rem] italic leading-[1.55] text-[color:var(--text)];
+  }
+
+  .landing-aside-body {
+    @apply m-0 text-[15px] leading-[1.65] text-[color:var(--muted)];
+  }
+
+  /* =============================================================
+     6. INVITE SURFACE
+     ============================================================= */
+
+  .invite-page {
+    @apply mx-auto grid w-full max-w-[40rem] gap-8 py-4 md:py-6;
+  }
+
+  .invite-loading,
+  .invite-error {
+    @apply mx-auto max-w-[40rem] py-10 text-[15px] leading-[1.65] text-[color:var(--muted)];
+  }
+
+  .invite-error {
+    @apply text-ember;
+  }
+
+  .invite-header {
+    @apply grid gap-3;
+  }
+
+  .invite-title {
+    @apply m-0 font-display leading-[1.1] text-[color:var(--text)];
+    font-size: clamp(1.6rem, 3.2vw + 0.55rem, 2.4rem);
+    text-wrap: balance;
+  }
+
+  .invite-prose {
+    @apply m-0 whitespace-pre-line text-[17px] leading-[1.65] text-[color:var(--text)];
+  }
+
+  .invite-prose--small {
+    @apply text-[15px] text-[color:var(--muted)];
+  }
+
+  .invite-meta {
+    @apply m-0 flex flex-wrap items-baseline gap-2 text-[14px] leading-[1.55] text-[color:var(--muted)];
+  }
+
+  .invite-form {
+    @apply grid gap-7 border-t border-[color:var(--line)] pt-7;
+  }
+
   .invite-submit {
     @apply w-full md:w-fit md:min-w-[16rem];
   }
@@ -295,6 +478,10 @@
   .invite-runs-list {
     @apply m-0 grid gap-3 pl-5 text-[14px] leading-[1.65] text-[color:var(--muted)];
   }
+
+  /* =============================================================
+     7. CHAT TRANSCRIPT SURFACE
+     ============================================================= */
 
   .chat-grid {
     @apply grid gap-8 lg:grid-cols-[minmax(0,1fr)_17rem] lg:gap-10;
@@ -317,17 +504,31 @@
   }
 
   .transcript-head-left {
-    @apply grid gap-1;
+    @apply grid gap-1 min-w-0 flex-1;
+  }
+
+  .transcript-eyebrow {
+    @apply truncate;
   }
 
   .transcript-counter {
     @apply m-0 flex items-center gap-2 font-mono text-[12px] text-[color:var(--muted)];
   }
 
+  .transcript-disconnect {
+    @apply m-0 inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ember;
+  }
+
+  .transcript-disconnect-dot {
+    @apply inline-block h-1.5 w-1.5 rounded-full bg-ember;
+    animation: disconnect-pulse 1.4s infinite ease-in-out;
+  }
+
   .transcript-body {
     @apply grid gap-7 overflow-y-auto pr-1;
     align-content: start;
     max-height: 60vh;
+    scroll-behavior: smooth;
   }
 
   .transcript-empty {
@@ -347,6 +548,11 @@
   .turn--agent {
     @apply pl-5;
     border-left: 1px solid rgba(126, 184, 141, 0.42);
+  }
+
+  .turn--pending {
+    border-left-color: rgba(126, 184, 141, 0.65);
+    animation: rail-pulse 1.6s infinite ease-in-out;
   }
 
   .turn-role {
@@ -378,13 +584,19 @@
   }
 
   .chip {
-    @apply inline-flex items-center rounded-full border border-[color:var(--line)] px-3.5 py-1.5 text-[13px] leading-snug text-[color:var(--text)] transition cursor-pointer;
+    @apply inline-flex items-center rounded-full border border-[color:var(--line)] px-3.5 py-2 text-[13px] leading-snug text-[color:var(--text)] transition cursor-pointer;
     background: rgba(255, 255, 255, 0.025);
   }
 
   .chip:hover:not(:disabled) {
-    @apply border-[color:rgba(126,184,141,0.55)];
+    border-color: rgba(126, 184, 141, 0.55);
     background: rgba(126, 184, 141, 0.1);
+  }
+
+  .chip:active:not(:disabled),
+  .chip.chip--pressed {
+    background: rgba(126, 184, 141, 0.22);
+    border-color: rgba(126, 184, 141, 0.75);
   }
 
   .chip:disabled {
@@ -392,7 +604,10 @@
   }
 
   .chip-discuss {
-    @apply ml-1 inline-flex items-center font-mono text-[12px] uppercase tracking-[0.14em] text-[color:var(--muted)] underline decoration-dotted underline-offset-4 transition cursor-pointer bg-transparent border-0 px-0 py-1;
+    @apply ml-1 inline-flex items-center font-mono text-[12px] uppercase tracking-[0.14em] text-[color:var(--muted)] underline decoration-dotted underline-offset-4 transition cursor-pointer bg-transparent border-0;
+    padding: 12px 4px;
+    margin-top: -8px;
+    margin-bottom: -8px;
   }
 
   .chip-discuss:hover:not(:disabled) {
@@ -407,9 +622,30 @@
     @apply grid gap-3 md:grid-cols-[1fr_auto];
   }
 
+  .transcript-textarea {
+    @apply field resize-none;
+    min-height: 5rem;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
   .transcript-submit {
     @apply md:self-end md:min-w-[9rem];
   }
+
+  .transcript-end {
+    @apply inline-flex shrink-0 items-center rounded-[4px] border border-[color:var(--line)] bg-transparent px-3 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-[color:var(--muted)] transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50;
+    min-height: 44px;
+  }
+
+  .transcript-end:hover:not(:disabled) {
+    @apply border-[color:rgba(220,125,78,0.55)] text-ember;
+    background: rgba(220, 125, 78, 0.06);
+  }
+
+  /* =============================================================
+     8. WORKING NOTES + CLOSING
+     ============================================================= */
 
   .chat-aside {
     @apply grid content-start gap-5;
@@ -420,15 +656,20 @@
   }
 
   .working-notes-summary {
-    @apply flex cursor-pointer list-none items-center justify-between gap-3 py-1;
+    @apply flex cursor-pointer list-none items-center justify-between gap-3 py-3;
+    min-height: 44px;
   }
 
   .working-notes-summary::-webkit-details-marker {
     display: none;
   }
 
+  .working-notes-summary-label {
+    @apply min-w-0 flex-1 truncate;
+  }
+
   .working-notes-toggle {
-    @apply font-mono text-[12px] text-[color:var(--muted)] transition;
+    @apply shrink-0 font-mono text-[12px] text-[color:var(--muted)] transition;
   }
 
   .working-notes[open] .working-notes-toggle {
@@ -465,12 +706,24 @@
     @apply text-right font-mono text-[10.5px] text-[color:var(--muted)];
   }
 
+  .rubric-axis-label {
+    @apply m-0 col-span-3 -mt-1 pl-7 font-mono text-[10.5px] leading-[1.4] text-[color:var(--muted)];
+  }
+
   .working-notes-status {
     @apply m-0 flex items-center gap-2 text-[12px] leading-[1.4] text-[color:var(--muted)];
   }
 
   .working-notes-retrieved {
     @apply m-0 grid gap-1 rounded-[6px] border border-[color:rgba(126,184,141,0.3)] bg-[color:rgba(126,184,141,0.06)] px-3 py-2 text-[12px] leading-[1.55] text-[color:var(--text)];
+  }
+
+  .working-notes-retrieved-row {
+    @apply flex items-center gap-2;
+  }
+
+  .badge-count {
+    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[color:rgba(126,184,141,0.28)] px-1.5 font-mono text-[10.5px] leading-none text-moss;
   }
 
   .working-notes-meta {
@@ -497,14 +750,9 @@
     @apply m-0 text-sm text-ember;
   }
 
-  .transcript-end {
-    @apply inline-flex shrink-0 items-center rounded-[4px] border border-[color:var(--line)] bg-transparent px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.16em] text-[color:var(--muted)] transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50;
-  }
-
-  .transcript-end:hover:not(:disabled) {
-    @apply border-[color:rgba(220,125,78,0.55)] text-ember;
-    background: rgba(220, 125, 78, 0.06);
-  }
+  /* =============================================================
+     9. MODAL
+     ============================================================= */
 
   .modal-backdrop {
     @apply fixed inset-0 z-50 flex items-center justify-center p-5;
@@ -514,7 +762,8 @@
   }
 
   .modal-card {
-    @apply grid w-full max-w-[28rem] gap-4 rounded-[8px] border border-[color:var(--line)] px-6 py-6;
+    @apply grid w-full gap-4 rounded-[8px] border border-[color:var(--line)] px-6 py-6;
+    max-width: min(28rem, calc(100vw - 2rem));
     background: rgba(28, 32, 28, 0.96);
     box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
     animation: modal-rise 200ms ease-out;
@@ -532,6 +781,10 @@
     @apply mt-2 flex flex-wrap items-center justify-end gap-3;
   }
 
+  /* =============================================================
+     10. ANIMATIONS
+     ============================================================= */
+
   @keyframes modal-fade {
     from { opacity: 0; }
     to { opacity: 1; }
@@ -541,6 +794,38 @@
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
   }
+
+  @keyframes dot-pulse {
+    0%, 80%, 100% { opacity: 0.28; transform: scale(0.85); }
+    40% { opacity: 1; transform: scale(1); }
+  }
+
+  @keyframes rail-pulse {
+    0%, 100% { border-left-color: rgba(126, 184, 141, 0.42); }
+    50% { border-left-color: rgba(126, 184, 141, 0.85); }
+  }
+
+  @keyframes disconnect-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  .dot-pulse {
+    @apply inline-flex items-center gap-1;
+  }
+
+  .dot-pulse > span {
+    @apply inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--moss)];
+    animation: dot-pulse 1.2s infinite ease-in-out both;
+  }
+
+  .dot-pulse > span:nth-child(1) { animation-delay: 0ms; }
+  .dot-pulse > span:nth-child(2) { animation-delay: 150ms; }
+  .dot-pulse > span:nth-child(3) { animation-delay: 300ms; }
+
+  /* =============================================================
+     11. LEGACY ADMIN TOKENS (still consumed by /admin/*)
+     ============================================================= */
 
   .band {
     background: var(--panel);
@@ -555,72 +840,8 @@
     border-radius: 8px;
   }
 
-  .eyebrow {
-    @apply font-mono text-xs uppercase tracking-[0.18em] text-moss;
-  }
-
-  .label {
-    @apply font-mono text-[11px] uppercase tracking-[0.16em] text-[color:var(--muted)];
-  }
-
-  .page-title {
-    @apply max-w-4xl font-display text-[2.8rem] leading-[1.02] md:text-[4.35rem];
-  }
-
-  .section-title {
-    @apply font-display text-[2rem] leading-tight md:text-[2.4rem];
-  }
-
-  .section-copy {
-    @apply m-0 max-w-3xl text-[15px] leading-7 text-[color:var(--muted)] md:text-base;
-  }
-
   .nav-link {
     @apply rounded-[8px] px-3 py-2 text-sm text-[color:var(--muted)] transition hover:bg-white/5 hover:text-chalk;
-  }
-
-  .field {
-    @apply w-full rounded-[8px] border border-[color:var(--line)] bg-[color:rgba(18,20,18,0.74)] px-4 py-3 text-sm text-chalk outline-none transition;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  }
-
-  .field:focus {
-    border-color: rgba(126, 184, 141, 0.48);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.03),
-      0 0 0 1px rgba(126, 184, 141, 0.24);
-  }
-
-  .button-primary {
-    @apply inline-flex items-center justify-center rounded-[8px] px-5 py-3 text-sm text-chalk transition disabled:cursor-not-allowed disabled:border-[color:var(--line)] disabled:text-[color:var(--muted)];
-    border: 1px solid rgba(126, 184, 141, 0.6);
-    background: rgba(126, 184, 141, 0.12);
-  }
-
-  .button-primary:hover:not(:disabled) {
-    background: rgba(126, 184, 141, 0.18);
-    border-color: rgba(126, 184, 141, 0.8);
-  }
-
-  .button-secondary {
-    @apply inline-flex items-center justify-center rounded-[8px] border border-[color:var(--line)] bg-transparent px-4 py-3 text-sm text-[color:var(--muted)] transition disabled:cursor-not-allowed disabled:text-[color:var(--muted)];
-  }
-
-  .button-secondary:hover:not(:disabled) {
-    border-color: rgba(232, 224, 207, 0.24);
-    color: var(--text);
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  .button-danger {
-    @apply inline-flex items-center justify-center rounded-[8px] px-4 py-3 text-sm text-chalk transition disabled:cursor-not-allowed disabled:border-[color:var(--line)] disabled:text-[color:var(--muted)];
-    border: 1px solid rgba(220, 125, 78, 0.5);
-    background: rgba(220, 125, 78, 0.1);
-  }
-
-  .button-danger:hover:not(:disabled) {
-    background: rgba(220, 125, 78, 0.16);
-    border-color: rgba(220, 125, 78, 0.72);
   }
 
   .stack-list {
@@ -649,51 +870,8 @@
     @apply grid gap-2 rounded-[8px] border border-[color:var(--line)] bg-[color:rgba(255,255,255,0.02)] px-4 py-4;
   }
 
-  .status-badge {
-    @apply inline-flex items-center rounded-[8px] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.14em];
-    border: 1px solid rgba(232, 224, 207, 0.16);
-    color: var(--text);
-    background: rgba(232, 224, 207, 0.05);
-  }
-
-  .status-badge[data-tone='moss'] {
-    border-color: rgba(126, 184, 141, 0.36);
-    background: rgba(126, 184, 141, 0.1);
-    color: #a6d5b2;
-  }
-
-  .status-badge[data-tone='ember'] {
-    border-color: rgba(220, 125, 78, 0.4);
-    background: rgba(220, 125, 78, 0.1);
-    color: #e8a17f;
-  }
-
-  .status-badge[data-tone='brass'] {
-    border-color: rgba(167, 146, 82, 0.38);
-    background: rgba(167, 146, 82, 0.1);
-    color: #cfbc82;
-  }
-
-  .status-badge[data-tone='neutral'] {
-    border-color: rgba(232, 224, 207, 0.16);
-    background: rgba(232, 224, 207, 0.05);
-    color: var(--muted);
-  }
-
   .chip-list {
     @apply flex flex-wrap gap-2;
-  }
-
-  .chip {
-    @apply inline-flex items-center rounded-[8px] border border-[color:var(--line)] bg-[color:rgba(255,255,255,0.04)] px-4 py-2 text-[13px] leading-snug text-[color:var(--text)] transition cursor-pointer;
-  }
-
-  .chip:hover:not(:disabled) {
-    @apply border-[color:rgba(126,184,141,0.48)] bg-[color:rgba(126,184,141,0.1)];
-  }
-
-  .chip:disabled {
-    @apply cursor-not-allowed opacity-60;
   }
 
   .chip--discuss {
@@ -703,22 +881,28 @@
   .chip--discuss:hover:not(:disabled) {
     @apply text-[color:var(--text)] border-solid;
   }
+}
 
-  .dot-pulse {
-    @apply inline-flex items-center gap-1;
+/* =============================================================
+   12. REDUCED MOTION
+   ============================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 
-  .dot-pulse > span {
-    @apply inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--moss)];
-    animation: dot-pulse 1.2s infinite ease-in-out both;
+  .transcript-body {
+    scroll-behavior: auto;
   }
 
-  .dot-pulse > span:nth-child(1) { animation-delay: 0ms; }
-  .dot-pulse > span:nth-child(2) { animation-delay: 150ms; }
-  .dot-pulse > span:nth-child(3) { animation-delay: 300ms; }
-
-  @keyframes dot-pulse {
-    0%, 80%, 100% { opacity: 0.28; transform: scale(0.85); }
-    40% { opacity: 1; transform: scale(1); }
+  .dot-pulse > span,
+  .turn--pending,
+  .transcript-disconnect-dot {
+    animation: none !important;
   }
 }

@@ -17,9 +17,13 @@
   <link rel="icon" href="/favicon.svg" />
 </svelte:head>
 
+<a class="skip-link" href="#main">Skip to content</a>
+
 {#if isAdminRoute}
   <div class="shell shell--admin grid gap-6">
-    <slot />
+    <main id="main" class="contents">
+      <slot />
+    </main>
   </div>
 {:else}
   <div class="shell shell--participant grid gap-8">
@@ -30,6 +34,8 @@
       </a>
     </header>
 
-    <slot />
+    <main id="main" class="contents">
+      <slot />
+    </main>
   </div>
 {/if}

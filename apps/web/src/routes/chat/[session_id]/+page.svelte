@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
 
   import { ApiError, getJson, postJson } from '$lib/api';
   import ChatPane from '$lib/components/ChatPane.svelte';
@@ -23,6 +23,12 @@
   let workingNotesOpen = true;
   let endModalOpen = false;
   let endPending = false;
+  let connected = true;
+
+  let modalCardEl: HTMLDivElement | null = null;
+  let modalKeepBtnEl: HTMLButtonElement | null = null;
+  let modalEndBtnEl: HTMLButtonElement | null = null;
+  let lastFocusedBeforeModal: HTMLElement | null = null;
 
   $: sessionId = $page.params.session_id ?? '';
   $: bundleChat = $page.data.runtimeContext?.ui.chat ?? null;
@@ -40,6 +46,7 @@
       bundleChat?.retrieved_description_plural ?? runtimeCopy.chat.retrieved_description_plural,
     concepts_heading: bundleChat?.concepts_heading ?? runtimeCopy.chat.concepts_heading,
     concepts_empty: bundleChat?.concepts_empty ?? runtimeCopy.chat.concepts_empty,
+    coverage_empty: runtimeCopy.chat.coverage_empty,
     turn_counter_template: bundleChat?.turn_counter_template ?? runtimeCopy.chat.turn_counter_template,
     active_footer: bundleChat?.active_footer ?? runtimeCopy.chat.active_footer,
     paused_footer: bundleChat?.paused_footer ?? runtimeCopy.chat.paused_footer,
@@ -107,9 +114,11 @@
     String(participantTurnCount)
   );
   $: satisfiedQuestionCountText =
-    satisfiedQuestionPrompts.length === 1
-      ? '1 question covered'
-      : `${satisfiedQuestionPrompts.length} questions covered`;
+    satisfiedQuestionPrompts.length === 0
+      ? chatCopy.coverage_empty
+      : satisfiedQuestionPrompts.length === 1
+        ? '1 question covered'
+        : `${satisfiedQuestionPrompts.length} questions covered`;
   $: footerNote = isFinished
     ? chatCopy.finished_footer
     : isPaused
@@ -139,11 +148,17 @@
     return match ? match[0].toUpperCase() : trimmed.slice(0, 2).toUpperCase();
   }
 
+  function shortAxisLabel(raw: string): string {
+    const trimmed = (raw ?? '').trim();
+    const stripped = trimmed.replace(/^R\d+\s*[—:.\-]?\s*/i, '').trim();
+    return truncate(stripped || trimmed, 64);
+  }
+
   function coverageByAxis(
     turns: InterviewTurnRecord[],
     outlineAxes: string[],
     nextPlan: BrainBIntent | null
-  ): Array<{ key: string; score: number; fullLabel: string }> {
+  ): Array<{ key: string; score: number; fullLabel: string; shortLabel: string }> {
     const plannedCoverage = nextPlan?.axes_coverage;
     const latestTurn = [...turns]
       .reverse()
@@ -169,7 +184,7 @@
       }
     }
 
-    const rows: Array<{ key: string; score: number; fullLabel: string }> = [];
+    const rows: Array<{ key: string; score: number; fullLabel: string; shortLabel: string }> = [];
     for (let i = 1; i <= 8; i += 1) {
       const key = `R${i}`;
       const score = scoreByPrefix.get(key) ?? 0;
@@ -178,7 +193,7 @@
         const match = coverageList.find((c) => axisPrefix(c.axis) === key);
         fullLabel = match?.axis ?? key;
       }
-      rows.push({ key, score, fullLabel });
+      rows.push({ key, score, fullLabel, shortLabel: shortAxisLabel(fullLabel) });
     }
     return rows;
   }
@@ -203,6 +218,7 @@
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelayMs = 1000;
   let streamClosed = false;
+  let disconnectGraceTimer: ReturnType<typeof setTimeout> | null = null;
 
   function patchNextPlan(plan: BrainBIntent | null): void {
     if (!bundle) return;
@@ -278,8 +294,24 @@
     }
   }
 
+  function clearDisconnectGrace(): void {
+    if (disconnectGraceTimer !== null) {
+      clearTimeout(disconnectGraceTimer);
+      disconnectGraceTimer = null;
+    }
+  }
+
+  function startDisconnectGrace(): void {
+    if (disconnectGraceTimer !== null) return;
+    disconnectGraceTimer = setTimeout(() => {
+      connected = false;
+      disconnectGraceTimer = null;
+    }, 3000);
+  }
+
   function closeStream(): void {
     streamClosed = true;
+    clearDisconnectGrace();
     if (reconnectTimer !== null) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -321,12 +353,15 @@
     }
     source.onopen = () => {
       reconnectDelayMs = 1000;
+      clearDisconnectGrace();
+      connected = true;
     };
     source.onerror = () => {
       if (eventSource) {
         eventSource.close();
         eventSource = null;
       }
+      startDisconnectGrace();
       scheduleReconnect();
     };
   }
@@ -355,6 +390,17 @@
     closeStream();
   });
 
+  function rollbackOptimisticTurn(turnId: string): void {
+    if (!bundle) return;
+    bundle = {
+      ...bundle,
+      session: {
+        ...bundle.session,
+        turns: bundle.session.turns.filter((turn) => turn.id !== turnId)
+      }
+    };
+  }
+
   async function submitTurn(event: CustomEvent<{ content: string }>): Promise<void> {
     if (!bundle || isFinished || isPaused) {
       return;
@@ -368,8 +414,9 @@
     sendPending = true;
     error = '';
 
+    const optimisticTurnId = `pending-${Date.now()}`;
     const optimisticTurn = {
-      id: `pending-${Date.now()}`,
+      id: optimisticTurnId,
       session_id: bundle.session.id,
       role: 'participant',
       content: event.detail.content,
@@ -396,6 +443,7 @@
         }
       );
     } catch (caught) {
+      rollbackOptimisticTurn(optimisticTurnId);
       error = caught instanceof ApiError ? caught.message : 'Unable to send that turn right now.';
     } finally {
       sendPending = false;
@@ -444,11 +492,16 @@
     }
   }
 
-  function openEndModal(): void {
+  async function openEndModal(): Promise<void> {
     if (isFinished || endPending) {
       return;
     }
+    if (typeof document !== 'undefined') {
+      lastFocusedBeforeModal = document.activeElement as HTMLElement | null;
+    }
     endModalOpen = true;
+    await tick();
+    modalKeepBtnEl?.focus();
   }
 
   function closeEndModal(): void {
@@ -456,12 +509,44 @@
       return;
     }
     endModalOpen = false;
+    if (lastFocusedBeforeModal) {
+      lastFocusedBeforeModal.focus();
+      lastFocusedBeforeModal = null;
+    }
   }
 
-  function handleBackdropKeydown(event: KeyboardEvent): void {
+  function focusableInModal(): HTMLElement[] {
+    if (!modalCardEl) return [];
+    const selector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    return Array.from(modalCardEl.querySelectorAll<HTMLElement>(selector));
+  }
+
+  function handleModalKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
       event.preventDefault();
       closeEndModal();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const items = focusableInModal();
+    if (items.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (event.shiftKey) {
+      if (active === first || !modalCardEl?.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   }
 </script>
@@ -490,6 +575,7 @@
       activePrompt={activePrompt}
       emptyState={chatCopy.empty_state}
       footerNote={footerNote}
+      connected={connected}
       on:submit={submitTurn}
       on:resume={resumeSession}
       on:end={openEndModal}
@@ -498,7 +584,7 @@
     <aside class="chat-aside">
       <details class="working-notes" bind:open={workingNotesOpen}>
         <summary class="working-notes-summary">
-          <span class="eyebrow">{chatCopy.working_notes_eyebrow}</span>
+          <span class="eyebrow working-notes-summary-label">{chatCopy.working_notes_eyebrow}</span>
           <span class="working-notes-toggle" aria-hidden="true">▾</span>
         </summary>
         <div class="working-notes-body">
@@ -517,6 +603,9 @@
                 <span class="rubric-pct">
                   {row.score > 0 ? `${Math.round(row.score * 100)}%` : '—'}
                 </span>
+                {#if workingNotesOpen && row.shortLabel && row.shortLabel !== row.key}
+                  <p class="rubric-axis-label">{row.shortLabel}</p>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -529,7 +618,12 @@
           {:else if latestAgentIntent?.retrieval_used}
             <p class="working-notes-retrieved">
               <span class="label">{chatCopy.retrieved_heading}</span>
-              <span>{retrievalMessage}</span>
+              <span class="working-notes-retrieved-row">
+                {#if retrievalChunkCount > 0}
+                  <span class="badge-count" aria-hidden="true">{retrievalChunkCount}</span>
+                {/if}
+                <span>{retrievalMessage}</span>
+              </span>
             </p>
           {/if}
 
@@ -555,7 +649,7 @@
       {/if}
 
       {#if error}
-        <p class="chat-error">{error}</p>
+        <p class="chat-error" role="alert">{error}</p>
       {/if}
     </aside>
   </section>
@@ -566,25 +660,27 @@
       role="presentation"
       tabindex="-1"
       on:click={closeEndModal}
-      on:keydown={handleBackdropKeydown}
     >
       <div
+        bind:this={modalCardEl}
         class="modal-card"
-        role="dialog"
+        role="alertdialog"
         aria-modal="true"
         aria-labelledby="end-modal-title"
+        aria-describedby="end-modal-body"
         tabindex="-1"
         on:click|stopPropagation
-        on:keydown|stopPropagation={handleBackdropKeydown}
+        on:keydown={handleModalKeydown}
       >
         <p class="eyebrow">End conversation</p>
         <h2 id="end-modal-title" class="modal-title">Close this session?</h2>
-        <p class="modal-body">
+        <p id="end-modal-body" class="modal-body">
           Mira will mark the transcript complete and stop asking follow-up questions.
           You can still revisit this URL to read what was recorded.
         </p>
         <div class="modal-actions">
           <button
+            bind:this={modalKeepBtnEl}
             type="button"
             class="button-secondary"
             disabled={endPending}
@@ -593,12 +689,18 @@
             Keep talking
           </button>
           <button
+            bind:this={modalEndBtnEl}
             type="button"
             class="button-danger"
             disabled={endPending}
             on:click={finishSession}
           >
-            {endPending ? 'Closing…' : 'End conversation'}
+            {#if endPending}
+              <span class="dot-pulse" aria-hidden="true"><span></span><span></span><span></span></span>
+              <span>Closing</span>
+            {:else}
+              <span>End conversation</span>
+            {/if}
           </button>
         </div>
       </div>

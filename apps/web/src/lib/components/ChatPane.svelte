@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { afterUpdate, createEventDispatcher } from 'svelte';
+  import { afterUpdate, createEventDispatcher, onMount, tick } from 'svelte';
   import type { GetUserInputOptions } from '$lib/types';
 
   export let title: string;
@@ -15,6 +15,7 @@
   export let activePrompt: GetUserInputOptions | null = null;
   export let paused = false;
   export let resumePending = false;
+  export let connected = true;
 
   const dispatch = createEventDispatcher<{
     submit: { content: string };
@@ -24,8 +25,22 @@
 
   let draft = '';
   let transcriptEl: HTMLDivElement | null = null;
+  let textareaEl: HTMLTextAreaElement | null = null;
+  let pressedChip: string | null = null;
   let seenMessageCount = 0;
   let seenPending = false;
+  let liveAnnouncement = '';
+
+  $: shortTitle = computeShortTitle(title);
+
+  function computeShortTitle(raw: string): string {
+    if (!raw) return '';
+    const dashIndex = raw.search(/[–—]/);
+    if (dashIndex > 0) {
+      return raw.slice(0, dashIndex).trim();
+    }
+    return raw;
+  }
 
   function isAgent(role: string): boolean {
     return role === 'agent' || role === 'designer';
@@ -74,6 +89,24 @@
     return option.trim() === 'Discuss this more.';
   }
 
+  function autoResize(): void {
+    if (!textareaEl) return;
+    textareaEl.style.height = 'auto';
+    const next = Math.min(textareaEl.scrollHeight, Math.round(window.innerHeight * 0.5));
+    textareaEl.style.height = `${next}px`;
+  }
+
+  function handleInput(): void {
+    autoResize();
+  }
+
+  function handleKeydown(event: KeyboardEvent): void {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      handleSubmit();
+    }
+  }
+
   function handleSubmit(): void {
     const content = draft.trim();
     if (!content || disabled || pending || paused) {
@@ -82,12 +115,20 @@
 
     dispatch('submit', { content });
     draft = '';
+    if (textareaEl) {
+      textareaEl.style.height = 'auto';
+    }
   }
 
-  function submitChip(content: string): void {
+  async function submitChip(content: string): Promise<void> {
     if (disabled || pending || paused) {
       return;
     }
+    pressedChip = content;
+    await tick();
+    setTimeout(() => {
+      pressedChip = null;
+    }, 220);
     dispatch('submit', { content });
   }
 
@@ -105,26 +146,60 @@
     dispatch('end');
   }
 
+  function firstSentence(text: string): string {
+    if (!text) return '';
+    const trimmed = text.replace(/\s+/g, ' ').trim();
+    const match = trimmed.match(/[^.?!]*[.?!]/);
+    if (match) return match[0].trim();
+    return trimmed.length > 160 ? `${trimmed.slice(0, 157).trimEnd()}…` : trimmed;
+  }
+
   $: anchorChips = (activePrompt?.options ?? []).filter((o) => !isDiscussChip(o));
   $: discussChip = (activePrompt?.options ?? []).find((o) => isDiscussChip(o)) ?? null;
   $: visibleMessages = messages.filter((m) => (m?.content ?? '').trim().length > 0);
+  $: composerInstructionId = footerNote ? 'transcript-instructions' : '';
+
+  $: if (visibleMessages.length !== seenMessageCount) {
+    const last = visibleMessages[visibleMessages.length - 1];
+    if (last && isAgent(last.role)) {
+      const role = `${agentName}.`;
+      const lead = firstSentence(renderAgentContent(last.content));
+      liveAnnouncement = `${role} ${lead}`;
+    }
+  }
+
+  onMount(() => {
+    autoResize();
+  });
 
   afterUpdate(() => {
     if (!transcriptEl) return;
     if (visibleMessages.length === seenMessageCount && pending === seenPending) return;
     seenMessageCount = visibleMessages.length;
     seenPending = pending;
-    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    if (typeof window === 'undefined') {
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+      return;
+    }
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    } else {
+      transcriptEl.scrollTo({ top: transcriptEl.scrollHeight, behavior: 'smooth' });
+    }
   });
 </script>
 
 <section class="transcript">
   <header class="transcript-head">
     <div class="transcript-head-left">
-      <p class="eyebrow">{title}</p>
+      <p class="eyebrow transcript-eyebrow">
+        <span class="hidden sm:inline">{title}</span>
+        <span class="sm:hidden">{shortTitle}</span>
+      </p>
       <p class="transcript-counter">
         {#if pending}
-          <span class="dot-pulse"><span></span><span></span><span></span></span>
+          <span class="dot-pulse" aria-hidden="true"><span></span><span></span><span></span></span>
           <span>{agentName} is thinking</span>
         {:else if disabled}
           <span>Transcript locked</span>
@@ -132,6 +207,12 @@
           <span>{visibleMessages.length} turns</span>
         {/if}
       </p>
+      {#if !connected && !disabled}
+        <p class="transcript-disconnect" role="status">
+          <span class="transcript-disconnect-dot" aria-hidden="true"></span>
+          <span>Connection lost · retrying</span>
+        </p>
+      {/if}
     </div>
     <button
       type="button"
@@ -143,7 +224,12 @@
     </button>
   </header>
 
-  <div bind:this={transcriptEl} class="transcript-body">
+  <div
+    bind:this={transcriptEl}
+    class="transcript-body"
+    aria-live="polite"
+    aria-relevant="additions"
+  >
     {#if visibleMessages.length === 0}
       <p class="transcript-empty">{emptyState}</p>
     {:else}
@@ -157,20 +243,22 @@
         </article>
       {/each}
       {#if pending}
-        <article class="turn turn--agent turn--pending">
+        <article class="turn turn--agent turn--pending" aria-hidden="true">
           <p class="turn-role">{agentName}</p>
           <p class="turn-body turn-body--muted">
             <span class="dot-pulse"><span></span><span></span><span></span></span>
-            <span>is thinking…</span>
+            <span>is composing</span>
           </p>
         </article>
       {/if}
     {/if}
   </div>
 
+  <span class="sr-only" role="status" aria-live="polite">{liveAnnouncement}</span>
+
   <footer class="transcript-foot">
     {#if footerNote}
-      <p class="transcript-footnote">{footerNote}</p>
+      <p id="transcript-instructions" class="transcript-footnote">{footerNote}</p>
     {/if}
 
     {#if activePrompt && (anchorChips.length || discussChip)}
@@ -179,6 +267,7 @@
           <button
             type="button"
             class="chip"
+            class:chip--pressed={pressedChip === option}
             disabled={disabled || pending || paused}
             on:click={() => submitChip(option)}
           >
@@ -200,19 +289,28 @@
 
     <form class="transcript-compose" on:submit|preventDefault={handleSubmit}>
       <textarea
-        rows="3"
+        bind:this={textareaEl}
         bind:value={draft}
+        rows="3"
         disabled={disabled || pending || paused}
-        class="field min-h-[5rem] resize-none"
+        class="transcript-textarea"
         placeholder={activePrompt && activePrompt.options.length
           ? 'Tap an anchor above, or type your own answer'
           : placeholder}
+        aria-describedby={composerInstructionId || undefined}
+        on:input={handleInput}
+        on:keydown={handleKeydown}
       ></textarea>
       <button
         class="button-primary transcript-submit"
         disabled={disabled || pending || paused || !draft.trim()}
       >
-        {pending ? 'Working...' : submitLabel}
+        {#if pending}
+          <span class="dot-pulse" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>{submitLabel}</span>
+        {:else}
+          <span>{submitLabel}</span>
+        {/if}
       </button>
     </form>
 

@@ -98,6 +98,7 @@ export const runtimeCopy = {
       "Mira drew {count} passages from the study's grounding library.",
     concepts_heading: 'Emerging concepts',
     concepts_empty: 'Mira will name concepts as they surface in your answers.',
+    coverage_empty: 'Mira will tally questions as you go.',
     turn_counter_template:
       'Turn {count}. This is an open-ended conversation with no fixed length.',
     active_footer:

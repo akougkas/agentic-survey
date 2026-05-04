@@ -250,7 +250,21 @@
         class="button-primary invite-submit"
         disabled={redeeming || info.status !== 'active' || (consentMode === 'named' && !identityLabel.trim()) || !microFormComplete}
       >
-        {redeeming ? inviteCopy.start_button_pending : inviteCopy.start_button_idle}
+        {#if redeeming}
+          <span class="dot-pulse" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>{inviteCopy.start_button_pending}</span>
+        {:else}
+          <span>{inviteCopy.start_button_idle}</span>
+          <svg width="16" height="10" viewBox="0 0 16 10" fill="none" aria-hidden="true">
+            <path
+              d="M0 5h13.5M9.5 1l4 4-4 4"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        {/if}
       </button>
     </form>
 
