@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 __all__ = [
     "DecisionGate",
@@ -9,6 +9,7 @@ __all__ = [
     "OutlineRubric",
     "ParticipantFAQEntry",
     "RiskEntry",
+    "SurveyQuestion",
 ]
 
 
@@ -38,6 +39,38 @@ class RiskEntry(BaseModel):
     mitigation: str
 
 
+class SurveyQuestion(BaseModel):
+    id: str
+    tier: str = ""
+    prompt: str
+    kind: str = "open"
+    options: list[str] = Field(default_factory=list)
+    applies_to_roles: list[str] = Field(default_factory=list)
+    axis_tag: str = ""
+    notes: str = ""
+
+    @field_validator("id", "prompt")
+    @classmethod
+    def validate_required_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must be non-empty")
+        return stripped
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        if value not in {"open", "select_one", "select_many", "likert_5", "rank"}:
+            raise ValueError("kind must be one of open, select_one, select_many, likert_5, rank")
+        return value
+
+    @model_validator(mode="after")
+    def validate_options_for_kind(self) -> "SurveyQuestion":
+        if self.kind in {"select_one", "select_many", "rank"} and not self.options:
+            raise ValueError(f"kind='{self.kind}' requires at least one option")
+        return self
+
+
 class DecisionGate(BaseModel):
     gate: str
     rationale: str
@@ -51,6 +84,7 @@ class OutlineArtifact(BaseModel):
     axes: list[str] = Field(default_factory=list)
     objectives: list[str] = Field(default_factory=list)
     probes: list[str] = Field(default_factory=list)
+    question_bank: list[SurveyQuestion] = Field(default_factory=list)
     risk_register: list[RiskEntry] = Field(default_factory=list)
     grounding_sources_approved: list[str] = Field(default_factory=list)
     readiness_rationale: str = ""

@@ -66,6 +66,17 @@ export interface DecisionGate {
   rationale: string;
 }
 
+export interface SurveyQuestion {
+  id: string;
+  tier: string;
+  prompt: string;
+  kind: 'open' | 'select_one' | 'select_many' | 'likert_5' | 'rank';
+  options: string[];
+  applies_to_roles: string[];
+  axis_tag: string;
+  notes: string;
+}
+
 export interface OutlineArtifact {
   research_question: string;
   sampling_frame: string;
@@ -74,6 +85,7 @@ export interface OutlineArtifact {
   axes: string[];
   objectives: string[];
   probes: string[];
+  question_bank: SurveyQuestion[];
   risk_register: RiskEntry[];
   grounding_sources_approved: string[];
   readiness_rationale: string;

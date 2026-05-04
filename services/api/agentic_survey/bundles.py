@@ -15,6 +15,7 @@ from agentic_survey.domain.outline import (
     OutlineRubric,
     ParticipantFAQEntry,
     RiskEntry,
+    SurveyQuestion,
 )
 
 _MODULE_ANCESTORS = Path(__file__).resolve().parents
@@ -183,6 +184,7 @@ class CampaignSeedOutline(BaseModel):
     axes: list[str] = Field(default_factory=list)
     objectives: list[str] = Field(default_factory=list)
     probes: list[str] = Field(default_factory=list)
+    question_bank: list[SurveyQuestion] = Field(default_factory=list)
     risk_register: list[RiskEntry] = Field(default_factory=list)
     grounding_sources_approved: list[str] = Field(default_factory=list)
     readiness_rationale: str = ""
@@ -243,6 +245,11 @@ class CampaignSeed(BaseModel):
         if self.max_n < self.min_n:
             raise ValueError("max_n must be greater than or equal to min_n")
         return self
+
+
+class ActiveBundle(BaseModel):
+    manifest: ProductBundleManifest
+    campaigns: list[CampaignSeed] = Field(default_factory=list)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -318,6 +325,14 @@ def list_campaign_seeds(bundle_dir: Path | None = None) -> list[CampaignSeed]:
     return [load_campaign_seed(reference.slug, bundle_dir=resolved_bundle_dir) for reference in manifest.campaigns]
 
 
+def load_active_bundle(bundle_dir: Path | None = None) -> ActiveBundle:
+    resolved_bundle_dir = resolve_bundle_dir(bundle_dir)
+    return ActiveBundle(
+        manifest=load_bundle_manifest(resolved_bundle_dir),
+        campaigns=list_campaign_seeds(resolved_bundle_dir),
+    )
+
+
 def materialize_outline(seed: CampaignSeed) -> OutlineArtifact:
     outline = seed.outline
     return OutlineArtifact(
@@ -328,6 +343,7 @@ def materialize_outline(seed: CampaignSeed) -> OutlineArtifact:
         axes=list(outline.axes),
         objectives=list(outline.objectives),
         probes=list(outline.probes),
+        question_bank=[question.model_copy(deep=True) for question in outline.question_bank],
         risk_register=[entry.model_copy(deep=True) for entry in outline.risk_register],
         grounding_sources_approved=list(outline.grounding_sources_approved),
         readiness_rationale=outline.readiness_rationale,
