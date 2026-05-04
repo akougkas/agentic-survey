@@ -43,6 +43,921 @@ outline:
   - What would a national agentic data management infrastructure have to do — or refuse to do — to be integratable with your environment as you actually work in it today?
   - When an agent makes a consequential error in production, who do you think should be responsible, and how do you think that should be decided?
   - Where do you think the vision of this work, as you have understood it in this conversation, might be wrong or overstated?
+  question_bank:
+  - id: A-Q1
+    tier: A
+    prompt: |
+      What is your primary research domain?
+    kind: select_many
+    options:
+    - "Materials science / chemistry"
+    - "Biology / genomics / drug discovery"
+    - "Neuroscience / brain-computer interfaces"
+    - "Earth sciences / climate / earthquake modeling"
+    - "Physics / astronomy / particle physics"
+    - "Agriculture / environmental science"
+    - "Additive manufacturing / engineering"
+    - "Healthcare / medical imaging"
+    - "Aerospace / hypersonics"
+    - "Social sciences / digital humanities"
+    - "Other (please specify): _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q2
+    tier: A
+    prompt: |
+      How would you characterize your role in the research data workflow?
+    kind: select_one
+    options:
+    - "I primarily generate data (experiments, simulations, sensors)"
+    - "I primarily analyze and interpret data"
+    - "I do both generation and analysis"
+    - "I manage data infrastructure for my group"
+    - "I develop tools or methods used by others in my domain"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q3
+    tier: A
+    prompt: |
+      How many people in your research group regularly interact with your data?
+    kind: select_one
+    options:
+    - "1–2 (individual or small team)"
+    - "3–10 (lab group)"
+    - "11–50 (multi-group collaboration)"
+    - "51–200 (large project or consortium)"
+    - "200+ (community-scale)"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q4
+    tier: A
+    prompt: |
+      What is the approximate total volume of data you or your group manage(s)?
+    kind: select_one
+    options:
+    - "< 1 TB"
+    - "1–10 TB"
+    - "10–100 TB"
+    - "100 TB – 1 PB"
+    - "> 1 PB"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q5
+    tier: A
+    prompt: |
+      What computing platforms do you use for your research?
+    kind: select_many
+    options:
+    - "Local workstation / lab servers"
+    - "Institutional HPC cluster"
+    - "National HPC facilities (e.g., ACCESS, NERSC, OLCF)"
+    - "Commercial cloud (AWS, Azure, GCP)"
+    - "Edge devices / embedded sensors / instruments"
+    - "Self-driving or autonomous lab systems"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q6
+    tier: A
+    prompt: |
+      Which phases of the data lifecycle consume the most of your (or your group’s) time and effort? Rank the top 3.
+    kind: rank
+    options:
+    - "Acquisition (instrument configuration, data capture)"
+    - "Preparation (cleaning, format conversion, metadata enrichment)"
+    - "Storage (managing where data lives, tiering, backup)"
+    - "Movement (transferring data between systems, staging for computation)"
+    - "Decision support (analysis, visualization, finding relevant prior data)"
+    - "Sharing (publishing datasets, compliance, creating repositories)"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Rank top 3"
+  - id: A-Q7
+    tier: A
+    prompt: |
+      Describe a typical end-to-end data workflow in your research. Start from how data is generated and end with how results are published or shared.
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Open-ended (3–5 sentences). Example: “We collect X-ray diffraction data at a synchrotron beamline, copy it to portable drives, transfer to our institutional cluster for preprocessing, run DFT calculations on a national facility, and manually package results for journal submission months later.”"
+  - id: A-Q8
+    tier: A
+    prompt: |
+      What data formats do you primarily work with?
+    kind: select_many
+    options:
+    - "HDF5 / NetCDF"
+    - "CSV / TSV / plaintext"
+    - "Domain-specific formats (FITS, NWB, BIDS, NeXus, CIF, etc.) — please specify: ______"
+    - "Images (TIFF, DICOM, microscopy formats)"
+    - "Relational databases (SQL)"
+    - "Graph databases / knowledge graphs"
+    - "Streaming or time-series data"
+    - "Parquet / Zarr / Arrow"
+    - "JSON / XML"
+    - "Proprietary instrument formats"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q9
+    tier: A
+    prompt: |
+      How do you currently manage metadata for your research data?
+    kind: select_many
+    options:
+    - "Manually maintained spreadsheets or notes"
+    - "Naming conventions on files and directories"
+    - "Domain-specific metadata standards (e.g., NeXus, NWB, Dublin Core)"
+    - "Automated extraction from instruments"
+    - "Lab information management system (LIMS)"
+    - "Electronic lab notebook"
+    - "We don’t systematically manage metadata"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q10
+    tier: A
+    prompt: |
+      What are the biggest pain points in your current data workflow? Rate each on a scale of 1 (not a problem) to 5 (critical bottleneck).
+    kind: likert_5
+    options:
+    - "Finding and locating previously generated data"
+    - "Tracking data provenance (who created what, when, and how)"
+    - "Reproducing previous analyses or results"
+    - "Moving large datasets between systems or facilities"
+    - "Converting between data formats"
+    - "Ensuring data quality and cleaning errors"
+    - "Getting data onto the right storage system at the right time"
+    - "Coordinating data across collaborators or institutions"
+    - "Complying with data sharing mandates (FAIR, journal requirements)"
+    - "Waiting for compute resources to process data"
+    - "Lack of real-time or near-real-time processing capability"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Likert 1 (not a problem) to 5 (critical bottleneck)"
+  - id: A-Q11
+    tier: A
+    prompt: |
+      When your data needs to move between systems (e.g., from an instrument to a cluster, from local to national facilities), how is that typically handled?
+    kind: select_many
+    options:
+    - "Manual copying (scp, rsync, USB drives)"
+    - "Globus or similar managed transfer service"
+    - "Custom scripts"
+    - "Cloud sync services (Dropbox, Google Drive, etc.)"
+    - "Automated pipeline (describe briefly): _______________"
+    - "Data doesn’t typically move — we process in place"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q12
+    tier: A
+    prompt: |
+      How do you currently decide where to store your data (e.g., local disk vs. cluster storage vs. tape archive vs. cloud)?
+    kind: select_one
+    options:
+    - "I store everything in one place"
+    - "I manually move data between tiers based on how recently it was used"
+    - "My institution or facility has policies that dictate placement"
+    - "I have scripts or tools that automate some tiering decisions"
+    - "I don’t think about this — it’s someone else’s responsibility"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q13
+    tier: A
+    prompt: |
+      Have you used any AI or machine learning tools in your data management workflow (not for your scientific analysis, but for managing the data itself)?
+    kind: select_one
+    options:
+    - "Yes, regularly"
+    - "Yes, occasionally or experimentally"
+    - "No, but I’m interested"
+    - "No, and I’m not sure it’s relevant to my work"
+    - "No, and I have concerns about it"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q14
+    tier: A
+    prompt: |
+      If an AI agent could autonomously handle parts of your data lifecycle, which phases would you most want it to manage? Rank by priority.
+    kind: rank
+    options:
+    - "Automatic data quality checks and cleaning upon acquisition"
+    - "Intelligent metadata extraction and tagging"
+    - "Automatic placement of data on the right storage tier"
+    - "Proactive data movement (prefetching data before a computation, staging results)"
+    - "Suggesting relevant datasets or prior results you should consider"
+    - "Automated compliance checking for sharing and publication"
+    - "Experiment design and hypothesis generation based on existing data"
+    - "Provenance tracking and reproducibility audit trails"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Rank top 3"
+  - id: A-Q15
+    tier: A
+    prompt: |
+      Imagine you could describe your research intent in natural language (e.g., “Characterize phase evolution in these battery electrodes and compare it with prior compositions"), and an AI system would automatically orchestrate the data acquisition, preparation, analysis, and sharing. How valuable would such a system be?
+    kind: select_one
+    options:
+    - "Transformative - this would fundamentally change how I do research"
+    - "Very valuable - would save significant time and effort"
+    - "Somewhat valuable - useful for some tasks but not all"
+    - "Marginally valuable - I’d still want to control most steps manually"
+    - "Not valuable - I need full manual control over my workflow"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q16
+    tier: A
+    prompt: |
+      What concerns do you have about autonomous AI agents managing your research data? Rate each on a scale of 1 (not concerned) to 5 (very concerned).
+    kind: likert_5
+    options:
+    - "AI making incorrect decisions that corrupt or lose data"
+    - "Lack of transparency in what the AI agent decided and why"
+    - "Security and unauthorized access to sensitive data"
+    - "Loss of scientific control or understanding of my own workflow"
+    - "Reproducibility — can I reproduce what the AI did?"
+    - "Bias in AI-driven data selection or analysis recommendations"
+    - "Compliance with domain-specific regulations (HIPAA, ITAR, etc.)"
+    - "Vendor lock-in or dependency on specific AI platforms"
+    - "Cost of AI-assisted infrastructure"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Likert 1 (not concerned) to 5 (very concerned)"
+  - id: A-Q17
+    tier: A
+    prompt: |
+      For AI-assisted data management to be trustworthy in your domain, what would be essential? Select all that apply.
+    kind: select_many
+    options:
+    - "Full audit trail of every action the AI agent took"
+    - "Ability to approve or reject AI decisions before execution"
+    - "Ability to roll back any AI-initiated action"
+    - "Domain-specific validation of AI decisions (not generic checks)"
+    - "Explainability - the agent must justify its decisions in terms I understand"
+    - "Human-in-the-loop for high-stakes decisions (e.g., deleting data, publishing)"
+    - "Compliance with my domain’s data governance standards"
+    - "Open-source and inspectable agent code"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q18
+    tier: A
+    prompt: |
+      If a national-scale AI-assisted data management infrastructure were available, what would make you likely to adopt it? Select your top 3.
+    kind: rank
+    options:
+    - "Integration with platforms I already use (ACCESS, institutional HPC, cloud)"
+    - "Natural language interface for specifying research intent"
+    - "Support for my domain’s data formats and standards"
+    - "Demonstrated success stories from researchers in my field"
+    - "No disruption to my existing workflows - I can adopt gradually"
+    - "Training and documentation tailored to my domain"
+    - "Community governance (researchers have a voice in how it evolves)"
+    - "Free or low-cost access"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Select top 3"
+  - id: A-Q19
+    tier: A
+    prompt: |
+      Are there tasks in your data workflow that you believe should never be fully automated - that always require human judgment? If so, which ones and why?
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: A-Q20
+    tier: A
+    prompt: |
+      Is there anything else about your data management challenges or your vision for AI-assisted data workflows that you would like to share?
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q1
+    tier: B
+    prompt: |
+      Which best describes your role?
+    kind: select_one
+    options:
+    - "Facility operator / systems administrator at a computing or data center"
+    - "Storage systems architect or engineer"
+    - "Developer of data management tools or libraries (e.g., I/O libraries, storage systems, workflow tools)"
+    - "Research software engineer supporting scientific applications"
+    - "Platform or service lead for national cyberinfrastructure (e.g., ACCESS, NDP, NAIRR)"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q2
+    tier: B
+    prompt: |
+      What facility or organization do you work with?
+    kind: select_many
+    options:
+    - "University / institutional HPC center"
+    - "NSF-funded national facility (ACCESS resource provider, SDSC, TACC, etc.)"
+    - "DOE national laboratory"
+    - "Cloud service provider or commercial data center"
+    - "National or domain-specific data repository"
+    - "Software development organization (e.g., HDF Group, Globus)"
+    - "Instrument facility (synchrotron, telescope, sensor network)"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q3
+    tier: B
+    prompt: |
+      What is the approximate scale of data your facility or tool ecosystem supports?
+    kind: select_one
+    options:
+    - "< 100 TB"
+    - "100 TB – 1 PB"
+    - "1 PB – 10 PB"
+    - "10 PB – 100 PB"
+    - "> 100 PB"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q4
+    tier: B
+    prompt: |
+      How many distinct user communities or scientific domains does your facility/tool serve?
+    kind: select_one
+    options:
+    - "1–2 specific domains"
+    - "3–5 domains"
+    - "6–10 domains"
+    - "10+ domains (general-purpose)"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q5
+    tier: B
+    prompt: |
+      What storage tiers or technologies does your facility currently operate?
+    kind: select_many
+    options:
+    - "NVMe / local SSD"
+    - "Parallel file systems (Lustre, GPFS/Spectrum Scale, DAOS, WekaFS)"
+    - "Object storage (S3-compatible, Ceph, MinIO)"
+    - "Tape archive (HPSS, TSM)"
+    - "Cloud storage (AWS S3, Azure Blob, GCS)"
+    - "Network-attached storage (NFS, SMB)"
+    - "Database systems (relational, graph, time-series)"
+    - "Specialized streaming buffers or in-memory systems"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q6
+    tier: B
+    prompt: |
+      For each data lifecycle phase, list the primary tools, libraries, or services your facility provides or your team develops. If you don’t address a phase, write N/A.
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Open-ended table. Phases: Acquisition | Preparation | Storage | Movement | Decision Support | Sharing. For each, describe: Tool/service name, current maturity (prototype / production / legacy), and number of active users."
+  - id: B-Q7
+    tier: B
+    prompt: |
+      Which data lifecycle phases are currently the most operationally challenging for your facility? Rank the top 3.
+    kind: rank
+    options:
+    - "Acquisition — ingesting data at the rate it is produced"
+    - "Preparation — ensuring data quality, format standardization, metadata at scale"
+    - "Storage — tiering, capacity planning, cost management"
+    - "Movement — high-throughput transfer, cross-facility staging"
+    - "Decision Support — enabling users to discover, query, and track data"
+    - "Sharing — supporting FAIR principles, access control, compliance at scale"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Rank top 3"
+  - id: B-Q8
+    tier: B
+    prompt: |
+      What are the biggest gaps in your current tool or service ecosystem? Rate each on a scale of 1 (not a gap) to 5 (critical gap).
+    kind: likert_5
+    options:
+    - "Automated metadata extraction at the point of data creation"
+    - "Intelligent or policy-driven data placement across storage tiers"
+    - "Real-time or streaming data ingestion pipelines"
+    - "Cross-facility data transfer orchestration (beyond point-to-point)"
+    - "Unified data discovery and search across heterogeneous repositories"
+    - "Provenance tracking that spans multiple tools and systems"
+    - "Automated data lifecycle policies (retention, migration, deletion)"
+    - "Self-tuning storage and I/O performance"
+    - "Format-agnostic data access layers"
+    - "User-friendly interfaces for non-expert researchers"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Likert 1 (not a gap) to 5 (critical gap)"
+  - id: B-Q9
+    tier: B
+    prompt: |
+      How do you currently handle data placement and tiering decisions?
+    kind: select_many
+    options:
+    - "Manual user-driven (users decide where their data goes)"
+    - "Policy-based automation (rules based on age, size, access frequency)"
+    - "Quota systems (users get fixed allocations per tier)"
+    - "Hierarchical storage management (HSM) with automated migration"
+    - "We have a single tier — no tiering decisions needed"
+    - "Custom scripts or tools developed in-house"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q10
+    tier: B
+    prompt: |
+      What data format and interface standards does your facility or tool support?
+    kind: select_many
+    options:
+    - "HDF5 / HDF5-REST (HSDS)"
+    - "NetCDF / OPeNDAP"
+    - "Parquet / Arrow / Zarr"
+    - "POSIX file I/O"
+    - "S3-compatible object APIs"
+    - "Domain-specific formats (NeXus, NWB, BIDS, FITS, CIF)"
+    - "MPI-IO / parallel I/O libraries (PnetCDF, ADIOS)"
+    - "Globus Transfer API"
+    - "REST / GraphQL APIs for data access"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q11
+    tier: B
+    prompt: |
+      How do you monitor and optimize I/O and storage performance?
+    kind: select_many
+    options:
+    - "System-level monitoring tools (Darshan, TAU, Prometheus, Grafana)"
+    - "Application-level profiling (I/O tracing per job)"
+    - "User-reported issues (reactive troubleshooting)"
+    - "Automated anomaly detection"
+    - "Performance benchmarking (IOR, MDTest, etc.)"
+    - "We don’t systematically monitor storage performance"
+    - "Machine learning-based performance analysis"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q12
+    tier: B
+    prompt: |
+      What is the typical lifecycle of a dataset in your facility? Describe a common data flow from ingestion to eventual archival or deletion.
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Open-ended (3–5 sentences)"
+  - id: B-Q13
+    tier: B
+    prompt: |
+      Has your facility or team experimented with AI/ML for any operational data management tasks (not scientific analysis)?
+    kind: select_one
+    options:
+    - "Yes, in production"
+    - "Yes, in pilot/prototype stage"
+    - "We have explored it but not deployed"
+    - "No, but we are interested"
+    - "No, and we have significant concerns"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q14
+    tier: B
+    prompt: |
+      If yes or exploring, which tasks have you applied AI/ML to?
+    kind: select_many
+    options:
+    - "Storage performance prediction or auto-tuning"
+    - "Anomaly detection in I/O patterns or system behavior"
+    - "Automated data placement or tiering decisions"
+    - "Metadata extraction or enrichment"
+    - "Predictive capacity planning"
+    - "Job scheduling optimization informed by data locality"
+    - "Data quality assessment"
+    - "Natural language interfaces for facility users"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q15
+    tier: B
+    prompt: |
+      For each data lifecycle phase, how feasible do you believe autonomous AI agent management is with current technology? Rate 1 (not feasible) to 5 (ready for production).
+    kind: likert_5
+    options:
+    - "Acquisition — AI agents configuring instruments and ingestion pipelines"
+    - "Preparation — AI agents performing automated data cleaning and enrichment"
+    - "Storage — AI agents making real-time tiering and placement decisions"
+    - "Movement — AI agents orchestrating cross-facility data transfers proactively"
+    - "Decision Support — AI agents tracking provenance and suggesting analyses"
+    - "Sharing — AI agents enforcing compliance and preparing publications"
+    - "Cross-phase coordination — AI agents optimizing across multiple lifecycle phases simultaneously"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Likert 1 (not feasible) to 5 (ready for production)"
+  - id: B-Q16
+    tier: B
+    prompt: |
+      What are the biggest barriers to deploying AI agents in your production environment? Rate each 1 (minor) to 5 (showstopper).
+    kind: likert_5
+    options:
+    - "Security risks from autonomous actions on production systems"
+    - "Lack of training data from operational environments"
+    - "Unpredictable behavior of AI agents under novel conditions"
+    - "Integration complexity with existing tools and workflows"
+    - "Performance overhead of running AI inference alongside production workloads"
+    - "Accountability — who is responsible when an AI agent makes a mistake?"
+    - "Lack of explainability in agent decisions"
+    - "Regulatory and policy constraints on automated data handling"
+    - "Staffing — lack of expertise in both AI and facility operations"
+    - "Cost of AI compute resources for operational tasks"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Likert 1 (minor) to 5 (showstopper)"
+  - id: B-Q17
+    tier: B
+    prompt: |
+      If a national-scale CITADL-like infrastructure were deployed, what integration model would work best for your facility?
+    kind: select_one
+    options:
+    - "Agents run entirely within our facility, managed by our staff"
+    - "Agents run on external infrastructure (e.g., NDP) but interact with our systems via APIs"
+    - "Hybrid — some agents local, some external, coordinated through a federation layer"
+    - "We would need to evaluate based on specific security and policy requirements"
+    - "Our facility would not integrate with external autonomous agents"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q18
+    tier: B
+    prompt: |
+      What interfaces or APIs would autonomous AI agents need to interact with your facility’s systems?
+    kind: select_many
+    options:
+    - "POSIX file system access"
+    - "S3-compatible object storage APIs"
+    - "Job scheduler APIs (Slurm, PBS, Flux)"
+    - "Data transfer APIs (Globus, SCP/SFTP)"
+    - "HDF5 REST API (HSDS)"
+    - "Authentication/authorization (OAuth 2.0, federated identity)"
+    - "Monitoring and telemetry APIs"
+    - "Metadata catalog APIs"
+    - "Custom facility-specific APIs — please describe: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: B-Q19
+    tier: B
+    prompt: |
+      What governance or trust requirements would need to be met before your facility would allow AI agents to perform autonomous actions on its systems?
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Consider: approval workflows, audit trails, rollback capabilities, sandboxing, certification of agent behavior, human-in-the-loop requirements."
+  - id: B-Q20
+    tier: B
+    prompt: |
+      What capabilities would you most want from a next-generation national data management infrastructure? Select your top 3.
+    kind: rank
+    options:
+    - "Unified data discovery across all NSF-funded facilities"
+    - "Automated cross-facility data staging and transfer"
+    - "Self-tuning storage and I/O performance"
+    - "Standardized provenance tracking across tools and platforms"
+    - "AI-assisted capacity planning and resource allocation"
+    - "Format-agnostic data access layer for heterogeneous storage"
+    - "Federated identity and access control across facilities"
+    - "Community-governed operational standards for AI agents"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Select top 3"
+  - id: B-Q21
+    tier: B
+    prompt: |
+      Is there anything else about your facility operations, tool development challenges, or vision for AI-assisted data infrastructure that you would like to share?
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q1
+    tier: C
+    prompt: |
+      What is your primary area of AI/ML expertise?
+    kind: select_many
+    options:
+    - "Foundation models (LLMs, vision-language models, multi-modal models)"
+    - "Multi-agent systems and coordination"
+    - "Reinforcement learning and decision-making"
+    - "AI for science (scientific ML, physics-informed ML, surrogate models)"
+    - "Knowledge graphs and reasoning"
+    - "Natural language processing and understanding"
+    - "Computer vision"
+    - "Robotics and cyber-physical systems"
+    - "AI safety, alignment, and trustworthiness"
+    - "MLOps / AI infrastructure / systems for ML"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q2
+    tier: C
+    prompt: |
+      How would you characterize your experience with agentic AI systems (AI that takes autonomous actions in an environment)?
+    kind: select_one
+    options:
+    - "I actively research or develop agentic AI systems"
+    - "I have built or deployed agentic systems in production"
+    - "I have experimented with agent frameworks (e.g., LangChain, AutoGen, CrewAI, OpenAI Agents)"
+    - "I am familiar with the concepts but have not built agentic systems"
+    - "I am new to this area"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q3
+    tier: C
+    prompt: |
+      In what application domains have you applied AI/ML?
+    kind: select_many
+    options:
+    - "Scientific research (physics, chemistry, biology, earth sciences, etc.)"
+    - "Healthcare / clinical / biomedical"
+    - "Manufacturing / engineering / robotics"
+    - "Software engineering / code generation"
+    - "Data management / databases / storage systems"
+    - "Cybersecurity"
+    - "Finance / business analytics"
+    - "General-purpose AI assistants / chatbots"
+    - "Autonomous laboratories / self-driving labs"
+    - "None yet — primarily methods research"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q4
+    tier: C
+    prompt: |
+      What scale of data have your AI/ML systems typically operated on?
+    kind: select_one
+    options:
+    - "Small-scale (GBs, curated datasets)"
+    - "Medium-scale (TBs, institutional data)"
+    - "Large-scale (PBs, multi-facility or cloud-native)"
+    - "I work on methods; data scale varies"
+    - "Not applicable"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q5
+    tier: C
+    prompt: |
+      For each data lifecycle phase, how would you assess the current maturity of agentic AI capabilities? Rate 1 (no viable approaches) to 5 (production-ready solutions exist).
+    kind: likert_5
+    options:
+    - "Acquisition — Agents that configure instruments, adaptive sampling, real-time filtering"
+    - "Preparation — Agents for automated data cleaning, format conversion, metadata extraction"
+    - "Storage — Agents for intelligent data placement, tiering, and retention decisions"
+    - "Movement — Agents for proactive data transfer, prefetching, in-flight processing"
+    - "Decision Support — Agents for hypothesis generation, provenance reasoning, experiment design"
+    - "Sharing — Agents for automated publication preparation, compliance checking, access control"
+    - "Cross-phase coordination — Multi-agent systems managing end-to-end data lifecycles"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Likert 1 (no viable approaches) to 5 (production-ready solutions exist)"
+  - id: C-Q6
+    tier: C
+    prompt: |
+      Which agentic AI architectural patterns do you believe are most applicable to scientific data management?
+    kind: select_many
+    options:
+    - "Single-agent with tool use (one LLM-based agent calling APIs and tools)"
+    - "Multi-agent collaboration (specialized agents for different tasks coordinating with each other)"
+    - "Hierarchical agents (supervisor agents delegating to sub-agents)"
+    - "Reactive agents (event-driven, responding to system state changes)"
+    - "Planning agents (goal-oriented, creating and executing multi-step plans)"
+    - "Learning agents (continuously improving from experience and feedback)"
+    - "Human-in-the-loop agents (acting autonomously but requesting approval for high-stakes decisions)"
+    - "Digital twin agents (maintaining a model of the system and simulating outcomes before acting)"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q7
+    tier: C
+    prompt: |
+      What foundation model capabilities are most critical for data lifecycle agents? Rank by importance.
+    kind: rank
+    options:
+    - "Understanding domain-specific scientific context and terminology"
+    - "Reasoning about data schemas, formats, and relationships"
+    - "Planning multi-step workflows across heterogeneous systems"
+    - "Generating and executing code (Python, shell scripts, API calls)"
+    - "Natural language interaction with researchers for intent specification"
+    - "Processing and understanding multi-modal data (text, images, sensor signals, tables)"
+    - "Long-term memory and learning from past interactions"
+    - "Structured output generation (JSON, metadata schemas, configuration files)"
+    - "Uncertainty quantification and knowing when to ask for help"
+    - "Tool use and API integration with existing infrastructure"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Rank top 5"
+  - id: C-Q8
+    tier: C
+    prompt: |
+      What are the most significant technical barriers to deploying agentic AI for data lifecycle management? Rate each from 1 (minor) to 5 (fundamental research challenge).
+    kind: likert_5
+    options:
+    - "Hallucination and factual errors in agent reasoning"
+    - "Lack of domain-specific training data for scientific data management"
+    - "Difficulty in specifying agent goals and constraints formally"
+    - "Agent coordination and conflict resolution in multi-agent settings"
+    - "Handling long-running tasks (hours to days) with state persistence"
+    - "Operating on heterogeneous data formats and storage systems"
+    - "Latency requirements (real-time decisions in milliseconds vs. minutes)"
+    - "Transfer learning across scientific domains"
+    - "Robustness to distribution shift (new instruments, new data types)"
+    - "Evaluation and benchmarking of agent performance in open-ended tasks"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Likert 1 (minor) to 5 (fundamental research challenge)"
+  - id: C-Q9
+    tier: C
+    prompt: |
+      Describe an example of an agentic AI system you have built or studied that is relevant to data management, workflow automation, or scientific infrastructure. What worked well and what were the limitations?
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q10
+    tier: C
+    prompt: |
+      For AI agents to coordinate across multiple data lifecycle phases (e.g., an acquisition agent triggering a preparation agent, which informs a storage agent), what coordination mechanisms are needed?
+    kind: select_many
+    options:
+    - "Shared state / blackboard architecture"
+    - "Message passing between agents (pub/sub, event bus)"
+    - "Centralized orchestrator / supervisor agent"
+    - "Shared ontology or knowledge graph for common understanding"
+    - "Formal contracts or service-level agreements between agents"
+    - "Reinforcement learning for emergent coordination"
+    - "Human-defined workflows with agent execution"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q11
+    tier: C
+    prompt: |
+      For autonomous AI agents operating on scientific data at national scale, which trust and safety mechanisms are most critical? Rank your top 5.
+    kind: rank
+    options:
+    - "Comprehensive audit logging of all agent actions and decisions"
+    - "Formal verification of agent behavior against safety specifications"
+    - "Sandboxed execution environments for untested agent actions"
+    - "Explainable decision-making (the agent can justify its actions)"
+    - "Graceful degradation (system continues safely if an agent fails)"
+    - "Rollback and undo capabilities for all agent-initiated changes"
+    - "Anomaly detection on agent behavior (detecting drift or errors)"
+    - "Human approval gates for irreversible or high-impact actions"
+    - "Red-teaming and adversarial testing of agent robustness"
+    - "Continuous monitoring and circuit breakers for autonomous operations"
+    - "Domain-expert validation of agent outputs before downstream use"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Rank top 5"
+  - id: C-Q12
+    tier: C
+    prompt: |
+      What are the biggest risks of deploying autonomous AI agents in production scientific data infrastructure?
+    kind: likert_5
+    options:
+    - "Data loss or corruption from agent errors"
+    - "Cascading failures across interconnected agents"
+    - "Security vulnerabilities (prompt injection, unauthorized access via agents)"
+    - "Agents amplifying biases in data or analysis"
+    - "Loss of scientific reproducibility due to non-deterministic agent behavior"
+    - "Agents becoming a single point of failure for critical workflows"
+    - "Regulatory non-compliance from automated decisions"
+    - "Erosion of researcher skill and understanding of their own data"
+    - "Adversarial manipulation of agent behavior by bad actors"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Likert 1 (low risk) to 5 (critical risk)"
+  - id: C-Q13
+    tier: C
+    prompt: |
+      How should responsibility be assigned when an AI agent makes a consequential error in managing scientific data?
+    kind: select_one
+    options:
+    - "The researcher who deployed or invoked the agent"
+    - "The developer of the agent or model"
+    - "The facility operator hosting the agent"
+    - "Shared responsibility with clear accountability frameworks"
+    - "This is an unsolved governance question that needs community input"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q14
+    tier: C
+    prompt: |
+      What approaches do you believe are most promising for ensuring AI agents can operate across diverse scientific domains without domain-specific retraining?
+    kind: select_many
+    options:
+    - "Fine-tuning foundation models on scientific data management corpora"
+    - "Retrieval-augmented generation (RAG) with domain-specific knowledge bases"
+    - "Modular agent architecture with swappable domain adapters"
+    - "Few-shot or in-context learning with domain examples"
+    - "Ontology-driven reasoning (using formal domain schemas)"
+    - "Collaborative filtering (learning from how agents performed in similar domains)"
+    - "Federated learning across facilities without sharing raw data"
+    - "Self-supervised learning from operational logs and system telemetry"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q15
+    tier: C
+    prompt: |
+      What evaluation frameworks or benchmarks would be needed to assess whether an AI agent is ready for production deployment in scientific data management?
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Consider: What metrics would you measure? What test scenarios are critical? How would you define success vs. failure?"
+  - id: C-Q16
+    tier: C
+    prompt: |
+      How should AI agents handle the tension between automation efficiency and scientific rigor? For example, an agent might produce results faster by skipping certain validation steps.
+    kind: select_one
+    options:
+    - "Always prioritize rigor — agents must complete every validation, even at the cost of speed"
+    - "Allow configurable trade-offs that the researcher defines per task"
+    - "Agents should learn which validations are critical and which can be safely relaxed"
+    - "This depends entirely on the domain and risk level — needs per-domain policies"
+    - "Other: _______________"
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q17
+    tier: C
+    prompt: |
+      For a national-scale AI-assisted data management infrastructure, what is the right balance between centralized and decentralized AI agent deployment?
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: "Consider: Should agents be trained/managed centrally or locally? Should there be a national agent registry? How should agent updates and versioning work across facilities?"
+  - id: C-Q18
+    tier: C
+    prompt: |
+      What open research problems must be solved to make agentic AI viable for end-to-end scientific data lifecycle management? List your top 3.
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q19
+    tier: C
+    prompt: |
+      Are there existing agentic AI frameworks, platforms, or tools that you believe could serve as a foundation for scientific data lifecycle agents? If so, which ones and what would need to be added or changed?
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
+  - id: C-Q20
+    tier: C
+    prompt: |
+      Is there anything else about AI capabilities, limitations, or your vision for autonomous data management that you would like to share?
+    kind: open
+    options: []
+    applies_to_roles: []
+    axis_tag: ""
+    notes: ""
   risk_register:
   - risk: Mira mis-classifies respondent role early and locks into the wrong register.
     mitigation: Persona_hints instructs Brain A to hold register tentatively in the opening exchange and to correct openly if the respondent signals a different identity. Validator flags register mismatch as a scoring dimension.
