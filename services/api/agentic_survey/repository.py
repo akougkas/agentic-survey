@@ -10,6 +10,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from agentic_survey.domain.intent import BrainBIntent, QuestionCoverageStatus
+from agentic_survey.domain.observation import MethodObservation
 from agentic_survey.domain.outline import (
     MicroFormField,
     OutlineArtifact,
@@ -371,6 +372,7 @@ class InMemoryRepository:
         self._graph_edges: list[dict] = []
         self._campaign_exports: list[dict] = []
         self._question_answers: dict[tuple[str, str], QuestionAnswerRecord] = {}
+        self._method_observations: dict[str, list[MethodObservation]] = {}
         self._seed_catalog_locked()
 
     def create_admin_session(self, ttl_hours: int) -> AdminSession:
@@ -904,6 +906,43 @@ class InMemoryRepository:
                 if row.campaign_id == campaign_id
             ]
         rows.sort(key=lambda row: (row.session_id, row.question_id))
+        return rows
+
+    async def append_method_observation(
+        self,
+        observation: MethodObservation,
+    ) -> MethodObservation:
+        stored = observation.model_copy(deep=True)
+        with self._lock:
+            self._method_observations.setdefault(stored.session_id, []).append(stored)
+        return stored.model_copy(deep=True)
+
+    async def list_method_observations(
+        self,
+        *,
+        session_id: str,
+    ) -> list[MethodObservation]:
+        with self._lock:
+            rows = [
+                observation.model_copy(deep=True)
+                for observation in self._method_observations.get(session_id, [])
+            ]
+        rows.sort(key=lambda observation: (observation.created_at, observation.id))
+        return rows
+
+    async def list_campaign_method_observations(
+        self,
+        *,
+        campaign_id: str,
+    ) -> list[MethodObservation]:
+        with self._lock:
+            rows = [
+                observation.model_copy(deep=True)
+                for observations in self._method_observations.values()
+                for observation in observations
+                if observation.campaign_id == campaign_id
+            ]
+        rows.sort(key=lambda observation: (observation.created_at, observation.id))
         return rows
 
     def _build_outline(self, *, title: str, min_n: int, max_n: int) -> OutlineArtifact:

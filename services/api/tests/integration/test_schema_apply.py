@@ -40,6 +40,7 @@ EXPECTED_TABLES = {
     "validator_result",
     "interview_event",
     "question_answer",
+    "method_observation",
     "knowledge_source",
     "knowledge_chunk",
     "retrieval_audit",

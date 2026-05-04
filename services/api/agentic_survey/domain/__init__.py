@@ -4,6 +4,7 @@ from agentic_survey.domain.intent import (
     OutlinePatch,
     OutlinePatchSection,
 )
+from agentic_survey.domain.observation import MethodObservation
 from agentic_survey.domain.outline import (
     DecisionGate,
     MicroFormField,
@@ -19,6 +20,7 @@ __all__ = [
     "BrainBIntent",
     "DecisionGate",
     "GetUserInputOptions",
+    "MethodObservation",
     "MicroFormField",
     "OutlineArtifact",
     "OutlinePatch",

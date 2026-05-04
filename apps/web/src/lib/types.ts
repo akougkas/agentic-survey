@@ -401,6 +401,21 @@ export interface InterviewSessionRecord {
   next_plan: BrainBIntent | null;
 }
 
+export interface MethodObservation {
+  id: string;
+  session_id: string;
+  campaign_id: string;
+  author: string;
+  body: string;
+  tags: string[];
+  created_at: string;
+}
+
+export interface MethodObservationCreate {
+  body: string;
+  tags?: string[] | null;
+}
+
 export interface CampaignBundleResponse {
   campaign: Campaign;
   designer_session: DesignerSession | null;

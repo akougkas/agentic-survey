@@ -159,6 +159,18 @@ DEFINE INDEX IF NOT EXISTS question_answer_session_question_unique
 DEFINE INDEX IF NOT EXISTS question_answer_campaign_idx
     ON TABLE question_answer COLUMNS campaign;
 
+DEFINE TABLE IF NOT EXISTS method_observation SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS session_id ON TABLE method_observation TYPE string;
+DEFINE FIELD IF NOT EXISTS campaign_id ON TABLE method_observation TYPE string;
+DEFINE FIELD IF NOT EXISTS author ON TABLE method_observation TYPE string;
+DEFINE FIELD IF NOT EXISTS body ON TABLE method_observation TYPE string;
+DEFINE FIELD IF NOT EXISTS tags ON TABLE method_observation TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE method_observation TYPE datetime DEFAULT time::now();
+DEFINE INDEX IF NOT EXISTS method_observation_session_idx
+    ON TABLE method_observation COLUMNS session_id;
+DEFINE INDEX IF NOT EXISTS method_observation_campaign_idx
+    ON TABLE method_observation COLUMNS campaign_id;
+
 DEFINE TABLE IF NOT EXISTS knowledge_source SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS campaign ON TABLE knowledge_source TYPE record<campaign>;
 DEFINE FIELD IF NOT EXISTS kind ON TABLE knowledge_source TYPE string

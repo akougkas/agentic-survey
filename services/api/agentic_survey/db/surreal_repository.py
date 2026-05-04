@@ -13,6 +13,7 @@ from agentic_survey.config import Settings
 from agentic_survey.engine.state_machine import CampaignState, transition_or_raise
 from agentic_survey.llm.catalog import AGENT_ROLES, AgentRole as CatalogRole, CatalogEntry, seed_entries
 from agentic_survey.domain.intent import BrainBIntent
+from agentic_survey.domain.observation import MethodObservation
 from agentic_survey.domain.outline import OutlineArtifact
 from agentic_survey.domain.tools import GetUserInputOptions
 from agentic_survey.repository import (
@@ -990,6 +991,58 @@ class SurrealRepository:
         )
         return [self._row_to_question_answer(row) for row in rows or []]
 
+    async def append_method_observation(
+        self,
+        observation: MethodObservation,
+    ) -> MethodObservation:
+        stored = observation.model_copy(deep=True)
+        result = self._db().create(
+            RecordID("method_observation", stored.id),
+            {
+                "session_id": stored.session_id,
+                "campaign_id": stored.campaign_id,
+                "author": stored.author,
+                "body": stored.body,
+                "tags": list(stored.tags),
+                "created_at": stored.created_at,
+            },
+        )
+        if isinstance(result, str):
+            raise RuntimeError(result)
+        return stored
+
+    async def list_method_observations(
+        self,
+        *,
+        session_id: str,
+    ) -> list[MethodObservation]:
+        rows = self._query(
+            """
+            SELECT *
+            FROM method_observation
+            WHERE session_id = $sid
+            ORDER BY created_at ASC, id ASC;
+            """,
+            {"sid": session_id},
+        )
+        return [self._row_to_method_observation(row) for row in rows or []]
+
+    async def list_campaign_method_observations(
+        self,
+        *,
+        campaign_id: str,
+    ) -> list[MethodObservation]:
+        rows = self._query(
+            """
+            SELECT *
+            FROM method_observation
+            WHERE campaign_id = $cid
+            ORDER BY created_at ASC, id ASC;
+            """,
+            {"cid": campaign_id},
+        )
+        return [self._row_to_method_observation(row) for row in rows or []]
+
     def _row_to_campaign(self, campaign_id: str, row: dict) -> Campaign:
         return Campaign(
             id=campaign_id,
@@ -1099,6 +1152,17 @@ class SurrealRepository:
             turn_id=_record_id("interview_turn", turn_ref) if turn_ref else None,
             created_at=_ensure_iso(row.get("created_at")),
             updated_at=_ensure_iso(row.get("updated_at")),
+        )
+
+    def _row_to_method_observation(self, row: dict) -> MethodObservation:
+        return MethodObservation(
+            id=_record_id("method_observation", row.get("id")),
+            session_id=str(row.get("session_id") or ""),
+            campaign_id=str(row.get("campaign_id") or ""),
+            author=str(row.get("author") or "operator"),
+            body=str(row.get("body") or ""),
+            tags=list(row.get("tags") or []),
+            created_at=_to_dt(row.get("created_at")),
         )
 
     # ------------------------------------------------------------------

@@ -2,10 +2,12 @@ import csv
 import io
 import json
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from starlette.responses import StreamingResponse
 
 from agentic_survey.agents.brain_b_interviewer import filter_question_bank_for_role
@@ -16,6 +18,7 @@ from agentic_survey.auth import (
     set_admin_session_cookie,
 )
 from agentic_survey.config import Settings, get_settings
+from agentic_survey.domain.observation import MethodObservation
 from agentic_survey.domain.outline import SurveyQuestion
 from agentic_survey.engine.event_bus import get_event_bus
 from agentic_survey.repository import (
@@ -55,6 +58,15 @@ class AdminLoginRequest(BaseModel):
 class AdminSessionResponse(BaseModel):
     authenticated: bool
     expires_at: str | None = None
+
+
+class MethodObservationCreateRequest(BaseModel):
+    body: str
+    tags: list[str] | None = None
+
+
+class MethodObservationListResponse(BaseModel):
+    observations: list[MethodObservation]
 
 
 _ANSWER_EXPORT_COLUMNS = [
@@ -120,6 +132,96 @@ def _session_response(session: AdminSession) -> AdminSessionResponse:
         authenticated=True,
         expires_at=session.expires_at.isoformat(),
     )
+
+
+def _method_observation_id() -> str:
+    return f"mobs-{uuid4().hex[:12]}"
+
+
+def _admin_author(session: AdminSession) -> str:
+    raw = getattr(session, "username", None)
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return "operator"
+
+
+def _require_campaign_session(
+    *,
+    campaign_id: str,
+    session_id: str,
+    repository: InMemoryRepository,
+) -> InterviewSessionRecord:
+    campaign = repository.get_campaign(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    session = repository.get_interview_session(session_id)
+    if session is None or session.campaign_id != campaign_id:
+        raise HTTPException(status_code=404, detail="Session not found for this campaign")
+    return session
+
+
+@router.post("/campaigns/{campaign_id}/sessions/{session_id}/observations")
+async def create_method_observation(
+    campaign_id: str,
+    session_id: str,
+    payload: MethodObservationCreateRequest,
+    admin_session: AdminSession = Depends(require_admin_session),
+    repository: InMemoryRepository = Depends(get_repository),
+) -> MethodObservation:
+    _require_campaign_session(
+        campaign_id=campaign_id,
+        session_id=session_id,
+        repository=repository,
+    )
+    try:
+        observation = MethodObservation(
+            id=_method_observation_id(),
+            session_id=session_id,
+            campaign_id=campaign_id,
+            author=_admin_author(admin_session),
+            body=payload.body,
+            tags=payload.tags,
+            created_at=datetime.now(tz=UTC),
+        )
+    except ValidationError as exc:
+        first = exc.errors()[0] if exc.errors() else {}
+        raise HTTPException(
+            status_code=400,
+            detail=first.get("msg") or "Invalid observation",
+        ) from exc
+    return await repository.append_method_observation(observation)
+
+
+@router.get("/campaigns/{campaign_id}/sessions/{session_id}/observations")
+async def list_session_method_observations(
+    campaign_id: str,
+    session_id: str,
+    _admin_session: AdminSession = Depends(require_admin_session),
+    repository: InMemoryRepository = Depends(get_repository),
+) -> MethodObservationListResponse:
+    _require_campaign_session(
+        campaign_id=campaign_id,
+        session_id=session_id,
+        repository=repository,
+    )
+    observations = await repository.list_method_observations(session_id=session_id)
+    return MethodObservationListResponse(observations=observations)
+
+
+@router.get("/campaigns/{campaign_id}/observations.jsonl")
+async def stream_campaign_method_observations_jsonl(
+    campaign_id: str,
+    _admin_session: AdminSession = Depends(require_admin_session),
+    repository: InMemoryRepository = Depends(get_repository),
+) -> Response:
+    if repository.get_campaign(campaign_id) is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    rows = await repository.list_campaign_method_observations(campaign_id=campaign_id)
+    content = "".join(
+        json.dumps(observation.model_dump(mode="json"), ensure_ascii=False) + "\n"
+        for observation in rows
+    )
+    return Response(content=content, media_type="text/plain")
 
 
 @router.get(
