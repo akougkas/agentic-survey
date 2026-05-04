@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     openrouter_dynamo_model: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
     openrouter_fallback_enabled: bool = False
 
+    # Operator override for retrieval mode at the binding layer. Empty string
+    # means "respect the caller" (Brain B chooses hybrid/bm25/vector per its
+    # prompt). A non-empty value forces every search_knowledge call into the
+    # named mode regardless of what Brain B requested. Use "bm25" when the
+    # embedding endpoint is offline so retrieval keeps working.
+    retrieval_force_mode: str = ""
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

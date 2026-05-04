@@ -142,14 +142,24 @@ def build_search_knowledge(
     optionally a mode override. ``default_mode`` is ``"hybrid"``; callers
     that want to force a BM25-only surface (e.g. a diagnostic tool) can
     override it.
+
+    When the operator sets ``SURVEY_RETRIEVAL_FORCE_MODE`` to a valid mode
+    name, that value overrides whatever the caller (typically Brain B)
+    requests. This is the operator backstop for outages where the
+    embedding endpoint is unreachable; setting force_mode=bm25 keeps the
+    retrieval surface working without touching prompts or code.
     """
+    from agentic_survey.config import get_settings
+
+    forced = get_settings().retrieval_force_mode.strip().lower()
+    forced_mode: Mode | None = forced if forced in ("bm25", "vector", "hybrid") else None  # type: ignore[assignment]
 
     async def _bound(
         query: str,
         k: int,
         mode: str | None = None,
     ) -> list[dict[str, Any]]:
-        resolved = mode or default_mode
+        resolved = forced_mode or mode or default_mode
         hits = await search_knowledge(
             campaign_id=campaign_id,
             query=query,
