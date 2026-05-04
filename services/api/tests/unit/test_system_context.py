@@ -40,8 +40,4 @@ def test_system_context_citadl_admin_surfaces_allowlist_is_configured(monkeypatc
     assert payload["admin_surfaces_allowlist"] == [
         "catalog",
         "campaigns",
-        "sessions",
-        "transcripts",
-        "answers",
-        "invites",
     ]

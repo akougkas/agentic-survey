@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
@@ -17,6 +19,7 @@ from agentic_survey.domain.outline import (
     ParticipantFAQEntry,
     RiskEntry,
 )
+from agentic_survey.domain.observation import MethodObservation
 from agentic_survey.domain.tools import DISCUSS_MORE_OPTION, GetUserInputOptions
 
 
@@ -161,3 +164,17 @@ def test_decision_gate_and_risk_entry_shapes() -> None:
     outline = OutlineArtifact(decision_gate=gate, risk_register=[risk])
     assert outline.decision_gate == gate
     assert outline.risk_register[0].mitigation == "ask for failures first"
+
+
+def test_method_observation_tags_are_capped_by_truncation() -> None:
+    observation = MethodObservation(
+        id="mobs-test",
+        session_id="session-test",
+        campaign_id="campaign-test",
+        author="operator",
+        body="probe felt thin",
+        tags=[f"t{i}" for i in range(12)],
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert observation.tags == ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7"]

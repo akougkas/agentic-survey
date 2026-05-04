@@ -29,8 +29,10 @@ from agentic_survey.engine.event_bus import CampaignEventBus
 from agentic_survey.engine.interview_loop import (
     run_interview_turn,
     run_post_turn_background,
+    run_pre_plan_background,
 )
 from agentic_survey.engine.retrieval_cache import RetrievalCache
+from agentic_survey.domain.outline import SurveyQuestion
 from agentic_survey.repository import InMemoryRepository
 
 
@@ -280,6 +282,7 @@ def test_scaffold_mode_when_no_next_plan(monkeypatch: pytest.MonkeyPatch) -> Non
     options = list(intent.get_user_input.options)
     assert options[-1] == "Discuss this more."
     assert len(options) >= 2
+    assert result.agent_turn.validation == {"planner_source": "scaffold"}
 
 
 # ---------- Test 4: populated next_plan wins over scaffold ----------
@@ -318,8 +321,152 @@ def test_populated_next_plan_is_rendered_not_scaffold(
     assert intent.active_axis == "planned_axis"
     assert intent.retrieval_used is True
     assert intent.retrieval_chunks == ["chunk-1"]
+    assert result.agent_turn.validation == {"planner_source": "brain_b"}
     # Plan should be consumed on read so a failed future background cannot
     # render a stale probe.
+    refreshed = repo.get_interview_session(session.id)
+    assert refreshed is not None
+    assert refreshed.next_plan is None
+
+
+def test_cold_start_pre_plan_populates_next_plan_before_first_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fast_brain_a(monkeypatch)
+    captured: dict[str, Any] = {}
+
+    async def fast_brain_b(**kwargs: Any) -> BrainBIntent:
+        captured["transcript_tail"] = kwargs["transcript_tail"]
+        captured["participant_context"] = kwargs["participant_context"]
+        captured["eligible_question_ids"] = kwargs["eligible_question_ids"]
+        captured["enable_tools"] = kwargs["enable_tools"]
+        captured["reasoning_budget_tokens"] = kwargs["reasoning_budget_tokens"]
+        captured["compact_context"] = kwargs["compact_context"]
+        captured["outline_question_ids"] = [
+            question.id for question in kwargs["outline"].question_bank
+        ]
+        return _planned_intent()
+
+    monkeypatch.setattr(interview_loop_module, "run_brain_b_interviewer", fast_brain_b)
+
+    repo = InMemoryRepository()
+    campaign = repo.create_campaign(title="Cold start harness", min_n=3, max_n=6)
+    outline = campaign.outline.model_copy(deep=True)
+    outline.axes = ["workflow"]
+    outline.question_bank = [
+        SurveyQuestion(
+            id="operator-q",
+            prompt="What broke most recently?",
+            applies_to_roles=["Operator"],
+        ),
+        SurveyQuestion(
+            id="scientist-q",
+            prompt="What result did you need?",
+            applies_to_roles=["Scientist"],
+        ),
+    ]
+    repo.update_outline(campaign.id, outline, ready_for_review=True)
+    campaign = repo.get_campaign(campaign.id)
+    assert campaign is not None
+    session = repo.start_interview_session(
+        campaign_id=campaign.id,
+        invite_id=None,
+        consent_mode="anonymous",
+        identity_label="",
+        persona_snapshot={},
+        pinned_endpoint="mini",
+        micro_form_answers={
+            "role_self_description": "Operator",
+            "evidence_of_belonging": "I run storage for an HPC facility.",
+        },
+    )
+    bus = CampaignEventBus()
+
+    async def main() -> None:
+        await run_pre_plan_background(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            repository=repo,
+            router=_StubRouter(),
+            cache=RetrievalCache(),
+            bus=bus,
+        )
+        warmed = repo.get_interview_session(session.id)
+        assert warmed is not None
+        assert warmed.next_plan is not None
+        assert warmed.next_plan.active_axis == "planned_axis"
+
+        result = await run_interview_turn(
+            session_id=session.id,
+            participant_content="The archive queue failed during a beamline run.",
+            chip_selected=None,
+            repository=repo,
+            validator=_PassValidator(),
+            router=_StubRouter(),
+            cache=RetrievalCache(),
+        )
+        assert result.agent_turn is not None
+        assert result.agent_turn.brain_b_intent is not None
+        assert result.agent_turn.brain_b_intent.active_axis == "planned_axis"
+        assert result.agent_turn.validation == {"planner_source": "brain_b"}
+
+    asyncio.run(main())
+
+    assert captured["transcript_tail"] == []
+    assert captured["participant_context"] == {
+        "role_self_description": "Operator",
+        "evidence_of_belonging": "I run storage for an HPC facility.",
+    }
+    assert captured["eligible_question_ids"] == ["operator-q"]
+    assert captured["outline_question_ids"] == ["operator-q"]
+    assert captured["enable_tools"] is False
+    assert captured["reasoning_budget_tokens"] == 1024
+    assert captured["compact_context"] is True
+
+
+def test_late_cold_start_pre_plan_does_not_overwrite_after_first_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fast_brain_a(monkeypatch)
+
+    async def slow_brain_b(**kwargs: Any) -> BrainBIntent:
+        await asyncio.sleep(0.05)
+        return _planned_intent()
+
+    monkeypatch.setattr(interview_loop_module, "run_brain_b_interviewer", slow_brain_b)
+
+    repo = InMemoryRepository()
+    campaign, session = _seed_live_session(repo, axes=["workflow"])
+    bus = CampaignEventBus()
+
+    async def main() -> None:
+        warmup = asyncio.create_task(
+            run_pre_plan_background(
+                session_id=session.id,
+                campaign_id=campaign.id,
+                repository=repo,
+                router=_StubRouter(),
+                cache=RetrievalCache(),
+                bus=bus,
+            )
+        )
+        result = await run_interview_turn(
+            session_id=session.id,
+            participant_content="The queue failed before the transfer completed.",
+            chip_selected=None,
+            repository=repo,
+            validator=_PassValidator(),
+            router=_StubRouter(),
+            cache=RetrievalCache(),
+        )
+        assert result.agent_turn is not None
+        assert result.agent_turn.brain_b_intent is not None
+        assert result.agent_turn.brain_b_intent.active_axis != "planned_axis"
+        assert result.agent_turn.validation == {"planner_source": "scaffold"}
+        await asyncio.wait_for(warmup, timeout=1)
+
+    asyncio.run(main())
+
     refreshed = repo.get_interview_session(session.id)
     assert refreshed is not None
     assert refreshed.next_plan is None

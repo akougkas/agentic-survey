@@ -15,24 +15,26 @@ Qualitative research at IRB scale is expensive, slow, and hard to staff. Small-t
 - A **Validator** that reads each participant turn and emits `coverage_score`, `quality_score`, `follow_up_needed`, `extracted_concepts`, and `extracted_relations` with confidences.
 - An **Analyst** scaffold wired for HDBSCAN-over-embeddings theme clustering and information-gain scoring (the full loop lands in a later milestone).
 - A **SvelteKit operator shell** at `/admin/*` and a **participant shell** at `/invite/*` and `/chat/*`, proxied through a single port.
+- **Method observations.** Operator-only free-text notes captured against any session, persisted in `method_observation`, exposed via `/api/admin/campaigns/{cid}/sessions/{sid}/observations` and never surfaced to participants.
+- **Bundle-driven admin surface allowlist.** Bundles can declare `ui.admin.surfaces` in `product.yaml` to filter the operator nav; demo bundles see every surface, and `?debug=1` on any admin URL bypasses the filter.
 
 ## The dual-brain Mira
 
 Mira is two brains behind one voice.
 
-- **Brain A (Chatter).** Qwen 3.5 Distilled on a llama.cpp endpoint. Session-pinned, warm prose, no tools. Its entire job is producing the visible reply and calling `GetUserInput`.
-- **Brain B (Scientist).** Gemma 4 26B-A4B on the same endpoint, reasoning on by default. Stateless. Has tools: `search_knowledge`, `get_outline_state`, `list_grounding_sources`, `propose_outline_patch`. Brain B is the expert Brain A consults silently.
+- **Brain A (Chatter).** Gemma on a llama.cpp endpoint. Session-pinned, warm prose, no tools. Its entire job is producing the visible reply and calling `GetUserInput`.
+- **Brain B (Scientist).** NVIDIA Nemotron 3 Nano OMNI 30B-A3B Reasoning on the `dynamo` endpoint, reasoning on by default. Stateless. Has tools: `search_knowledge`, `get_outline_state`, `list_grounding_sources`, `propose_outline_patch`. Brain B is the expert Brain A consults silently.
 
 Two surfaces share this architecture: **Designer-Mira** (pair-programming with the scientist during campaign design) and **Interviewer-Mira** (conversing with a participant during a live session). Same dual-brain, different voices. Every participant turn triggers three LLM calls: Brain B plans intent, Brain A speaks, Validator scores.
 
 ## Reasoning framework
 
-Each agent role has an explicit reasoning policy on its catalog entry: `off`, `on`, or `budget` (with `reasoning_budget_tokens`). A resolver maps this to the correct model-specific kwarg at request time. Gemma-4 uses `chat_template_kwargs.enable_thinking`. OpenAI-style models use `reasoning_effort`. New model families drop into the same resolver.
+Each agent role has an explicit reasoning policy on its catalog entry: `off`, `on`, or `budget` (with `reasoning_budget_tokens`). A resolver maps this to the correct model-specific kwarg at request time. LM Studio backends use `chat_template_kwargs.enable_thinking`. OpenAI-style models use `reasoning_effort`. New model families drop into the same resolver.
 
 Default assignment:
 - Chatter: `off`. Conversation stays fast.
 - Scientist: `on`. Structured outputs, full thinking.
-- Validator: `budget(2048)`. Bounded cost per participant turn.
+- Validator: `budget(SURVEY_LLM_REASONING_BUDGET_TOKENS)`. Bounded cost per participant turn.
 - Analyst: `on`. Theme synthesis deserves the full budget.
 - Ingest: `off`. Mechanical extraction.
 
@@ -102,7 +104,7 @@ infra/                     docker-compose for local dev
 Pre-1.0. Functional end-to-end:
 
 - Backend + persistence + frontend boot cleanly against SurrealDB.
-- Admin can design a campaign with real Brain B outlines from Gemma-4.
+- Admin can design a campaign with real Brain B outlines from Nemotron OMNI.
 - Participants can redeem an invite, open `/chat/[session_id]`, and exchange real turns with Mira.
 - Validator runs on every participant turn and stores its judgment on the turn.
 - State survives uvicorn restart.

@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import agentic_survey.api.invites as invites_module
 from agentic_survey.api.invites import router as invites_router
 from agentic_survey.auth import require_admin_session
 from agentic_survey.config import get_settings
@@ -13,6 +14,22 @@ from agentic_survey.domain.tools import GetUserInputOptions
 from agentic_survey.engine.interview_loop import opening_turn_message
 from agentic_survey.engine.state_machine import CampaignState
 from agentic_survey.repository import Campaign, InMemoryRepository, get_repository
+
+
+@pytest.fixture(autouse=True)
+def pre_plan_spawns(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+    calls: list[dict] = []
+
+    class _StubRouter:
+        pass
+
+    def fake_spawn_pre_plan_bg(**kwargs):
+        calls.append(kwargs)
+        return None
+
+    monkeypatch.setattr(invites_module, "get_litellm_router", lambda: _StubRouter())
+    monkeypatch.setattr(invites_module, "spawn_pre_plan_bg", fake_spawn_pre_plan_bg)
+    return calls
 
 
 def test_micro_form_field_round_trips_options() -> None:
@@ -121,6 +138,29 @@ def test_redeem_persists_micro_form_answers_on_session() -> None:
         "role_self_description": "Operator",
     }
     assert stored.campaign_id == campaign.id
+
+
+def test_redeem_schedules_cold_start_pre_plan(pre_plan_spawns: list[dict]) -> None:
+    app, repo, campaign, token = _build_invite_app()
+    client = TestClient(app)
+    response = client.post(
+        f"/api/invites/{token}/redeem",
+        json={
+            "consent_mode": "anonymous",
+            "micro_form_answers": {
+                "evidence_of_belonging": "I run storage at a university HPC facility.",
+                "role_self_description": "Operator",
+            },
+        },
+    )
+    assert response.status_code == 200
+    session_id = response.json()["session"]["id"]
+
+    assert len(pre_plan_spawns) == 1
+    call = pre_plan_spawns[0]
+    assert call["session_id"] == session_id
+    assert call["campaign_id"] == campaign.id
+    assert call["repository"] is repo
 
 
 def _campaign_with_answers(answers: dict[str, str]) -> tuple[Campaign, InMemoryRepository, str]:

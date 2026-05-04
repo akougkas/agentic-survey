@@ -44,6 +44,12 @@ def reasoning_final_response_tokens() -> int:
     return get_settings().llm_reasoning_final_response_tokens
 
 
+def preplan_reasoning_budget_tokens() -> int:
+    from agentic_survey.config import get_settings
+
+    return get_settings().llm_preplan_reasoning_budget_tokens
+
+
 def reasoning_completion_tokens(reasoning_budget: int | None = None) -> int:
     budget = (
         reasoning_budget

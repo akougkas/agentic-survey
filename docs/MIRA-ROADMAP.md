@@ -5,8 +5,8 @@ This is the single source of truth for the multi-milestone work turning Mira int
 ## TL;DR for a fresh session
 
 - **Plan source:** `~/.claude/plans/merry-snuggling-kahn.md` (identical content, older copy).
-- **What's done:** M1 shipped (`d6daca8`, `9f5d2da`); M2 shipped (this commit). Tool-calling Brain B works live; the ingestion worker drains queued URL/PDF sources end-to-end with real 768-dim Nomic embeddings.
-- **What's next:** M3 (web search: SearXNG primary, DDG fallback, scientist-gated). See `~/.claude/plans/merry-snuggling-kahn.md` §M3.
+- **What's done:** M1–M11.10 shipped. Tool-calling Brain B, ingestion, scientist-gated web search, hybrid retrieval, knowledge graph, RAG export, prompt rewrites, Surreal integration tests, operator console, two-hemispheres split, retrieval/axes-coverage fix, CITADL question bank, QuestionCoverage on `BrainBIntent`, end-to-end question_coverage, OMNI model + budget reasoning, bundle-gated admin surfaces, method observations, and cold-start eager Brain B warmup.
+- **What's next:** Operator launch on `blade` for `citadl.gnosis.run`: image push, Coolify redeploy, Cloudflare hostname, live smoke, and self-interview.
 - **Locked decisions (user-approved):**
   - Scope: full agentic toolset (M1–M8).
   - Fetcher: tiered — `httpx + readability-lxml + pypdf` first, escalate to `crawl4ai` for JS-heavy pages.
@@ -88,7 +88,7 @@ SearXNG primary + DuckDuckGo fallback. Mira's `propose_search_queries` tool queu
 
 Shared `mira_persona.md` preamble. Full rewrite of the four Brain A/B prompts. Tool-aware, warm, evidence-led.
 
-### M7.5 — SurrealRepository integration tests (next)
+### M7.5 — SurrealRepository integration tests ✅ shipped
 
 **Motivation.** The unit suite exercises `InMemoryRepository` in 17 of 17 test files; `SurrealRepository` has zero coverage. The CLAUDE.md invariant says "SurrealDB is truth; InMemoryRepository is for tests only" — so the tests today validate the non-truth path. Every Surreal bug we have hit (gotchas #15–18: hyphenated record ids, missing `array::slice`, `GROUP BY` aggregation quirks, embedding route) was caught in live smoke, not in CI.
 
@@ -109,6 +109,32 @@ Shared `mira_persona.md` preamble. Full rewrite of the four Brain A/B prompts. T
 
 Knowledge tab on `/admin/campaigns/[id]` (web search, ingestion queue, Mira-proposed queries). New `/admin/campaigns/[id]/graph` page with live force-directed view via `graph_delta` SSE.
 
+### M11.7 — `question_coverage` end-to-end ✅ shipped
+
+Commit: `5dffb81 M11.7: question_coverage end-to-end`. `BrainBIntent.question_coverage` flows from Brain B through validator/storage to the operator transcript view, alongside the prior `axes_coverage` rollup.
+
+### M11.8 — Method observations ✅ shipped
+
+Commit: `ad91541 Add method observations for sessions`. Operator-only free-text notes against a session, stored in `method_observation`, exposed at `/api/admin/campaigns/{cid}/sessions/{sid}/observations` and `/api/admin/campaigns/{cid}/observations.jsonl`. Renders as a panel on the admin transcript page next to question coverage. Never delivered to participants.
+
+### M11.9 — Bundle-gated admin surfaces ✅ shipped
+
+Commit: `0feb468 Gate admin surfaces from product bundle`. Bundles declare `ui.admin.surfaces` in `product.yaml`; the canonical key set lives in `services/api/agentic_survey/admin_surfaces.py`. Omitting the block keeps every surface visible (demo behavior). `?debug=1` on any admin URL bypasses the filter (URL-only, not persisted).
+
+### M11.9b — OMNI model + reasoning-budget split (unplanned scope) ✅ shipped
+
+Commit: `87e8b48 Use OMNI model and budget reasoning`. Default `dynamo` model switched from Nemotron Cascade 2 to `nvidia-nemotron-3-nano-omni-30b-a3b-reasoning` (env-var driven via `SURVEY_DYNAMO_MODEL`), with explicit reasoning-budget split: 600K context window, 8192 hidden reasoning, 4096 final-response reserve, 1024 repair-retry cap, 512 visible Brain-A cap. Reasoning is disabled on Brain A and on the empty-content repair retry; enabled and budgeted on Brain B, validator, and analyst.
+
+### M11.10 — Internal launch readiness ✅ shipped
+
+Commit message convention: `M11.10: cold-start eager warmup + admin nav cleanups + deploy prep`.
+
+Shipped: invite redemption now schedules the first Brain B plan in the background before the participant reaches the first foreground turn. The plan uses an empty transcript tail, the micro-form participant context, the campaign outline, the role-filtered question bank path, and the fresh session id, then writes `session.next_plan` when it finishes before turn one. If turn one arrives first, the scaffold path still handles the foreground and the late warmup does not overwrite later planning.
+
+Also shipped: CITADL admin surfaces now declare only `catalog` and `campaigns`, `?debug=1` survives in-page admin links, method observation tags truncate to the first eight unique normalized tags, Coolify compose is aligned to M11.9b runtime env, and smoke checks the CITADL admin surface allowlist.
+
+Remaining work is operator-side: image push, Coolify redeploy, Cloudflare hostname, live smoke, and self-interview.
+
 Full details of each milestone, including files to create/modify and tests, are in the Architecture + Milestones sections below (copied from the approved plan).
 
 ---
@@ -117,7 +143,7 @@ Full details of each milestone, including files to create/modify and tests, are 
 
 Any future milestone should know these so they don't re-litigate:
 
-1. **LM Studio drops `tool_calls` when `response_format=json_schema` is on the same request.** Local Dynamo models via LM Studio return empty content + empty tool calls when both are set. Fix pattern now baked into `brain_b_loop.py`: send `tools` without `response_format` during tool-capable iterations; only apply `response_format` + `tool_choice="none"` on a terminal call when the model returns content that doesn't parse cleanly. If M2+ adds new tool surfaces (analyst, ingest), apply the same pattern.
+1. **LM Studio drops `tool_calls` when `response_format=json_schema` is on the same request.** Local Dynamo models via LM Studio return empty content + empty tool calls when both are set. Fix pattern now baked into `brain_b_loop.py`: send `tools` without `response_format` during tool-capable iterations; only apply `response_format` + `tool_choice="none"` on a terminal call when the model returns content that doesn't parse cleanly. Nemotron Omni can also place the terminal JSON in `reasoning_content`; the loop treats that as parseable output only when the final content is empty and the reasoning payload is a JSON object. If M2+ adds new tool surfaces (analyst, ingest), apply the same pattern.
 
 2. **`response_format` without `tools` still works.** Single-call mode (no registry) can send both freely. Verified by `test_single_turn_no_tool_calls_returns_intent`.
 
@@ -157,6 +183,7 @@ Any future milestone should know these so they don't re-litigate:
 22. **`KnowledgeChunk` Pydantic model doesn't carry the embedding vector.** Embeddings live only in Surreal (`knowledge_chunk.embedding`). `repository.update_knowledge_chunk_embedding(chunk_id, vec)` writes them; there is no `chunk.embedding` field on the Python model. For tests that care, the InMemory repo exposes `get_chunk_embedding(chunk_id)`.
 23. **`update_knowledge_source_status` preserves `error_detail` by default; pass `error_detail=""` to clear.** Callers that omit the argument get preservation so a tier-1-insufficient note written during `fetching` survives through `extracting → chunking → embedding`. The pipeline explicitly clears at `pending_approval` (`error_detail=""`) and overwrites with a new string on `failed`. The UI can show the last-known note without losing it on intermediate retries.
 24. **Worker idempotency is status-gated, not lock-based.** Two workers hitting the same source simultaneously would both see `status=queued` and race. M2 ships a single-worker assumption (one `tools.freshness` process). If we ever parallelize, wrap the first status transition in a conditional SurrealQL `WHERE status = 'queued'` to claim-or-skip.
+25. **First-turn pre-plan can take up to 60 seconds; first participant turn falls back to the scaffold path.** Background planning catches up on turn two. Addressed by `M11.10: cold-start eager warmup + admin nav cleanups + deploy prep`, which starts Brain B planning at invite redemption and skips stale late writes after the first participant turn exists.
 
 ---
 

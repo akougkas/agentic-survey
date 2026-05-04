@@ -135,6 +135,23 @@ def test_create_observation_returns_created_payload() -> None:
     assert body["created_at"]
 
 
+def test_create_observation_truncates_tags_to_first_eight_unique() -> None:
+    app, repo = _build_app()
+    campaign_id, session_id = _create_session(repo)
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/admin/campaigns/{campaign_id}/sessions/{session_id}/observations",
+        json={
+            "body": "probe felt thin",
+            "tags": [" t0 ", "T1", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tags"] == ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7"]
+
+
 def test_list_observations_returns_chronological_order() -> None:
     app, repo = _build_app()
     campaign_id, session_id = _create_session(repo)

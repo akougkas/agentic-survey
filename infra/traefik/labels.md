@@ -4,6 +4,8 @@
 Coolify-managed Traefik instance. The labels live on the `backend`
 (FastAPI) and `frontend` (SvelteKit) services; Coolify injects them into
 the Traefik provider when the stack comes up.
+Both routed services also attach to the external `coolify` Docker network,
+and `traefik.docker.network=coolify` tells Traefik which network to use.
 
 ## Pattern: HTTP-only entrypoint, no TLS on Traefik
 
@@ -32,6 +34,7 @@ blade topology because no TLS listener is configured on Traefik.
 ```yaml
 labels:
   - traefik.enable=true
+  - traefik.docker.network=coolify
   - traefik.http.routers.citadl-surveys-api.rule=Host(`citadl.gnosis.run`) && PathPrefix(`/api`)
   - traefik.http.routers.citadl-surveys-api.entrypoints=web
   - traefik.http.routers.citadl-surveys-api.priority=100
@@ -51,6 +54,7 @@ labels:
 ```yaml
 labels:
   - traefik.enable=true
+  - traefik.docker.network=coolify
   - traefik.http.routers.citadl-surveys.rule=Host(`citadl.gnosis.run`)
   - traefik.http.routers.citadl-surveys.entrypoints=web
   - traefik.http.routers.citadl-surveys.priority=10

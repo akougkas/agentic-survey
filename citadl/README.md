@@ -31,4 +31,4 @@ make -C citadl bundle-validate
 
 ## Deployment
 
-`deploy/coolify/docker-compose.yml` builds the runtime from the current repo and mounts `citadl/bundle` into the backend and worker containers. That keeps blade deployment simple now. When Citadl moves out to its own repo later, the same bundle directory can stay intact and the compose file can switch from local build contexts to pinned runtime images.
+`deploy/coolify/docker-compose.yml` pulls the pinned runtime images declared by `SURVEY_API_IMAGE` and `SURVEY_WEB_IMAGE`, then mounts `citadl/bundle` into the backend and worker containers. Build and push the images before redeploying the blade stack.

@@ -44,9 +44,7 @@ class MethodObservation(BaseModel):
                 continue
             normalized.append(tag)
             seen.add(tag)
-        if len(normalized) > 8:
-            raise ValueError("must include 8 tags or fewer")
-        return normalized
+        return normalized[:8]
 
     @field_serializer("created_at")
     def serialize_created_at(self, value: datetime) -> str:

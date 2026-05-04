@@ -14,17 +14,15 @@ from agentic_survey.auth import (
     get_participant_session_from_request,
     require_admin_session,
 )
+from agentic_survey.api.background_tasks import spawn_post_turn_bg, spawn_pre_plan_bg
 from agentic_survey.config import Settings, get_settings
 from agentic_survey.engine.event_bus import (
-    CampaignEventBus,
     EventEnvelope,
     get_event_bus,
 )
 from agentic_survey.engine.interview_loop import (
     opening_turn_message,
     run_interview_turn,
-    run_post_turn_background,
-    run_pre_plan_background,
 )
 
 # Events kept in the per-campaign ring buffer that operator and participant
@@ -47,7 +45,7 @@ _BUS_EVENT_NAMES = {
 }
 from agentic_survey.engine.retrieval_cache import RetrievalCache
 from agentic_survey.llm.client import get_llm_client
-from agentic_survey.llm.router import LiteLLMRouter, get_litellm_router
+from agentic_survey.llm.router import get_litellm_router
 from agentic_survey.repository import (
     Campaign,
     InMemoryRepository,
@@ -61,10 +59,6 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 _llm_client = get_llm_client()
 _validator = Validator(llm=_llm_client)
 _retrieval_cache = RetrievalCache()
-
-# Strong-references live tasks so they are not garbage-collected mid-flight.
-# Each task removes itself via ``add_done_callback`` on completion.
-_background_tasks: set[asyncio.Task[None]] = set()
 
 _KEEPALIVE_SECONDS = 15.0
 
@@ -102,64 +96,6 @@ def _load_campaign(repository: InMemoryRepository, campaign_id: str) -> Campaign
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return campaign
-
-
-def _track(task: asyncio.Task[None]) -> None:
-    """Keep a hard reference to a fire-and-forget task until it finishes."""
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-
-
-def _spawn_post_turn_bg(
-    *,
-    session_id: str,
-    campaign_id: str,
-    participant_turn_id: str,
-    agent_turn_id: str,
-    repository: InMemoryRepository,
-    router_: LiteLLMRouter,
-    validator: Validator,
-    cache: RetrievalCache,
-    bus: CampaignEventBus,
-) -> asyncio.Task[None]:
-    task = asyncio.create_task(
-        run_post_turn_background(
-            session_id=session_id,
-            campaign_id=campaign_id,
-            participant_turn_id=participant_turn_id,
-            agent_turn_id=agent_turn_id,
-            repository=repository,
-            router=router_,
-            validator=validator,
-            cache=cache,
-            bus=bus,
-        )
-    )
-    _track(task)
-    return task
-
-
-def _spawn_pre_plan_bg(
-    *,
-    session_id: str,
-    campaign_id: str,
-    repository: InMemoryRepository,
-    router_: LiteLLMRouter,
-    cache: RetrievalCache,
-    bus: CampaignEventBus,
-) -> asyncio.Task[None]:
-    task = asyncio.create_task(
-        run_pre_plan_background(
-            session_id=session_id,
-            campaign_id=campaign_id,
-            repository=repository,
-            router=router_,
-            cache=cache,
-            bus=bus,
-        )
-    )
-    _track(task)
-    return task
 
 
 @router.get("/me")
@@ -206,14 +142,15 @@ async def start_participant_loop(
     )
     session = repository.get_interview_session(session.id)  # type: ignore[assignment]
     assert session is not None
-    _spawn_pre_plan_bg(
-        session_id=session.id,
-        campaign_id=campaign.id,
-        repository=repository,
-        router_=get_litellm_router(),
-        cache=_retrieval_cache,
-        bus=get_event_bus(),
-    )
+    if session.next_plan is None:
+        spawn_pre_plan_bg(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            repository=repository,
+            router=get_litellm_router(),
+            cache=_retrieval_cache,
+            bus=get_event_bus(),
+        )
     return SessionBundleResponse(session=session, campaign=campaign)
 
 
@@ -270,13 +207,13 @@ async def submit_participant_turn(
         and participant_turn is not None
         and result.session.status == "active"
     ):
-        _spawn_post_turn_bg(
+        spawn_post_turn_bg(
             session_id=result.session.id,
             campaign_id=campaign.id,
             participant_turn_id=participant_turn.id,
             agent_turn_id=agent_turn.id,
             repository=repository,
-            router_=get_litellm_router(),
+            router=get_litellm_router(),
             validator=_validator,
             cache=_retrieval_cache,
             bus=get_event_bus(),

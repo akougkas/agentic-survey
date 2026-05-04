@@ -51,6 +51,9 @@ async def run_brain_b_interviewer(
     prior_axes_coverage: list[AxisCoverage] | None = None,
     eligible_question_ids: list[str] | None = None,
     prior_question_coverage: list[QuestionCoverage] | None = None,
+    enable_tools: bool = True,
+    reasoning_budget_tokens: int | None = None,
+    compact_context: bool = False,
 ) -> BrainBIntent:
     """Run Interviewer Brain B as a tool-calling agent.
 
@@ -61,15 +64,17 @@ async def run_brain_b_interviewer(
     signals are advisory and exposed through ``get_session_signals``.
     """
     sources_provider = list_grounding_sources or (lambda: [])
-    tools = [
-        search_knowledge_tool(search_fn=search_knowledge),
-        get_outline_state_tool(outline_provider=lambda: outline),
-        list_grounding_sources_tool(sources_provider=sources_provider),
-        list_participant_faq_tool(outline_provider=lambda: outline),
-        get_session_signals_tool(signals_provider=lambda: session_signals),
-    ]
-    if graph_neighborhood is not None:
-        tools.append(get_graph_neighborhood_tool(neighborhood_fn=graph_neighborhood))
+    tools = []
+    if enable_tools:
+        tools = [
+            search_knowledge_tool(search_fn=search_knowledge),
+            get_outline_state_tool(outline_provider=lambda: outline),
+            list_grounding_sources_tool(sources_provider=sources_provider),
+            list_participant_faq_tool(outline_provider=lambda: outline),
+            get_session_signals_tool(signals_provider=lambda: session_signals),
+        ]
+        if graph_neighborhood is not None:
+            tools.append(get_graph_neighborhood_tool(neighborhood_fn=graph_neighborhood))
     registry = ToolRegistry(tools)
     role_self_description = ""
     if participant_context:
@@ -83,8 +88,13 @@ async def run_brain_b_interviewer(
     if eligible_question_ids is None:
         eligible_question_ids = [question.id for question in eligible_questions]
 
+    outline_payload = (
+        _compact_outline_for_prompt(outline)
+        if compact_context
+        else outline.model_dump()
+    )
     system_context = [
-        "Current outline (JSON):\n" + outline.model_dump_json(indent=2),
+        "Current outline (JSON):\n" + json.dumps(outline_payload, indent=2),
         "Question bank (eligible questions for this respondent):\n"
         + json.dumps(
             [_question_for_prompt(question) for question in eligible_questions],
@@ -129,6 +139,7 @@ async def run_brain_b_interviewer(
         close_guard_axes=list(outline.rubric.mandatory_close_axes),
         eligible_question_ids=eligible_question_ids,
         prior_question_coverage=prior_question_coverage,
+        reasoning_budget_tokens=reasoning_budget_tokens,
     )
     return result.intent
 
@@ -163,4 +174,16 @@ def _question_for_prompt(question: SurveyQuestion) -> dict[str, Any]:
         "follow_up_hints": list(question.follow_up_hints),
         "saturation_signals": list(question.saturation_signals),
         "leading_language_avoid": list(question.leading_language_avoid),
+    }
+
+
+def _compact_outline_for_prompt(outline: OutlineArtifact) -> dict[str, Any]:
+    return {
+        "research_question": outline.research_question,
+        "sampling_frame": outline.sampling_frame,
+        "axes": list(outline.axes),
+        "objectives": list(outline.objectives),
+        "probes": list(outline.probes),
+        "rubric": outline.rubric.model_dump(),
+        "participant_faq": [entry.model_dump() for entry in outline.participant_faq],
     }

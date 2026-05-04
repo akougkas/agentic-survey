@@ -6,6 +6,7 @@
   import { ApiError, getJson, postJson } from '$lib/api';
   import { campaignActivityLabel, campaignSourceLabel, campaignStateLabel, campaignStateTone } from '$lib/campaign-ui';
   import { getAdminSession } from '$lib/admin';
+  import { hrefWithDebug } from '$lib/admin-surfaces';
   import { runtimeCopy } from '$lib/runtime-copy';
   import type { Campaign, CampaignOverviewItem, CampaignOverviewResponse } from '$lib/types';
 
@@ -15,6 +16,7 @@
   let seedPending = '';
 
   $: runtimeContext = $page.data.runtimeContext ?? null;
+  $: debugAdmin = $page.url.searchParams.get('debug') === '1';
   $: loginPath = `/admin/login?next=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
 
   onMount(async () => {
@@ -54,7 +56,7 @@
       const campaign = await postJson<Campaign>('/campaigns/from-seed', {
         seed_slug: seedSlug,
       });
-      await goto(`/admin/campaigns/${campaign.id}`);
+      await goto(hrefWithDebug(`/admin/campaigns/${campaign.id}`, debugAdmin));
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
         await goto(loginPath);
@@ -114,7 +116,9 @@
           <p class="m-0 text-sm leading-7 text-[color:var(--muted)]">{runtimeCopy.campaigns.blankPathDescription}</p>
         </div>
         <div class="flex flex-wrap gap-3">
-          <a class="button-primary" href="/admin/campaigns/new">{runtimeCopy.campaigns.createDraftLabel}</a>
+          <a class="button-primary" href={hrefWithDebug('/admin/campaigns/new', debugAdmin)}>
+            {runtimeCopy.campaigns.createDraftLabel}
+          </a>
         </div>
       </section>
 
@@ -194,7 +198,7 @@
 
                 <div class="grid gap-3 text-right">
                   <p class="label m-0">Updated {campaignActivityLabel(item)}</p>
-                  <a class="button-primary" href={`/admin/campaigns/${item.campaign.id}`}>
+                  <a class="button-primary" href={hrefWithDebug(`/admin/campaigns/${item.campaign.id}`, debugAdmin)}>
                     {runtimeCopy.campaigns.openCampaignLabel}
                   </a>
                 </div>

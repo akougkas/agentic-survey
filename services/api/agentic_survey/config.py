@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     llm_repair_completion_tokens: int = Field(default=1024, ge=1)
     llm_reasoning_budget_tokens: int = Field(default=8192, ge=1)
     llm_reasoning_final_response_tokens: int = Field(default=4096, ge=1)
+    llm_preplan_reasoning_budget_tokens: int = Field(default=1024, ge=1)
 
 
 @lru_cache(maxsize=1)

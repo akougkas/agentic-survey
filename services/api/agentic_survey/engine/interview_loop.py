@@ -25,7 +25,11 @@ from agentic_survey.engine.session_policy import (
     derive_objective_tags,
 )
 from agentic_survey.llm.router import LiteLLMRouter
-from agentic_survey.llm.reasoning import set_lmstudio_thinking, visible_reply_max_tokens
+from agentic_survey.llm.reasoning import (
+    preplan_reasoning_budget_tokens,
+    set_lmstudio_thinking,
+    visible_reply_max_tokens,
+)
 from agentic_survey.repository import (
     Campaign,
     InMemoryRepository,
@@ -287,11 +291,13 @@ async def run_interview_turn(
     # previous background task wrote (or a scaffold when no plan exists).
     planned = refreshed.next_plan
     if planned is not None:
+        planner_source = "brain_b"
         intent = planned.model_copy(deep=True)
         # Consume the plan so a subsequent failed background leaves the
         # NEXT turn on scaffold instead of rendering a stale probe.
         repository.update_next_plan(refreshed.id, None)
     else:
+        planner_source = "scaffold"
         intent = build_scaffold_intent(
             outline=campaign.outline,
             participant_context=dict(refreshed.micro_form_answers or {}),
@@ -320,6 +326,7 @@ async def run_interview_turn(
         content=reply_text,
         brain_b_intent=intent,
         get_user_input=intent.get_user_input,
+        validation={"planner_source": planner_source},
     )
     events.append(
         InterviewEvent(
@@ -538,12 +545,10 @@ async def _post_turn_background_inner(
     )
     grounding_snapshot = _list_approved_grounding_sources(repository, campaign_id)
     participant_context = dict(refreshed.micro_form_answers or {})
-    eligible_question_ids = _eligible_question_ids(
-        campaign.outline.question_bank,
-        participant_context,
-    )
+    planning_outline = _role_filtered_outline(campaign.outline, participant_context)
+    eligible_question_ids = [question.id for question in planning_outline.question_bank]
     intent = await run_brain_b_interviewer(
-        outline=campaign.outline,
+        outline=planning_outline,
         transcript_tail=transcript_tail,
         session_signals=signals,
         router=router,
@@ -592,15 +597,21 @@ async def run_pre_plan_background(
     cache: RetrievalCache,
     bus: "CampaignEventBus",
 ) -> None:
-    """Seed ``session.next_plan`` from the deterministic opener.
+    """Seed ``session.next_plan`` before the first participant turn.
 
-    Called after ``POST /sessions/{sid}/start`` drops the opener turn so
-    that turn 1's foreground can render a planned probe instead of a
-    scaffold. Same isolation contract as the post-turn runner: any
-    exception is swallowed and logged; the next turn degrades cleanly to
-    a scaffold.
+    Invite redemption schedules this against the fresh session, where the
+    transcript tail is empty and participant context comes from the
+    micro-form. ``POST /sessions/{sid}/start`` may also schedule it after
+    the deterministic opener. Same isolation contract as the post-turn
+    runner: any exception is swallowed and logged; the next turn degrades
+    cleanly to a scaffold.
     """
     try:
+        logger.info(
+            "pre-plan background started: session=%s campaign=%s",
+            session_id,
+            campaign_id,
+        )
         session = repository.get_interview_session(session_id)
         if session is None:
             return
@@ -624,12 +635,10 @@ async def run_pre_plan_background(
         )
         grounding_snapshot = _list_approved_grounding_sources(repository, campaign_id)
         participant_context = dict(session.micro_form_answers or {})
-        eligible_question_ids = _eligible_question_ids(
-            campaign.outline.question_bank,
-            participant_context,
-        )
+        planning_outline = _role_filtered_outline(campaign.outline, participant_context)
+        eligible_question_ids = [question.id for question in planning_outline.question_bank]
         intent = await run_brain_b_interviewer(
-            outline=campaign.outline,
+            outline=planning_outline,
             transcript_tail=transcript_tail,
             session_signals=signals,
             router=router,
@@ -640,7 +649,19 @@ async def run_pre_plan_background(
             prior_axes_coverage=[],
             eligible_question_ids=eligible_question_ids,
             prior_question_coverage=prior_question_coverage,
+            enable_tools=False,
+            reasoning_budget_tokens=preplan_reasoning_budget_tokens(),
+            compact_context=True,
         )
+        latest = repository.get_interview_session(session_id)
+        if latest is None:
+            return
+        if any(turn.role == "participant" for turn in latest.turns):
+            logger.info(
+                "pre-plan skipped because participant turn already exists: session=%s",
+                session_id,
+            )
+            return
         repository.update_next_plan(session_id, intent)
         bus.publish_many(
             campaign_id,
@@ -773,16 +794,19 @@ def _last_question_coverage(
     return []
 
 
-def _eligible_question_ids(
-    question_bank,
+def _role_filtered_outline(
+    outline,
     participant_context: dict[str, str],
-) -> list[str]:
+):
     role_self_description = participant_context.get("role_self_description", "")
     eligible_questions = filter_question_bank_for_role(
-        question_bank,
+        outline.question_bank,
         role_self_description,
     )
-    return [question.id for question in eligible_questions]
+    return outline.model_copy(
+        update={"question_bank": eligible_questions},
+        deep=True,
+    )
 
 
 def _question_coverage_differs(

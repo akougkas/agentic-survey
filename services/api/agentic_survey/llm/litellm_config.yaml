@@ -33,9 +33,6 @@ model_list:
       api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}
 router_settings:
   routing_strategy: simple-shuffle
-  fallbacks:
-    - mira-scientist: [mira-chatter]
-    - mira-chatter: [mira-scientist]
   retry_policy:
     MaxRetries: 2
     TimeoutBackoffMultiplier: 2

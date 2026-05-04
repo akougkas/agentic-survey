@@ -74,14 +74,22 @@ Coolify must inject:
 
 | Variable | Value | Notes |
 |---|---|---|
+| `SURVEY_API_IMAGE` | *(set pushed M11.10 API image)* | Used by backend and worker. |
+| `SURVEY_WEB_IMAGE` | *(set pushed M11.10 web image)* | Used by SvelteKit frontend. |
 | `SURVEY_PUBLIC_BASE_URL` | `https://citadl.gnosis.run` | Used for invite URLs. |
 | `SURVEY_FRONTEND_ORIGIN` | `https://citadl.gnosis.run` | CORS. |
 | `SURVEY_PRODUCT_BUNDLE_DIR` | `/app/citadl/bundle` | Mounted read-only from the repo. |
 | `SURVEY_ADMIN_PASSWORD` | *(set a real one)* | Cookie-auth secret. |
-| `SURVEY_LLM_ENABLED` | `true` | Flip off to dry-run against fallback paths. |
+| `SURVEY_LLM_ENABLED` | `true` | Flip off only for non-LLM route checks. |
 | `SURVEY_MINI_ENDPOINT_URL` | `http://192.168.86.141:8080/v1` | llama-server on mini (LAN). |
+| `SURVEY_MINI_MODEL` | `gemma-4-26B-A4B-it-Q4_K_M` | Brain A alias `mira-chatter`. |
 | `SURVEY_DYNAMO_ENDPOINT_URL` | `http://192.168.86.143:1234/v1` | LMStudio on dynamo (LAN). |
+| `SURVEY_DYNAMO_MODEL` | `nvidia-nemotron-3-nano-omni-30b-a3b-reasoning` | Brain B alias `mira-scientist`, plus Validator, Analyst, and Ingest. |
+| `SURVEY_DYNAMO_CONTEXT_WINDOW_TOKENS` | `600000` | Informational context-window setting used by the catalog. |
+| `SURVEY_EMBEDDING_MODEL` | `text-embedding-nomic-embed-text-v2-moe` | Embeddings alias `embeddings` on dynamo. |
+| `SURVEY_DEFAULT_INTERVIEWER_ENDPOINT` | `mini` | Session pin for Brain A foreground chatter. |
 | `SURVEY_LLM_TIMEOUT_SECONDS` | `60` | Per-call ceiling. |
+| `SURVEY_LLM_PREPLAN_REASONING_BUDGET_TOKENS` | `1024` | Cold-start Brain B pre-plan hidden reasoning budget. |
 | `SURVEY_REPOSITORY` | `surreal` | Do not run memory repo in production. |
 | `SURVEY_SURREAL_URL` | `ws://surrealdb:8000/rpc` | Compose resolves the `surrealdb` service name. |
 | `SURVEY_SURREAL_NS` | `agentic` | Bundle-specific namespace. |
@@ -89,13 +97,13 @@ Coolify must inject:
 | `SURVEY_SURREAL_USER` / `SURVEY_SURREAL_PASS` | `root` / `root` | Change post-demo. |
 | `SURVEY_SEARXNG_URL` | `http://searxng:8080` | Internal compose name. |
 
-The compose file supplies sensible defaults for everything except
-`SURVEY_ADMIN_PASSWORD` and the two LLM endpoint URLs.
+The compose file supplies sensible defaults for everything except the
+image tags, `SURVEY_ADMIN_PASSWORD`, and the two LLM endpoint URLs.
 
 ### LLM endpoints (LAN, blade is on the same subnet)
 
-- **mini** (Qwen-3.5 Distilled / Brain A): `http://192.168.86.141:8080/v1`
-- **dynamo** (Nemotron / Brain B): `http://192.168.86.143:1234/v1`
+- **mini** serves Brain A through `gemma-4-26B-A4B-it-Q4_K_M`: `http://192.168.86.141:8080/v1`
+- **dynamo** serves Brain B through `nvidia-nemotron-3-nano-omni-30b-a3b-reasoning`: `http://192.168.86.143:1234/v1`
 
 Both hosts are reachable from blade on the `192.168.86.0/24` LAN.
 Tailscale equivalents work too if the LAN is ever partitioned; swap the
@@ -117,17 +125,19 @@ on port 80. This matches the existing `gnosis-run-site` pattern confirmed in
 
 ### Deploy (operator-run)
 
-1. Confirm the compose builds clean locally:
+1. Confirm the runtime verifies clean locally:
    `make verify` (runs bundle-validate, api-test, web-check, web-build).
-2. In Coolify (`http://100.124.181.9:8000`), create a new **Docker Compose**
+2. Build and push the M11.10 API and web images to the registry blade can
+   pull from.
+3. In Coolify (`http://100.124.181.9:8000`), create a new **Docker Compose**
    application pointed at this repo with compose file path
    `citadl/deploy/coolify/docker-compose.yml`.
-3. Fill in the env vars from the table above; mark
+4. Fill in the env vars from the table above; mark
    `SURVEY_ADMIN_PASSWORD` as secret.
-4. Add the public hostname in Cloudflare Zero Trust per
+5. Add the public hostname in Cloudflare Zero Trust per
    `infra/cloudflared/README.md`.
-5. Click **Deploy** in Coolify. First build takes ~3-5 minutes.
-6. Smoke: `infra/ops/smoke.sh https://citadl.gnosis.run/api`.
+6. Click **Deploy** in Coolify.
+7. Smoke: `infra/ops/smoke.sh https://citadl.gnosis.run/api`.
 
 ### Verify
 

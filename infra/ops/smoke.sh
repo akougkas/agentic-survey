@@ -61,6 +61,23 @@ echo "$catalog" | jq '{bundle: .bundle.slug, seeds: [.seeds[].slug]}'
 seed_slug="$(echo "$catalog" | jq -r '.seeds[0].slug // empty')"
 [[ -n "$seed_slug" ]] || fail "no campaign seeds in catalog; check SURVEY_PRODUCT_BUNDLE_DIR"
 
+step "create designer smoke campaign"
+designer_campaign="$(json -X POST "$BASE/campaigns" \
+                         -d '{"title":"Smoke designer path","min_n":3,"max_n":6}')"
+designer_campaign_id="$(echo "$designer_campaign" | jq -r '.id')"
+echo "designer_campaign_id=$designer_campaign_id"
+[[ "$designer_campaign_id" != "null" && -n "$designer_campaign_id" ]] \
+    || fail "designer smoke campaign creation returned no id"
+
+step "designer start"
+designer_start="$(json -X POST "$BASE/campaigns/${designer_campaign_id}/designer/start" -d '{}')"
+echo "$designer_start" | jq '{designer_turns: (.designer_session.turns | length)}'
+
+step "designer turn"
+designer_turn="$(json -X POST "$BASE/campaigns/${designer_campaign_id}/designer/turns" \
+                     -d '{"content":"Draft a compact study outline for a smoke test. Keep it generic and ready for review if enough detail is present."}')"
+echo "$designer_turn" | jq '{state: .campaign.state, outline_status: .campaign.outline_status, designer_turns: (.designer_session.turns | length)}'
+
 step "create campaign from seed: $seed_slug"
 campaign="$(json -X POST "$BASE/campaigns/from-seed" \
                  -d "{\"seed_slug\":\"${seed_slug}\"}")"
@@ -89,7 +106,7 @@ invite_token="$(echo "$invite" | jq -r '.token')"
 
 step "redeem invite (participant session)"
 session="$(json -X POST "$BASE/invites/${invite_token}/redeem" \
-                 -d '{"consent_mode":"anonymous","identity_label":""}')"
+                 -d '{"consent_mode":"anonymous","identity_label":"","micro_form_answers":{"evidence_of_belonging":"I operate research data workflows for a smoke test.","role_self_description":"Facility operator or systems administrator"}}')"
 echo "$session" | jq '{session_id: .session.id, campaign_title}'
 session_id="$(echo "$session" | jq -r '.session.id')"
 [[ -n "$session_id" && "$session_id" != "null" ]] || fail "invite redemption failed"
@@ -98,6 +115,22 @@ step "start participant loop (opening turn)"
 bundle_start="$(json -X POST "$BASE/sessions/${session_id}/start" -d '{}')"
 echo "$bundle_start" | jq '{turn_count: (.session.turns | length)}'
 
+step "citadl admin surfaces allowlist"
+ctx_latest="$(curl -sS "$BASE/system/context")"
+bundle_slug="$(echo "$ctx_latest" | jq -r '.bundle_slug // empty')"
+bundle_dir="${SURVEY_PRODUCT_BUNDLE_DIR:-}"
+if [[ "$bundle_slug" == "citadl" || "$bundle_dir" == *"citadl/bundle"* ]]; then
+    if echo "$ctx_latest" | jq -e '.admin_surfaces_allowlist == null' >/dev/null; then
+        echo "admin_surfaces_allowlist=null; skipping bundle-specific assertion"
+    else
+        echo "$ctx_latest" | jq -e '.admin_surfaces_allowlist == ["catalog", "campaigns"]' >/dev/null \
+            || fail "citadl admin_surfaces_allowlist is not [\"catalog\", \"campaigns\"]"
+        echo "$ctx_latest" | jq '{admin_surfaces_allowlist}'
+    fi
+else
+    echo "bundle_slug=${bundle_slug:-unknown}; skipping citadl-specific assertion"
+fi
+
 step "done"
-echo "smoke: PASS — campaign=${campaign_id} session=${session_id}"
+echo "smoke: PASS: campaign=${campaign_id} session=${session_id}"
 echo "base: $BASE"

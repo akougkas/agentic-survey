@@ -14,6 +14,7 @@
     readinessTone,
   } from '$lib/campaign-ui';
   import { getAdminSession } from '$lib/admin';
+  import { hrefWithDebug } from '$lib/admin-surfaces';
   import ChatPane from '$lib/components/ChatPane.svelte';
   import { runtimeCopy } from '$lib/runtime-copy';
   import { getModelCatalog } from '$lib/runtime';
@@ -84,6 +85,7 @@
   $: approvedSources = knowledge ? knowledge.by_status?.approved ?? [] : [];
 
   $: runtimeContext = $page.data.runtimeContext ?? null;
+  $: debugAdmin = $page.url.searchParams.get('debug') === '1';
   $: campaignId = $page.params.id ?? '';
   $: loginPath = `/admin/login?next=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
   $: showDesignerChat =
@@ -393,7 +395,9 @@
 </script>
 
 <section class="grid gap-5">
-  <a class="text-sm text-moss" href="/admin/campaigns">&larr; {runtimeCopy.campaigns.detailBackLabel}</a>
+  <a class="text-sm text-moss" href={hrefWithDebug('/admin/campaigns', debugAdmin)}>
+    &larr; {runtimeCopy.campaigns.detailBackLabel}
+  </a>
 
   {#if loading}
     <article class="band px-6 py-6 text-sm text-[color:var(--muted)]">Loading campaign...</article>
@@ -707,7 +711,7 @@
           <div class="flex justify-end border-t border-[color:var(--line)] pt-4">
             <a
               class="text-sm text-moss"
-              href={`/admin/campaigns/${campaignId}/graph`}
+              href={hrefWithDebug(`/admin/campaigns/${campaignId}/graph`, debugAdmin)}
               data-testid="knowledge-graph-link"
             >
               View live knowledge graph →
@@ -904,7 +908,13 @@
                         {inviteUrl(invite)}
                       </a>
                       {#if invite.session_id}
-                        <a class="text-xs text-moss" href={`/admin/campaigns/${campaignId}/sessions/${invite.session_id}`}>
+                        <a
+                          class="text-xs text-moss"
+                          href={hrefWithDebug(
+                            `/admin/campaigns/${campaignId}/sessions/${invite.session_id}`,
+                            debugAdmin
+                          )}
+                        >
                           {runtimeCopy.campaigns.openTranscriptLabel}
                         </a>
                       {/if}
@@ -945,7 +955,13 @@
                         {session.status}
                       </span>
                     </div>
-                    <a class="text-xs text-moss" href={`/admin/campaigns/${campaignId}/sessions/${session.id}`}>
+                    <a
+                      class="text-xs text-moss"
+                      href={hrefWithDebug(
+                        `/admin/campaigns/${campaignId}/sessions/${session.id}`,
+                        debugAdmin
+                      )}
+                    >
                       {runtimeCopy.campaigns.openTranscriptLabel}
                     </a>
                   </div>

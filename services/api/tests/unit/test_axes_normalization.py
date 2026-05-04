@@ -142,6 +142,19 @@ def test_axes_normalizer_matches_full_label_against_r_code() -> None:
     assert entry.score == 0.4
 
 
+def test_axes_normalizer_recovers_active_axis_from_question_intent() -> None:
+    payload = _intent_payload(axes_coverage=[])
+    payload["active_axis"] = ".0"
+    payload["question_intent"] = "R1"
+    result = _run(
+        payload=payload,
+        rubric_axes=["R1 — Lifecycle pain topology", "R2 — Trust gates"],
+    )
+
+    assert result.intent.active_axis == "R1 — Lifecycle pain topology"
+    assert result.intent.question_intent == "R1: probe question?"
+
+
 def test_close_guard_flips_should_close_when_R8_zero() -> None:
     axes = [
         {"axis": f"R{n}", "score": 0.5, "gap": ""} for n in range(1, 8)

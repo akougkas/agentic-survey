@@ -86,9 +86,23 @@ def _brain_b_response_format() -> dict[str, Any]:
         "type": "json_schema",
         "json_schema": {
             "name": "brain_b_intent",
-            "schema": BrainBIntent.model_json_schema(),
+            "schema": _strip_json_schema_annotations(
+                BrainBIntent.model_json_schema()
+            ),
         },
     }
+
+
+def _strip_json_schema_annotations(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _strip_json_schema_annotations(item)
+            for key, item in value.items()
+            if key not in {"default", "title"}
+        }
+    if isinstance(value, list):
+        return [_strip_json_schema_annotations(item) for item in value]
+    return value
 
 
 def _normalize_discuss_more(raw: str) -> str:
@@ -133,12 +147,28 @@ def _extract_message(response: object) -> dict[str, Any]:
     if isinstance(message, dict):
         return message
     content = getattr(message, "content", "")
+    reasoning_content = getattr(message, "reasoning_content", "")
     tool_calls = getattr(message, "tool_calls", None)
-    return {"content": content, "tool_calls": tool_calls}
+    return {
+        "content": content,
+        "reasoning_content": reasoning_content,
+        "tool_calls": tool_calls,
+    }
 
 
 def _message_content(message: dict[str, Any]) -> str:
-    return str(message.get("content") or "").strip()
+    content = str(message.get("content") or "").strip()
+    if content:
+        return content
+    reasoning_content = str(message.get("reasoning_content") or "").strip()
+    if _looks_like_json_object(reasoning_content):
+        return reasoning_content
+    return ""
+
+
+def _looks_like_json_object(raw: str) -> bool:
+    stripped = raw.strip()
+    return stripped.startswith("{") and stripped.endswith("}")
 
 
 def _normalize_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:
@@ -191,6 +221,7 @@ def _observed_retrieval_chunks(tool_calls: list[ToolCallRecord]) -> list[str]:
 
 
 _AXIS_PREFIX_RE = re.compile(r"^(R\d+)", re.IGNORECASE)
+_AXIS_TOKEN_RE = re.compile(r"\bR\d+\b", re.IGNORECASE)
 
 
 def _axis_prefix(axis: str) -> str:
@@ -199,6 +230,13 @@ def _axis_prefix(axis: str) -> str:
     if match:
         return match.group(1).upper()
     return stripped
+
+
+def _axis_token(text: str) -> str:
+    match = _AXIS_TOKEN_RE.search((text or "").strip())
+    if match:
+        return match.group(0).upper()
+    return ""
 
 
 def _clamp_score(value: Any) -> float:
@@ -238,8 +276,10 @@ def _normalize_axes_coverage(
         emitted_gap_by_prefix[prefix] = entry.gap or ""
 
     normalized: list[AxisCoverage] = []
+    axis_by_prefix: dict[str, str] = {}
     for raw_axis in rubric_axes:
         prefix = _axis_prefix(raw_axis)
+        axis_by_prefix[prefix] = raw_axis
         prior_score = prior_score_by_prefix.get(prefix, 0.0)
         if prefix in emitted_score_by_prefix:
             final_score = max(prior_score, emitted_score_by_prefix[prefix])
@@ -248,7 +288,28 @@ def _normalize_axes_coverage(
             final_score = prior_score
             gap = prior_gap_by_prefix.get(prefix, "")
         normalized.append(AxisCoverage(axis=prefix, score=final_score, gap=gap))
-    return intent.model_copy(update={"axes_coverage": normalized})
+    active_axis = intent.active_axis.strip()
+    active_prefix = _axis_prefix(active_axis)
+    if active_prefix not in axis_by_prefix:
+        active_prefix = _axis_token(intent.question_intent)
+    if active_prefix in axis_by_prefix:
+        active_axis = axis_by_prefix[active_prefix]
+
+    question_intent = intent.question_intent.strip()
+    if (
+        active_prefix
+        and question_intent.upper() == active_prefix
+        and intent.get_user_input.question.strip()
+    ):
+        question_intent = f"{active_prefix}: {intent.get_user_input.question.strip()}"
+
+    return intent.model_copy(
+        update={
+            "active_axis": active_axis,
+            "axes_coverage": normalized,
+            "question_intent": question_intent,
+        }
+    )
 
 
 def _enforce_close_guard(
@@ -391,6 +452,7 @@ async def run_brain_b_with_tools(
     close_guard_axes: list[str] | None = None,
     eligible_question_ids: list[str] | None = None,
     prior_question_coverage: list[QuestionCoverage] | None = None,
+    reasoning_budget_tokens: int | None = None,
 ) -> BrainBLoopResult:
     """Single tool-calling loop shared by Designer and Interviewer Brain B.
 
@@ -443,7 +505,7 @@ async def run_brain_b_with_tools(
     max_iterations = max_tool_calls + max_parse_retries + 2
     for iteration in range(max_iterations):
         terminal_only = not tools_schema or parse_retries > 0
-        completion_token_budget = reasoning_completion_tokens()
+        completion_token_budget = reasoning_completion_tokens(reasoning_budget_tokens)
         completion_kwargs: dict[str, Any] = {
             "model": "mira-scientist",
             "messages": messages,

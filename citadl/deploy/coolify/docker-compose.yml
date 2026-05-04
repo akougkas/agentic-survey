@@ -1,3 +1,39 @@
+x-api-environment: &api-environment
+  SURVEY_PUBLIC_BASE_URL: https://citadl.gnosis.run
+  SURVEY_FRONTEND_ORIGIN: https://citadl.gnosis.run
+  SURVEY_PRODUCT_BUNDLE_DIR: /app/citadl/bundle
+  SURVEY_ADMIN_PASSWORD: ${SURVEY_ADMIN_PASSWORD}
+  SURVEY_LLM_ENABLED: ${SURVEY_LLM_ENABLED:-true}
+  SURVEY_LITELLM_CONFIG: ${SURVEY_LITELLM_CONFIG:-agentic_survey/llm/litellm_config.yaml}
+  SURVEY_MINI_ENDPOINT_URL: ${SURVEY_MINI_ENDPOINT_URL}
+  SURVEY_MINI_MODEL: ${SURVEY_MINI_MODEL:-gemma-4-26B-A4B-it-Q4_K_M}
+  SURVEY_DYNAMO_ENDPOINT_URL: ${SURVEY_DYNAMO_ENDPOINT_URL}
+  SURVEY_DYNAMO_MODEL: ${SURVEY_DYNAMO_MODEL:-nvidia-nemotron-3-nano-omni-30b-a3b-reasoning}
+  SURVEY_DYNAMO_CONTEXT_WINDOW_TOKENS: ${SURVEY_DYNAMO_CONTEXT_WINDOW_TOKENS:-600000}
+  SURVEY_EMBEDDING_MODEL: ${SURVEY_EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v2-moe}
+  SURVEY_DEFAULT_INTERVIEWER_ENDPOINT: ${SURVEY_DEFAULT_INTERVIEWER_ENDPOINT:-mini}
+  SURVEY_LLM_TIMEOUT_SECONDS: ${SURVEY_LLM_TIMEOUT_SECONDS:-60}
+  SURVEY_LLM_VISIBLE_REPLY_MAX_TOKENS: ${SURVEY_LLM_VISIBLE_REPLY_MAX_TOKENS:-512}
+  SURVEY_LLM_REPAIR_COMPLETION_TOKENS: ${SURVEY_LLM_REPAIR_COMPLETION_TOKENS:-1024}
+  SURVEY_LLM_REASONING_BUDGET_TOKENS: ${SURVEY_LLM_REASONING_BUDGET_TOKENS:-8192}
+  SURVEY_LLM_REASONING_FINAL_RESPONSE_TOKENS: ${SURVEY_LLM_REASONING_FINAL_RESPONSE_TOKENS:-4096}
+  SURVEY_LLM_PREPLAN_REASONING_BUDGET_TOKENS: ${SURVEY_LLM_PREPLAN_REASONING_BUDGET_TOKENS:-1024}
+  SURVEY_REPOSITORY: surreal
+  SURVEY_SURREAL_URL: ws://surrealdb:8000/rpc
+  SURVEY_SURREAL_NS: ${SURVEY_SURREAL_NS:-agentic}
+  SURVEY_SURREAL_DB: ${SURVEY_SURREAL_DB:-citadl}
+  SURVEY_SURREAL_USER: ${SURVEY_SURREAL_USER:-root}
+  SURVEY_SURREAL_PASS: ${SURVEY_SURREAL_PASS:-root}
+  SURVEY_EXPORT_DIR: ${SURVEY_EXPORT_DIR:-/app/campaigns}
+  SURVEY_SEARXNG_URL: http://searxng:8080
+  SURVEY_FRESHNESS_DEFAULT_CRON: ${SURVEY_FRESHNESS_DEFAULT_CRON:-0 3 * * *}
+  SURVEY_WEB_SEARCH_TOP_K: ${SURVEY_WEB_SEARCH_TOP_K:-10}
+  SURVEY_FRESHNESS_POLL_SECONDS: ${SURVEY_FRESHNESS_POLL_SECONDS:-30}
+  SURVEY_INGEST_MIN_CHARS: ${SURVEY_INGEST_MIN_CHARS:-500}
+  SURVEY_INGEST_CRAWL4AI: ${SURVEY_INGEST_CRAWL4AI:-true}
+  SURVEY_INGEST_HTTP_TIMEOUT_SECONDS: ${SURVEY_INGEST_HTTP_TIMEOUT_SECONDS:-30}
+  SURVEY_INGEST_CRAWL4AI_TIMEOUT_SECONDS: ${SURVEY_INGEST_CRAWL4AI_TIMEOUT_SECONDS:-60}
+
 services:
   surrealdb:
     image: surrealdb/surrealdb:v2
@@ -22,24 +58,9 @@ services:
     restart: unless-stopped
 
   backend:
-    build:
-      context: ../../..
-      dockerfile: docker/Dockerfile.api
+    image: ${SURVEY_API_IMAGE:?Set SURVEY_API_IMAGE to the pushed M11.10 API image}
     environment:
-      SURVEY_PUBLIC_BASE_URL: https://citadl.gnosis.run
-      SURVEY_FRONTEND_ORIGIN: https://citadl.gnosis.run
-      SURVEY_PRODUCT_BUNDLE_DIR: /app/citadl/bundle
-      SURVEY_ADMIN_PASSWORD: ${SURVEY_ADMIN_PASSWORD}
-      SURVEY_LLM_ENABLED: ${SURVEY_LLM_ENABLED:-true}
-      SURVEY_MINI_ENDPOINT_URL: ${SURVEY_MINI_ENDPOINT_URL}
-      SURVEY_DYNAMO_ENDPOINT_URL: ${SURVEY_DYNAMO_ENDPOINT_URL}
-      SURVEY_LLM_TIMEOUT_SECONDS: ${SURVEY_LLM_TIMEOUT_SECONDS:-60}
-      SURVEY_SURREAL_URL: ws://surrealdb:8000/rpc
-      SURVEY_SURREAL_NS: ${SURVEY_SURREAL_NS:-agentic}
-      SURVEY_SURREAL_DB: ${SURVEY_SURREAL_DB:-citadl}
-      SURVEY_SURREAL_USER: ${SURVEY_SURREAL_USER:-root}
-      SURVEY_SURREAL_PASS: ${SURVEY_SURREAL_PASS:-root}
-      SURVEY_SEARXNG_URL: http://searxng:8080
+      <<: *api-environment
     volumes:
       - ../../bundle:/app/citadl/bundle:ro
     depends_on:
@@ -47,34 +68,23 @@ services:
       - searxng
     expose:
       - "8100"
+    networks:
+      - default
+      - coolify
     restart: unless-stopped
     labels:
       - traefik.enable=true
+      - traefik.docker.network=coolify
       - traefik.http.routers.citadl-surveys-api.rule=Host(`citadl.gnosis.run`) && PathPrefix(`/api`)
       - traefik.http.routers.citadl-surveys-api.entrypoints=web
       - traefik.http.routers.citadl-surveys-api.priority=100
       - traefik.http.services.citadl-surveys-api.loadbalancer.server.port=8100
 
   worker:
-    build:
-      context: ../../..
-      dockerfile: docker/Dockerfile.api
+    image: ${SURVEY_API_IMAGE:?Set SURVEY_API_IMAGE to the pushed M11.10 API image}
     command: ["python", "-m", "agentic_survey.tools.freshness"]
     environment:
-      SURVEY_PUBLIC_BASE_URL: https://citadl.gnosis.run
-      SURVEY_FRONTEND_ORIGIN: https://citadl.gnosis.run
-      SURVEY_PRODUCT_BUNDLE_DIR: /app/citadl/bundle
-      SURVEY_ADMIN_PASSWORD: ${SURVEY_ADMIN_PASSWORD}
-      SURVEY_LLM_ENABLED: ${SURVEY_LLM_ENABLED:-true}
-      SURVEY_MINI_ENDPOINT_URL: ${SURVEY_MINI_ENDPOINT_URL}
-      SURVEY_DYNAMO_ENDPOINT_URL: ${SURVEY_DYNAMO_ENDPOINT_URL}
-      SURVEY_LLM_TIMEOUT_SECONDS: ${SURVEY_LLM_TIMEOUT_SECONDS:-60}
-      SURVEY_SURREAL_URL: ws://surrealdb:8000/rpc
-      SURVEY_SURREAL_NS: ${SURVEY_SURREAL_NS:-agentic}
-      SURVEY_SURREAL_DB: ${SURVEY_SURREAL_DB:-citadl}
-      SURVEY_SURREAL_USER: ${SURVEY_SURREAL_USER:-root}
-      SURVEY_SURREAL_PASS: ${SURVEY_SURREAL_PASS:-root}
-      SURVEY_SEARXNG_URL: http://searxng:8080
+      <<: *api-environment
     volumes:
       - ../../bundle:/app/citadl/bundle:ro
     depends_on:
@@ -83,9 +93,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ../../..
-      dockerfile: docker/Dockerfile.web
+    image: ${SURVEY_WEB_IMAGE:?Set SURVEY_WEB_IMAGE to the pushed M11.10 web image}
     environment:
       HOST: 0.0.0.0
       ORIGIN: https://citadl.gnosis.run
@@ -95,9 +103,13 @@ services:
       - backend
     expose:
       - "3000"
+    networks:
+      - default
+      - coolify
     restart: unless-stopped
     labels:
       - traefik.enable=true
+      - traefik.docker.network=coolify
       - traefik.http.routers.citadl-surveys.rule=Host(`citadl.gnosis.run`)
       - traefik.http.routers.citadl-surveys.entrypoints=web
       - traefik.http.routers.citadl-surveys.priority=10
@@ -105,3 +117,7 @@ services:
 
 volumes:
   surreal_data:
+
+networks:
+  coolify:
+    external: true

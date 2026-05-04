@@ -7,10 +7,14 @@ from agentic_survey.auth import (
     require_admin_session,
     set_participant_session_cookie,
 )
+from agentic_survey.api.background_tasks import spawn_pre_plan_bg
 from agentic_survey.config import Settings, get_settings
 from agentic_survey.domain.outline import MicroFormField
+from agentic_survey.engine.event_bus import get_event_bus
+from agentic_survey.engine.retrieval_cache import RetrievalCache
 from agentic_survey.engine.state_machine import CampaignState
 from agentic_survey.llm.client import get_endpoint_pool
+from agentic_survey.llm.router import get_litellm_router
 from agentic_survey.repository import (
     Campaign,
     InMemoryRepository,
@@ -20,6 +24,8 @@ from agentic_survey.repository import (
 )
 
 router = APIRouter(prefix="/invites", tags=["invites"])
+
+_retrieval_cache = RetrievalCache()
 
 
 REDEEMABLE_STATES: set[CampaignState] = {
@@ -164,6 +170,14 @@ async def redeem_invite(
     get_endpoint_pool().pin_session(session.id, settings.default_interviewer_endpoint)
     repository.mark_invite_used(invite.id, session.id)
     set_participant_session_cookie(response, session.participant_token, settings)
+    spawn_pre_plan_bg(
+        session_id=session.id,
+        campaign_id=campaign.id,
+        repository=repository,
+        router=get_litellm_router(),
+        cache=_retrieval_cache,
+        bus=get_event_bus(),
+    )
 
     return RedeemInviteResponse(session=session, campaign_title=campaign.title)
 
