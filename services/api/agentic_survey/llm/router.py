@@ -133,6 +133,14 @@ class LiteLLMRouter:
         except ImportError as exc:
             raise LiteLLMRouterError("litellm is not installed") from exc
 
+        # The reasoning resolver mirrors `reasoning_mode` onto `reasoning_effort`
+        # so the same prepared request works on either OpenRouter (which honors
+        # it) or LM Studio / ollama (which ignore it). LiteLLM's strict mode
+        # raises UnsupportedParamsError when the param isn't recognized for the
+        # destination model. drop_params=True is the documented LiteLLM way to
+        # silently strip unsupported params per-backend instead of failing.
+        litellm.drop_params = True
+
         self._install_callbacks(litellm)
         config = self._load_config()
         router_settings = config.get("router_settings", {})
