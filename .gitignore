@@ -39,6 +39,15 @@ test-results/
 playwright-report/
 playwright/.cache/
 
+# E2E smoke and pre-deploy artifacts. Markdown reports stay trackable so
+# operators can land per-milestone logs alongside code; raw transcripts,
+# observations, and one-off smoke scripts stay local-only because they
+# carry session content that should never reach the repo.
+tests/e2e/artifacts/*
+!tests/e2e/artifacts/*.md
+tests/e2e/*-smoke.py
+tests/e2e/scratch/
+
 # Python environments, caches, and test output
 .venv/
 venv/
