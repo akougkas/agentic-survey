@@ -31,6 +31,7 @@ from agentic_survey.repository import (
     KnowledgeSourceKind,
     KnowledgeSourceStatus,
     OutlineRevision,
+    QuestionAnswerRecord,
     RetrievalAuditRow,
     _default_participant_faq,
     _default_study_context,
@@ -905,6 +906,90 @@ class SurrealRepository:
                 return turn
         raise KeyError(f"Interview turn not found: session={session_id!r} turn={turn_id!r}")
 
+    def upsert_question_answer(
+        self,
+        *,
+        campaign_id: str,
+        session_id: str,
+        question_id: str,
+        status: str,
+        confidence: float,
+        evidence_quote: str,
+        turn_id: str | None,
+    ) -> None:
+        now_dt = _utcnow()
+        turn_ref = RecordID("interview_turn", turn_id) if turn_id else None
+        existing = self._query(
+            """
+            SELECT id
+            FROM question_answer
+            WHERE session = type::thing('interview_session', $sid)
+              AND question_id = $qid
+            LIMIT 1;
+            """,
+            {"sid": session_id, "qid": question_id},
+        )
+        payload = {
+            "status": status,
+            "confidence": float(confidence),
+            "evidence_quote": evidence_quote or "",
+            "turn": turn_ref,
+            "updated_at": now_dt,
+        }
+        if existing:
+            answer_id = _record_id("question_answer", existing[0]["id"])
+            self._query(
+                "UPDATE type::thing('question_answer', $id) MERGE $payload;",
+                {"id": answer_id, "payload": payload},
+            )
+            return
+
+        answer_id = f"qans-{uuid4().hex[:12]}"
+        self._db().create(
+            RecordID("question_answer", answer_id),
+            {
+                "campaign": RecordID("campaign", campaign_id),
+                "session": RecordID("interview_session", session_id),
+                "question_id": question_id,
+                "status": status,
+                "confidence": float(confidence),
+                "evidence_quote": evidence_quote or "",
+                "turn": turn_ref,
+                "created_at": now_dt,
+                "updated_at": now_dt,
+            },
+        )
+
+    def list_question_answers_for_session(
+        self, session_id: str
+    ) -> list[QuestionAnswerRecord]:
+        """Return question answers for a session, newest-updated first."""
+        rows = self._query(
+            """
+            SELECT *
+            FROM question_answer
+            WHERE session = type::thing('interview_session', $sid)
+            ORDER BY updated_at DESC;
+            """,
+            {"sid": session_id},
+        )
+        return [self._row_to_question_answer(row) for row in rows or []]
+
+    def list_question_answers_for_campaign(
+        self, campaign_id: str
+    ) -> list[QuestionAnswerRecord]:
+        """Return campaign question answers ordered by session id, then question id."""
+        rows = self._query(
+            """
+            SELECT *
+            FROM question_answer
+            WHERE campaign = type::thing('campaign', $cid)
+            ORDER BY session ASC, question_id ASC;
+            """,
+            {"cid": campaign_id},
+        )
+        return [self._row_to_question_answer(row) for row in rows or []]
+
     def _row_to_campaign(self, campaign_id: str, row: dict) -> Campaign:
         return Campaign(
             id=campaign_id,
@@ -999,6 +1084,21 @@ class SurrealRepository:
             get_user_input=GetUserInputOptions.model_validate(row["get_user_input"]) if row.get("get_user_input") else None,
             retrieval_audit_id=audit_id,
             created_at=_ensure_iso(row["created_at"]),
+        )
+
+    def _row_to_question_answer(self, row: dict) -> QuestionAnswerRecord:
+        turn_ref = row.get("turn")
+        return QuestionAnswerRecord(
+            id=_record_id("question_answer", row.get("id")),
+            campaign_id=_record_id("campaign", row.get("campaign")),
+            session_id=_record_id("interview_session", row.get("session")),
+            question_id=str(row.get("question_id") or ""),
+            status=row.get("status", "pending"),
+            confidence=float(row.get("confidence") or 0.0),
+            evidence_quote=str(row.get("evidence_quote") or ""),
+            turn_id=_record_id("interview_turn", turn_ref) if turn_ref else None,
+            created_at=_ensure_iso(row.get("created_at")),
+            updated_at=_ensure_iso(row.get("updated_at")),
         )
 
     # ------------------------------------------------------------------

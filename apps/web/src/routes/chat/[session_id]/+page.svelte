@@ -10,6 +10,7 @@
     InterviewSessionRecord,
     InterviewTurnRecord,
     SessionBundleResponse,
+    SurveyQuestion,
     ValidationSnapshot
   } from '$lib/types';
 
@@ -82,7 +83,9 @@
         bundle.session.next_plan ?? null
       )
     : coverageByAxis([], [], null);
-  $: emergingConcepts = bundle ? collectConcepts(bundle.session.turns) : [];
+  $: satisfiedQuestionPrompts = bundle
+    ? satisfiedQuestions(latestAgentIntent, bundle.campaign.outline.question_bank ?? [])
+    : [];
   $: statusTone = bundle
     ? bundle.session.status === 'active'
       ? 'moss'
@@ -105,6 +108,10 @@
     '{count}',
     String(participantTurnCount)
   );
+  $: satisfiedQuestionCountText =
+    satisfiedQuestionPrompts.length === 1
+      ? '1 question covered'
+      : `${satisfiedQuestionPrompts.length} questions covered`;
   $: footerNote = isFinished
     ? chatCopy.finished_footer
     : isPaused
@@ -181,28 +188,20 @@
     return rows;
   }
 
-  function collectConcepts(
-    turns: InterviewTurnRecord[]
-  ): Array<{ label: string; isLatest: boolean }> {
-    const participantTurns = turns.filter((t) => t.role === 'participant');
-    if (participantTurns.length === 0) return [];
-    const latest = participantTurns[participantTurns.length - 1];
-    const latestKeys = new Set(
-      (latest.validation?.extracted_concepts ?? []).map((c) => c.label.toLowerCase())
-    );
-    const seen = new Set<string>();
-    const out: Array<{ label: string; isLatest: boolean }> = [];
-    for (let i = participantTurns.length - 1; i >= 0; i -= 1) {
-      const list = participantTurns[i].validation?.extracted_concepts ?? [];
-      for (const concept of list) {
-        const key = concept.label.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({ label: concept.label, isLatest: latestKeys.has(key) });
-        if (out.length >= 10) return out;
-      }
+  function satisfiedQuestions(
+    intent: BrainBIntent | null,
+    questionBank: SurveyQuestion[]
+  ): string[] {
+    if (!intent?.question_coverage?.length) return [];
+    const promptById = new Map(questionBank.map((question) => [question.id, question.prompt]));
+    const prompts: string[] = [];
+    for (const entry of intent.question_coverage) {
+      if (entry.status !== 'satisfied') continue;
+      const prompt = promptById.get(entry.question_id);
+      if (!prompt) continue;
+      prompts.push(truncate(prompt, 120));
     }
-    return out;
+    return prompts;
   }
 
   // --- SSE plumbing -------------------------------------------------------
@@ -512,17 +511,16 @@
         {/if}
 
         <div class="grid gap-2">
-          <p class="label">{chatCopy.concepts_heading}</p>
-          {#if emergingConcepts.length === 0}
-            <p class="m-0 text-xs leading-6 text-[color:var(--muted)]">
-              {chatCopy.concepts_empty}
-            </p>
-          {:else}
-            <div class="flex flex-wrap gap-2">
-              {#each emergingConcepts as concept}
-                <span class="status-badge" data-tone={concept.isLatest ? 'moss' : 'neutral'}>
-                  {concept.label}
-                </span>
+          <p class="label">Questions Mira has captured so far</p>
+          <p class="m-0 text-xs leading-6 text-[color:var(--muted)]">
+            {satisfiedQuestionCountText}
+          </p>
+          {#if satisfiedQuestionPrompts.length > 0}
+            <div class="grid max-h-44 gap-2 overflow-y-auto pr-1">
+              {#each satisfiedQuestionPrompts as prompt}
+                <p class="m-0 rounded-[8px] border border-[color:rgba(232,224,207,0.1)] bg-[color:rgba(232,224,207,0.03)] px-3 py-2 text-xs leading-5 text-[color:var(--text)]">
+                  {prompt}
+                </p>
               {/each}
             </div>
           {/if}

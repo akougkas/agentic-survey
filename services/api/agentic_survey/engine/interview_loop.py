@@ -9,10 +9,11 @@ from typing import TYPE_CHECKING, Any
 from agentic_survey.agents.brain_a import build_scaffold_intent, stream_brain_a
 from agentic_survey.agents.brain_b_interviewer import (
     InterviewerBrainBError,
+    filter_question_bank_for_role,
     run_brain_b_interviewer,
 )
 from agentic_survey.agents.validator import Validator
-from agentic_survey.domain.intent import AxisCoverage, BrainBIntent
+from agentic_survey.domain.intent import AxisCoverage, BrainBIntent, QuestionCoverage
 from agentic_survey.engine.graph_builder import apply_validator_to_graph
 
 if TYPE_CHECKING:
@@ -520,6 +521,7 @@ async def _post_turn_background_inner(
     ]
     signals = compute_signals(refreshed, campaign.outline, participant_validations)
     prior_axes = _last_axes_coverage(refreshed)
+    prior_question_coverage = _last_question_coverage(refreshed)
     transcript_tail = _transcript_tail(refreshed)
     search_fn = build_search_knowledge(
         repository=repository,
@@ -535,6 +537,10 @@ async def _post_turn_background_inner(
     )
     grounding_snapshot = _list_approved_grounding_sources(repository, campaign_id)
     participant_context = dict(refreshed.micro_form_answers or {})
+    eligible_question_ids = _eligible_question_ids(
+        campaign.outline.question_bank,
+        participant_context,
+    )
     intent = await run_brain_b_interviewer(
         outline=campaign.outline,
         transcript_tail=transcript_tail,
@@ -545,8 +551,23 @@ async def _post_turn_background_inner(
         graph_neighborhood=neighborhood_fn,
         participant_context=participant_context,
         prior_axes_coverage=prior_axes,
+        eligible_question_ids=eligible_question_ids,
+        prior_question_coverage=prior_question_coverage,
+    )
+    intent = _attach_question_coverage_turn_ids(
+        intent,
+        prior_question_coverage=prior_question_coverage,
+        participant_turn_id=participant_turn_id,
     )
     repository.update_next_plan(session_id, intent)
+    _persist_question_answers(
+        repository=repository,
+        campaign_id=campaign_id,
+        session_id=session_id,
+        participant_turn_id=participant_turn_id,
+        prior_question_coverage=prior_question_coverage,
+        intent=intent,
+    )
     bus.publish_many(
         campaign_id,
         [
@@ -587,6 +608,7 @@ async def run_pre_plan_background(
             return
         transcript_tail = _transcript_tail(session)
         signals = compute_signals(session, campaign.outline, [])
+        prior_question_coverage = _last_question_coverage(session)
         search_fn = build_search_knowledge(
             repository=repository,
             campaign_id=campaign_id,
@@ -601,6 +623,10 @@ async def run_pre_plan_background(
         )
         grounding_snapshot = _list_approved_grounding_sources(repository, campaign_id)
         participant_context = dict(session.micro_form_answers or {})
+        eligible_question_ids = _eligible_question_ids(
+            campaign.outline.question_bank,
+            participant_context,
+        )
         intent = await run_brain_b_interviewer(
             outline=campaign.outline,
             transcript_tail=transcript_tail,
@@ -611,6 +637,8 @@ async def run_pre_plan_background(
             graph_neighborhood=neighborhood_fn,
             participant_context=participant_context,
             prior_axes_coverage=[],
+            eligible_question_ids=eligible_question_ids,
+            prior_question_coverage=prior_question_coverage,
         )
         repository.update_next_plan(session_id, intent)
         bus.publish_many(
@@ -719,6 +747,100 @@ def _last_axes_coverage(session: InterviewSessionRecord) -> list[AxisCoverage]:
         if intent.axes_coverage:
             return [c.model_copy(deep=True) for c in intent.axes_coverage]
     return []
+
+
+def _last_question_coverage(
+    session: InterviewSessionRecord,
+) -> list[QuestionCoverage]:
+    """Return the most recent ``question_coverage`` from an agent turn.
+
+    Empty list on cold start. The returned objects are deep copies so merge
+    enforcement and persistence can compare safely without aliasing repository
+    state.
+    """
+    for turn in reversed(session.turns):
+        if turn.role != "agent":
+            continue
+        intent = turn.brain_b_intent
+        if intent is None:
+            continue
+        if intent.question_coverage:
+            return [c.model_copy(deep=True) for c in intent.question_coverage]
+    return []
+
+
+def _eligible_question_ids(
+    question_bank,
+    participant_context: dict[str, str],
+) -> list[str]:
+    role_self_description = participant_context.get("role_self_description", "")
+    eligible_questions = filter_question_bank_for_role(
+        question_bank,
+        role_self_description,
+    )
+    return [question.id for question in eligible_questions]
+
+
+def _question_coverage_differs(
+    prior: QuestionCoverage | None,
+    current: QuestionCoverage,
+) -> bool:
+    if prior is None:
+        return current.status != "pending"
+    return (
+        prior.status != current.status
+        or prior.confidence != current.confidence
+        or prior.evidence_quote != current.evidence_quote
+        or prior.turn_id != current.turn_id
+    )
+
+
+def _attach_question_coverage_turn_ids(
+    intent: BrainBIntent,
+    *,
+    prior_question_coverage: list[QuestionCoverage],
+    participant_turn_id: str,
+) -> BrainBIntent:
+    prior_by_id = {entry.question_id: entry for entry in prior_question_coverage}
+    attached: list[QuestionCoverage] = []
+    for entry in intent.question_coverage:
+        candidate = entry.model_copy(deep=True)
+        prior = prior_by_id.get(candidate.question_id)
+        if _question_coverage_differs(prior, candidate):
+            candidate.turn_id = participant_turn_id
+        attached.append(candidate)
+    return intent.model_copy(update={"question_coverage": attached})
+
+
+def _persist_question_answers(
+    *,
+    repository: InMemoryRepository,
+    campaign_id: str,
+    session_id: str,
+    participant_turn_id: str,
+    prior_question_coverage: list[QuestionCoverage],
+    intent: BrainBIntent,
+) -> None:
+    prior_by_id = {entry.question_id: entry for entry in prior_question_coverage}
+    for entry in intent.question_coverage:
+        if not _question_coverage_differs(prior_by_id.get(entry.question_id), entry):
+            continue
+        try:
+            repository.upsert_question_answer(
+                campaign_id=campaign_id,
+                session_id=session_id,
+                question_id=entry.question_id,
+                status=entry.status,
+                confidence=entry.confidence,
+                evidence_quote=entry.evidence_quote,
+                turn_id=participant_turn_id,
+            )
+        except Exception:
+            logger.exception(
+                "question_answer persistence failed: session=%s question_id=%s",
+                session_id,
+                entry.question_id,
+            )
 
 
 def _list_approved_grounding_sources(repository, campaign_id: str) -> list[dict[str, Any]]:

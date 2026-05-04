@@ -37,6 +37,18 @@ export async function getJson<TResponse>(path: string): Promise<TResponse> {
   return (await response.json()) as TResponse;
 }
 
+export async function getText(path: string): Promise<string> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: 'same-origin'
+  });
+
+  if (!response.ok) {
+    throw await parseError(response);
+  }
+
+  return await response.text();
+}
+
 export async function postJson<TResponse>(
   path: string,
   payload: unknown

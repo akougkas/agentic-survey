@@ -10,13 +10,14 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from agentic_survey.agents.tools.registry import ToolDispatchError, ToolRegistry
-from agentic_survey.domain.intent import AxisCoverage, BrainBIntent
+from agentic_survey.domain.intent import AxisCoverage, BrainBIntent, QuestionCoverage
 
 __all__ = [
     "BrainBLoopError",
     "BrainBLoopResult",
     "BrainBToolBudgetExceeded",
     "ToolCallRecord",
+    "_merge_question_coverage",
     "run_brain_b_with_tools",
 ]
 
@@ -66,6 +67,14 @@ class BrainBLoopResult:
     intent: BrainBIntent
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
     raw_output: str = ""
+
+
+@dataclass(slots=True)
+class _QuestionCoverageMergeStats:
+    emitted_count: int = 0
+    dropped_out_of_bank: int = 0
+    regressions_overridden: int = 0
+    final_count: int = 0
 
 
 def _brain_b_response_format() -> dict[str, Any]:
@@ -269,6 +278,101 @@ def _enforce_close_guard(
     return intent
 
 
+_QUESTION_TRANSITIONS: dict[str, set[str]] = {
+    "pending": {"targeting", "partial", "satisfied", "skipped"},
+    "targeting": {"targeting", "partial", "satisfied", "skipped"},
+    "partial": {"partial", "satisfied", "skipped"},
+    "satisfied": {"satisfied"},
+    "skipped": {"skipped", "partial"},
+}
+
+
+def _question_transition_allowed(previous: str, proposed: str) -> bool:
+    if proposed == "pending":
+        return previous == "pending"
+    allowed = _QUESTION_TRANSITIONS.get(previous, set())
+    return proposed in allowed
+
+
+def _merge_question_coverage_with_stats(
+    prior_question_coverage: list[QuestionCoverage] | None,
+    emitted_question_coverage: list[QuestionCoverage] | None,
+    *,
+    eligible_ids: set[str],
+) -> tuple[list[QuestionCoverage], _QuestionCoverageMergeStats]:
+    stats = _QuestionCoverageMergeStats(
+        emitted_count=len(emitted_question_coverage or [])
+    )
+    merged_by_id: dict[str, QuestionCoverage] = {}
+    order: list[str] = []
+    for entry in prior_question_coverage or []:
+        question_id = entry.question_id.strip()
+        if not question_id or question_id not in eligible_ids:
+            continue
+        merged_by_id[question_id] = entry.model_copy(deep=True)
+        if question_id not in order:
+            order.append(question_id)
+
+    newest_targeting_id = ""
+    for emitted in emitted_question_coverage or []:
+        question_id = emitted.question_id.strip()
+        if not question_id or question_id not in eligible_ids:
+            stats.dropped_out_of_bank += 1
+            continue
+        prior = merged_by_id.get(question_id)
+        prior_status = prior.status if prior is not None else "pending"
+        proposed_status = emitted.status
+        if not _question_transition_allowed(prior_status, proposed_status):
+            stats.regressions_overridden += 1
+            continue
+        if prior is None and proposed_status == "pending":
+            continue
+        merged_by_id[question_id] = emitted.model_copy(
+            update={"question_id": question_id},
+            deep=True,
+        )
+        if question_id not in order:
+            order.append(question_id)
+        if proposed_status == "targeting":
+            newest_targeting_id = question_id
+
+    targeting_ids = [
+        question_id
+        for question_id in order
+        if merged_by_id.get(question_id) is not None
+        and merged_by_id[question_id].status == "targeting"
+    ]
+    if len(targeting_ids) > 1:
+        targeting_winner = newest_targeting_id or targeting_ids[-1]
+        for question_id in targeting_ids:
+            if question_id == targeting_winner:
+                continue
+            current = merged_by_id[question_id]
+            merged_by_id[question_id] = current.model_copy(
+                update={"status": "partial"},
+                deep=True,
+            )
+
+    merged = [merged_by_id[question_id] for question_id in order if question_id in merged_by_id]
+    stats.final_count = len(merged)
+    return merged, stats
+
+
+def _merge_question_coverage(
+    prior_question_coverage: list[QuestionCoverage] | None,
+    emitted_question_coverage: list[QuestionCoverage] | None,
+    *,
+    eligible_ids: set[str],
+) -> list[QuestionCoverage]:
+    """Merge Brain B's per-turn question coverage emission into prior state."""
+    merged, _stats = _merge_question_coverage_with_stats(
+        prior_question_coverage,
+        emitted_question_coverage,
+        eligible_ids=eligible_ids,
+    )
+    return merged
+
+
 async def run_brain_b_with_tools(
     *,
     surface: Surface,
@@ -281,6 +385,8 @@ async def run_brain_b_with_tools(
     rubric_axes: list[str] | None = None,
     prior_axes_coverage: list[AxisCoverage] | None = None,
     close_guard_axes: list[str] | None = None,
+    eligible_question_ids: list[str] | None = None,
+    prior_question_coverage: list[QuestionCoverage] | None = None,
 ) -> BrainBLoopResult:
     """Single tool-calling loop shared by Designer and Interviewer Brain B.
 
@@ -302,6 +408,12 @@ async def run_brain_b_with_tools(
     whenever any listed axis is missing or scored ``0.0``; the flip is logged
     for audit. Both knobs default to ``None`` so the Designer surface keeps
     its existing permissive behavior.
+
+    When ``eligible_question_ids`` is provided, Interviewer ``question_coverage``
+    is merged into ``prior_question_coverage`` with out-of-bank emissions
+    dropped, terminal statuses protected, and only one ``targeting`` entry
+    retained. ``None`` disables the enforcement path for surfaces that do not
+    use a question bank.
     """
     system_prompt = _prompt_path(surface).read_text(encoding="utf-8").strip()
     messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
@@ -452,6 +564,25 @@ async def run_brain_b_with_tools(
                 intent,
                 close_guard_axes=close_guard_axes,
                 surface=surface,
+            )
+        if eligible_question_ids is not None:
+            eligible_ids = {qid.strip() for qid in eligible_question_ids if qid and qid.strip()}
+            emitted_count = len(intent.question_coverage)
+            merged_question_coverage, merge_stats = _merge_question_coverage_with_stats(
+                prior_question_coverage,
+                intent.question_coverage,
+                eligible_ids=eligible_ids,
+            )
+            intent = intent.model_copy(
+                update={"question_coverage": merged_question_coverage}
+            )
+            logger.info(
+                "brain_b question_coverage merge surface=%s emitted=%s dropped_out_of_bank=%s regressions_overridden=%s final=%s",
+                surface,
+                emitted_count,
+                merge_stats.dropped_out_of_bank,
+                merge_stats.regressions_overridden,
+                merge_stats.final_count,
             )
         return BrainBLoopResult(intent=intent, tool_calls=tool_calls_made, raw_output=raw_output)
 

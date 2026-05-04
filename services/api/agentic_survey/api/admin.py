@@ -1,8 +1,14 @@
+import csv
+import io
+import json
+from collections.abc import Iterable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
+from agentic_survey.agents.brain_b_interviewer import filter_question_bank_for_role
 from agentic_survey.auth import (
     clear_admin_session_cookie,
     get_admin_session_from_request,
@@ -10,8 +16,15 @@ from agentic_survey.auth import (
     set_admin_session_cookie,
 )
 from agentic_survey.config import Settings, get_settings
+from agentic_survey.domain.outline import SurveyQuestion
 from agentic_survey.engine.event_bus import get_event_bus
-from agentic_survey.repository import AdminSession, InMemoryRepository, get_repository
+from agentic_survey.repository import (
+    AdminSession,
+    InMemoryRepository,
+    InterviewSessionRecord,
+    QuestionAnswerRecord,
+    get_repository,
+)
 from agentic_survey.services.rag_export import sync_campaign_rag_folder
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -42,6 +55,26 @@ class AdminLoginRequest(BaseModel):
 class AdminSessionResponse(BaseModel):
     authenticated: bool
     expires_at: str | None = None
+
+
+_ANSWER_EXPORT_COLUMNS = [
+    "session_id",
+    "identity_label",
+    "consent_mode",
+    "started_at",
+    "finished_at",
+    "role_self_description",
+    "evidence_of_belonging",
+    "question_id",
+    "tier",
+    "axis_tag",
+    "applies_to_roles",
+    "status",
+    "confidence",
+    "evidence_quote",
+    "turn_id",
+    "prompt",
+]
 
 
 @router.post("/login")
@@ -87,6 +120,140 @@ def _session_response(session: AdminSession) -> AdminSessionResponse:
         authenticated=True,
         expires_at=session.expires_at.isoformat(),
     )
+
+
+@router.get(
+    "/campaigns/{campaign_id}/answers.csv",
+    dependencies=[Depends(require_admin_session)],
+)
+async def stream_campaign_answers_csv(
+    campaign_id: str,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> StreamingResponse:
+    """Stream one row per eligible session and question pair as CSV.
+
+    Sessions get rows only for questions eligible for that participant's
+    role_self_description. Ineligible questions are omitted. Eligible questions
+    with no durable answer row are emitted as pending with empty evidence cells.
+    """
+    rows = _answer_export_rows(campaign_id, repository)
+
+    def generate() -> Iterable[str]:
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=_ANSWER_EXPORT_COLUMNS)
+        writer.writeheader()
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        for row in rows:
+            writer.writerow(row)
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/csv",
+        headers={
+            "content-disposition": f'attachment; filename="{campaign_id}-answers.csv"'
+        },
+    )
+
+
+@router.get(
+    "/campaigns/{campaign_id}/answers.jsonl",
+    dependencies=[Depends(require_admin_session)],
+)
+async def stream_campaign_answers_jsonl(
+    campaign_id: str,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> StreamingResponse:
+    """Stream one JSON object per eligible session and question pair.
+
+    Sessions get rows only for questions eligible for that participant's
+    role_self_description. Ineligible questions are omitted. Eligible questions
+    with no durable answer row are emitted as pending with empty evidence cells.
+    """
+    rows = _answer_export_rows(campaign_id, repository)
+
+    def generate() -> Iterable[str]:
+        for row in rows:
+            yield json.dumps(row, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson",
+    )
+
+
+def _answer_export_rows(
+    campaign_id: str,
+    repository: InMemoryRepository,
+) -> Iterable[dict[str, Any]]:
+    campaign = repository.get_campaign(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    sessions = repository.list_interview_sessions(campaign_id)
+    answers = repository.list_question_answers_for_campaign(campaign_id)
+    answer_by_session_question = {
+        (answer.session_id, answer.question_id): answer for answer in answers
+    }
+    return _iter_answer_export_rows(
+        question_bank=campaign.outline.question_bank,
+        sessions=sessions,
+        answer_by_session_question=answer_by_session_question,
+    )
+
+
+def _iter_answer_export_rows(
+    *,
+    question_bank: list[SurveyQuestion],
+    sessions: list[InterviewSessionRecord],
+    answer_by_session_question: dict[tuple[str, str], QuestionAnswerRecord],
+) -> Iterable[dict[str, Any]]:
+    for session in sessions:
+        role_self_description = (session.micro_form_answers or {}).get(
+            "role_self_description",
+            "",
+        )
+        eligible_questions = filter_question_bank_for_role(
+            question_bank,
+            role_self_description,
+        )
+        for question in eligible_questions:
+            answer = answer_by_session_question.get((session.id, question.id))
+            yield _answer_export_row(
+                session=session,
+                question=question,
+                answer=answer,
+            )
+
+
+def _answer_export_row(
+    *,
+    session: InterviewSessionRecord,
+    question: SurveyQuestion,
+    answer: QuestionAnswerRecord | None,
+) -> dict[str, Any]:
+    answers = session.micro_form_answers or {}
+    return {
+        "session_id": session.id,
+        "identity_label": session.identity_label,
+        "consent_mode": session.consent_mode,
+        "started_at": session.started_at,
+        "finished_at": session.finished_at or "",
+        "role_self_description": answers.get("role_self_description", ""),
+        "evidence_of_belonging": answers.get("evidence_of_belonging", ""),
+        "question_id": question.id,
+        "tier": question.tier,
+        "axis_tag": question.axis_tag,
+        "applies_to_roles": "; ".join(question.applies_to_roles),
+        "status": answer.status if answer is not None else "pending",
+        "confidence": answer.confidence if answer is not None else 0,
+        "evidence_quote": answer.evidence_quote if answer is not None else "",
+        "turn_id": answer.turn_id if answer is not None and answer.turn_id else "",
+        "prompt": question.prompt,
+    }
 
 
 @router.get(

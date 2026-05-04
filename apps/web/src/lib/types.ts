@@ -39,6 +39,7 @@ export interface CatalogEntryPayload {
 export interface OutlineRubric {
   coverage_dimensions: string[];
   risk_checks: string[];
+  mandatory_close_axes: string[];
 }
 
 export interface MicroFormField {
@@ -75,6 +76,9 @@ export interface SurveyQuestion {
   applies_to_roles: string[];
   axis_tag: string;
   notes: string;
+  follow_up_hints: string[];
+  saturation_signals: string[];
+  leading_language_avoid: string[];
 }
 
 export interface OutlineArtifact {
@@ -448,6 +452,25 @@ export interface InviteInfoResponse {
 export interface SessionBundleResponse {
   session: InterviewSessionRecord;
   campaign: Campaign;
+}
+
+export interface QuestionAnswerRow {
+  session_id: string;
+  identity_label: string;
+  consent_mode: string;
+  started_at: string;
+  finished_at: string;
+  role_self_description: string;
+  evidence_of_belonging: string;
+  question_id: string;
+  tier: string;
+  axis_tag: string;
+  applies_to_roles: string;
+  status: QuestionCoverageStatus;
+  confidence: number;
+  evidence_quote: string;
+  turn_id: string;
+  prompt: string;
 }
 
 export interface RedeemInviteResponse {

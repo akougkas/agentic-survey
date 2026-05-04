@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from agentic_survey.domain.intent import BrainBIntent
+from agentic_survey.domain.intent import BrainBIntent, QuestionCoverageStatus
 from agentic_survey.domain.outline import (
     MicroFormField,
     OutlineArtifact,
@@ -127,6 +127,19 @@ class RetrievalAuditRow(BaseModel):
     mode: RetrievalMode = "hybrid"
     cache_hit: bool = False
     created_at: str
+
+
+class QuestionAnswerRecord(BaseModel):
+    id: str
+    campaign_id: str
+    session_id: str
+    question_id: str
+    status: QuestionCoverageStatus
+    confidence: float
+    evidence_quote: str = ""
+    turn_id: str | None = None
+    created_at: str
+    updated_at: str
 
 
 class ChunkHit(BaseModel):
@@ -357,6 +370,7 @@ class InMemoryRepository:
         self._concept_embeddings: dict[str, list[float]] = {}
         self._graph_edges: list[dict] = []
         self._campaign_exports: list[dict] = []
+        self._question_answers: dict[tuple[str, str], QuestionAnswerRecord] = {}
         self._seed_catalog_locked()
 
     def create_admin_session(self, ttl_hours: int) -> AdminSession:
@@ -830,6 +844,67 @@ class InMemoryRepository:
                 session.updated_at = _timestamp()
                 return turn.model_copy(deep=True)
         raise KeyError(f"Interview turn not found: session={session_id!r} turn={turn_id!r}")
+
+    def upsert_question_answer(
+        self,
+        *,
+        campaign_id: str,
+        session_id: str,
+        question_id: str,
+        status: QuestionCoverageStatus,
+        confidence: float,
+        evidence_quote: str,
+        turn_id: str | None,
+    ) -> None:
+        now = _timestamp()
+        key = (session_id, question_id)
+        with self._lock:
+            existing = self._question_answers.get(key)
+            if existing is None:
+                self._question_answers[key] = QuestionAnswerRecord(
+                    id=f"qans-{uuid4().hex[:12]}",
+                    campaign_id=campaign_id,
+                    session_id=session_id,
+                    question_id=question_id,
+                    status=status,
+                    confidence=float(confidence),
+                    evidence_quote=evidence_quote or "",
+                    turn_id=turn_id or None,
+                    created_at=now,
+                    updated_at=now,
+                )
+                return
+            existing.status = status
+            existing.confidence = float(confidence)
+            existing.evidence_quote = evidence_quote or ""
+            existing.turn_id = turn_id or None
+            existing.updated_at = now
+
+    def list_question_answers_for_session(
+        self, session_id: str
+    ) -> list[QuestionAnswerRecord]:
+        """Return question answers for a session, newest-updated first."""
+        with self._lock:
+            rows = [
+                row.model_copy(deep=True)
+                for row in self._question_answers.values()
+                if row.session_id == session_id
+            ]
+        rows.sort(key=lambda row: row.updated_at, reverse=True)
+        return rows
+
+    def list_question_answers_for_campaign(
+        self, campaign_id: str
+    ) -> list[QuestionAnswerRecord]:
+        """Return campaign question answers ordered by session id, then question id."""
+        with self._lock:
+            rows = [
+                row.model_copy(deep=True)
+                for row in self._question_answers.values()
+                if row.campaign_id == campaign_id
+            ]
+        rows.sort(key=lambda row: (row.session_id, row.question_id))
+        return rows
 
     def _build_outline(self, *, title: str, min_n: int, max_n: int) -> OutlineArtifact:
         base_query = " ".join(part for part in title.split() if part).strip().lower()

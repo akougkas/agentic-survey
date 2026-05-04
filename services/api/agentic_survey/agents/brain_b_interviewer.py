@@ -17,12 +17,13 @@ from agentic_survey.agents.tools.definitions import (
     search_knowledge_tool,
 )
 from agentic_survey.agents.tools.registry import ToolRegistry
-from agentic_survey.domain.intent import AxisCoverage, BrainBIntent
-from agentic_survey.domain.outline import OutlineArtifact
+from agentic_survey.domain.intent import AxisCoverage, BrainBIntent, QuestionCoverage
+from agentic_survey.domain.outline import OutlineArtifact, SurveyQuestion
 from agentic_survey.engine.session_policy import SessionSignals
 
 __all__ = [
     "BrainBToolBudgetExceeded",
+    "filter_question_bank_for_role",
     "GraphNeighborhood",
     "InterviewerBrainBError",
     "SearchKnowledge",
@@ -48,6 +49,8 @@ async def run_brain_b_interviewer(
     max_tool_calls: int = 4,
     participant_context: dict[str, str] | None = None,
     prior_axes_coverage: list[AxisCoverage] | None = None,
+    eligible_question_ids: list[str] | None = None,
+    prior_question_coverage: list[QuestionCoverage] | None = None,
 ) -> BrainBIntent:
     """Run Interviewer Brain B as a tool-calling agent.
 
@@ -68,8 +71,30 @@ async def run_brain_b_interviewer(
     if graph_neighborhood is not None:
         tools.append(get_graph_neighborhood_tool(neighborhood_fn=graph_neighborhood))
     registry = ToolRegistry(tools)
+    role_self_description = ""
+    if participant_context:
+        raw_role = participant_context.get("role_self_description", "")
+        if isinstance(raw_role, str):
+            role_self_description = raw_role.strip()
+    eligible_questions = filter_question_bank_for_role(
+        outline.question_bank,
+        role_self_description,
+    )
+    if eligible_question_ids is None:
+        eligible_question_ids = [question.id for question in eligible_questions]
+
     system_context = [
         "Current outline (JSON):\n" + outline.model_dump_json(indent=2),
+        "Question bank (eligible questions for this respondent):\n"
+        + json.dumps(
+            [_question_for_prompt(question) for question in eligible_questions],
+            indent=2,
+        ),
+        "Prior question coverage (server enforces monotonicity):\n"
+        + json.dumps(
+            [entry.model_dump() for entry in prior_question_coverage or []],
+            indent=2,
+        ),
         "Session signals (advisory; close is still your call):\n"
         + session_signals.model_dump_json(indent=2),
     ]
@@ -102,5 +127,40 @@ async def run_brain_b_interviewer(
         rubric_axes=list(outline.axes),
         prior_axes_coverage=prior_axes_coverage,
         close_guard_axes=list(outline.rubric.mandatory_close_axes),
+        eligible_question_ids=eligible_question_ids,
+        prior_question_coverage=prior_question_coverage,
     )
     return result.intent
+
+
+def filter_question_bank_for_role(
+    question_bank: list[SurveyQuestion],
+    role_self_description: str | None,
+) -> list[SurveyQuestion]:
+    """Return questions whose role routing applies to this respondent.
+
+    An empty or missing role keeps the full bank so Brain B is not forced into
+    a false negative before the participant has supplied or corrected the
+    micro-form role.
+    """
+    role = (role_self_description or "").strip()
+    if not role:
+        return [question.model_copy(deep=True) for question in question_bank]
+    eligible: list[SurveyQuestion] = []
+    for question in question_bank:
+        roles = [item.strip() for item in question.applies_to_roles if item.strip()]
+        if not roles or role in roles:
+            eligible.append(question.model_copy(deep=True))
+    return eligible
+
+
+def _question_for_prompt(question: SurveyQuestion) -> dict[str, Any]:
+    return {
+        "id": question.id,
+        "prompt": question.prompt,
+        "axis_tag": question.axis_tag,
+        "notes": question.notes,
+        "follow_up_hints": list(question.follow_up_hints),
+        "saturation_signals": list(question.saturation_signals),
+        "leading_language_avoid": list(question.leading_language_avoid),
+    }

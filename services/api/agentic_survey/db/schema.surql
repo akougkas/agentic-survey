@@ -143,6 +143,22 @@ DEFINE FIELD IF NOT EXISTS payload ON TABLE interview_event TYPE object;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE interview_event TYPE datetime DEFAULT time::now();
 DEFINE INDEX IF NOT EXISTS interview_event_session_idx ON TABLE interview_event COLUMNS session, created_at;
 
+DEFINE TABLE IF NOT EXISTS question_answer SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS campaign ON TABLE question_answer TYPE record<campaign>;
+DEFINE FIELD IF NOT EXISTS session ON TABLE question_answer TYPE record<interview_session>;
+DEFINE FIELD IF NOT EXISTS question_id ON TABLE question_answer TYPE string;
+DEFINE FIELD IF NOT EXISTS status ON TABLE question_answer TYPE string
+    ASSERT $value IN ['pending','targeting','partial','satisfied','skipped'];
+DEFINE FIELD IF NOT EXISTS confidence ON TABLE question_answer TYPE float;
+DEFINE FIELD IF NOT EXISTS evidence_quote ON TABLE question_answer TYPE string DEFAULT "";
+DEFINE FIELD IF NOT EXISTS turn ON TABLE question_answer TYPE option<record<interview_turn>>;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE question_answer TYPE datetime DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated_at ON TABLE question_answer TYPE datetime DEFAULT time::now();
+DEFINE INDEX IF NOT EXISTS question_answer_session_question_unique
+    ON TABLE question_answer COLUMNS session, question_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS question_answer_campaign_idx
+    ON TABLE question_answer COLUMNS campaign;
+
 DEFINE TABLE IF NOT EXISTS knowledge_source SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS campaign ON TABLE knowledge_source TYPE record<campaign>;
 DEFINE FIELD IF NOT EXISTS kind ON TABLE knowledge_source TYPE string
