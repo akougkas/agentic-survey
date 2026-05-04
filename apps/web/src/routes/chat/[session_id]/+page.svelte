@@ -369,6 +369,11 @@
       return;
     }
 
+    if (event.detail.content.trim() === 'End conversation') {
+      await finishSession();
+      return;
+    }
+
     sendPending = true;
     error = '';
 
@@ -401,6 +406,28 @@
       );
     } catch (caught) {
       error = caught instanceof ApiError ? caught.message : 'Unable to send that turn right now.';
+    } finally {
+      sendPending = false;
+    }
+  }
+
+  async function finishSession(): Promise<void> {
+    if (!bundle || isFinished) {
+      return;
+    }
+    sendPending = true;
+    error = '';
+    try {
+      const finishedSession = await postJson<InterviewSessionRecord>(
+        `/sessions/${encodeURIComponent(sessionId)}/finish`,
+        {}
+      );
+      bundle = {
+        ...bundle,
+        session: { ...bundle.session, ...finishedSession }
+      };
+    } catch (caught) {
+      error = caught instanceof ApiError ? caught.message : 'Unable to end the conversation right now.';
     } finally {
       sendPending = false;
     }

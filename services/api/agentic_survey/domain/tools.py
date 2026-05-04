@@ -10,13 +10,15 @@ DISCUSS_MORE_OPTION = "Discuss this more."
 class GetUserInputOptions(BaseModel):
     """Chip-set contract emitted by Brain B and rendered verbatim by Brain A.
 
-    Option count is 3-5; the final option must be literally
+    Substantive turns carry 3-5 options; closing turns collapse to exactly
+    two: a single closing affordance plus the canonical
+    ``"Discuss this more."``. The final option MUST be literally
     ``"Discuss this more."`` so the participant always has an escape hatch
     into free conversation. See designer-interview §7 and lifecycles §2.
     """
 
     question: str
-    options: list[str] = Field(min_length=3, max_length=5)
+    options: list[str] = Field(min_length=2, max_length=5)
     allow_free_text: bool = True
 
     @model_validator(mode="after")

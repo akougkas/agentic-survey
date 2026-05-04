@@ -21,7 +21,9 @@ __all__ = [
     "BrainBLoopResult",
     "BrainBToolBudgetExceeded",
     "ToolCallRecord",
+    "_apply_closing_prose_guard",
     "_floor_active_axis",
+    "_force_axis_rotation",
     "_merge_question_coverage",
     "_question_intent_is_axis_label",
     "run_brain_b_with_tools",
@@ -139,8 +141,112 @@ def _sanitize_option(raw: str) -> str:
     return text
 
 
-def _normalize_discuss_more(raw: str) -> str:
-    """Force ``get_user_input.options`` to a clean 3-4 chip set ending with
+_GROUNDING_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_./-]{2,}")
+_GROUNDING_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "into",
+        "your",
+        "their",
+        "would",
+        "could",
+        "about",
+        "what",
+        "when",
+        "where",
+        "which",
+        "those",
+        "these",
+        "have",
+        "been",
+        "being",
+        "more",
+        "than",
+        "that",
+        "this",
+        "very",
+        "some",
+        "most",
+        "just",
+        "much",
+        "also",
+        "still",
+        "every",
+        "after",
+        "before",
+        "during",
+        "while",
+        "because",
+        "though",
+        "without",
+        "within",
+        "across",
+        "through",
+        "around",
+        "between",
+        "discuss",
+    }
+)
+
+
+def _grounding_corpus(
+    last_participant_message: str,
+    participant_extracted_concepts: list[str] | None,
+) -> set[str]:
+    """Build the case-insensitive token / phrase corpus a chip must overlap.
+
+    Concept labels enter whole-phrase (lowercased, stripped) so multi-word
+    concepts like ``Lustre filesystem`` match a chip that contains the same
+    phrase. Tokens from the participant's last message enter individually,
+    skipping a small stopword set so common conjunctions do not falsely
+    ground a generic chip. An empty corpus disables the filter so a cold
+    start does not strip the model's only chips.
+    """
+    corpus: set[str] = set()
+    for label in participant_extracted_concepts or []:
+        if not isinstance(label, str):
+            continue
+        cleaned = label.strip().lower()
+        if cleaned:
+            corpus.add(cleaned)
+    if last_participant_message:
+        for match in _GROUNDING_TOKEN_RE.finditer(last_participant_message):
+            token = match.group(0).strip(".,;:!?\"'()[]").lower()
+            if not token or len(token) < 4:
+                continue
+            if token in _GROUNDING_STOPWORDS:
+                continue
+            corpus.add(token)
+    return corpus
+
+
+def _chip_is_grounded(chip: str, corpus: set[str]) -> bool:
+    if not corpus:
+        return True
+    text = chip.lower()
+    for token in corpus:
+        if not token:
+            continue
+        if " " in token or "/" in token or "-" in token or "_" in token:
+            if token in text:
+                return True
+            continue
+        if re.search(rf"\b{re.escape(token)}\b", text):
+            return True
+    return False
+
+
+def _normalize_discuss_more(
+    raw: str,
+    *,
+    last_participant_message: str = "",
+    participant_extracted_concepts: list[str] | None = None,
+) -> str:
+    """Force ``get_user_input.options`` to a clean chip set ending with
     'Discuss this more.'.
 
     Local models sometimes skip the verbatim contract, parrot the prompt's
@@ -153,6 +259,10 @@ def _normalize_discuss_more(raw: str) -> str:
       cannot reach the UI.
     - Drops chips whose text matches a known schema-rule fragment so
       prompt leakage like ``options_are_3_or_4_strings…`` never displays.
+    - Drops chips that fail the grounding check: zero overlap with the
+      participant's last message AND zero overlap with the validator's
+      extracted concept labels for that turn. An empty corpus (cold start)
+      passes everything through.
     - Deduplicates case-insensitively while preserving first occurrence.
     - Caps the total to ``_OPTION_TOTAL_CAP`` (3 anchors + the canonical
       "Discuss this more." closing).
@@ -170,8 +280,14 @@ def _normalize_discuss_more(raw: str) -> str:
     options = gui.get("options")
     if not isinstance(options, list) or not options:
         return raw
+    grounding_corpus = _grounding_corpus(
+        last_participant_message,
+        participant_extracted_concepts,
+    )
     cleaned: list[str] = []
+    fallback: list[str] = []
     seen: set[str] = set()
+    dropped_ungrounded = 0
     for opt in options:
         text = _sanitize_option(str(opt))
         if not text:
@@ -183,10 +299,29 @@ def _normalize_discuss_more(raw: str) -> str:
             continue
         if lowered in seen:
             continue
+        if not _chip_is_grounded(text, grounding_corpus):
+            dropped_ungrounded += 1
+            if len(fallback) < _OPTION_TOTAL_CAP - 1:
+                fallback.append(text)
+            continue
         seen.add(lowered)
         cleaned.append(text)
         if len(cleaned) >= _OPTION_TOTAL_CAP - 1:
             break
+    if dropped_ungrounded:
+        logger.warning(
+            "brain_b chip grounding filter dropped chips count=%s remaining=%s",
+            dropped_ungrounded,
+            len(cleaned),
+        )
+    if not cleaned and fallback:
+        # Filter killed every chip. Schema demands min 2 options; keeping the
+        # least-bad ungrounded chip as a single anchor lets the turn reach
+        # the participant. The next turn's planner sees the filter warning.
+        cleaned.append(fallback[0])
+        logger.warning(
+            "brain_b chip grounding filter saved one ungrounded chip surface=fallback",
+        )
     cleaned.append(_DISCUSS_MORE)
     gui["options"] = cleaned
     payload["get_user_input"] = gui
@@ -541,6 +676,135 @@ def _floor_active_axis(
     return intent.model_copy(update={"axes_coverage": new_axes})
 
 
+_ROTATION_TRIGGER_COUNT = 2
+
+
+_CLOSING_PROSE_PHRASES: tuple[str, ...] = (
+    "i have enough to wrap up",
+    "thank you for the time",
+    "thanks for the time",
+    "ready to wrap",
+    "we can wrap",
+    "i'll close us out",
+    "i will close us out",
+    "i think we are done",
+    "i think that's all i need",
+    "i think that is all i need",
+    "we're done here",
+    "we are done here",
+)
+
+
+def _apply_closing_prose_guard(
+    intent: BrainBIntent,
+    *,
+    reply_text: str,
+) -> BrainBIntent:
+    """Force ``should_close`` and a closing chip set when prose closes the turn.
+
+    Brain A occasionally writes closing language ("I have enough to wrap up.
+    Thank you for the time.") even when Brain B's structured intent still
+    reports ``should_close=False`` and emits substantive follow-up chips. The
+    operator console then sees an active session with closing prose; the
+    participant sees quote-back chips for a turn that just told them goodbye.
+
+    This guard reconciles the two by scanning ``reply_text`` against a small
+    allowlist of closing phrases. When any phrase matches and the intent
+    still has ``should_close=False``, the guard rewrites ``should_close`` to
+    True and overwrites ``get_user_input.options`` to the canonical closing
+    set ``["End conversation", "Discuss this more."]``. ``allow_free_text``
+    is preserved so the participant can still explain why they want to keep
+    going. A WARNING is logged for audit so live ops can see how often the
+    guard fires.
+    """
+    if intent.should_close:
+        return intent
+    body = (reply_text or "").lower()
+    if not body:
+        return intent
+    if not any(phrase in body for phrase in _CLOSING_PROSE_PHRASES):
+        return intent
+    closing_options = ["End conversation", _DISCUSS_MORE]
+    new_get_user_input = intent.get_user_input.model_copy(
+        update={"options": closing_options}
+    )
+    logger.warning("closing prose detected; forced should_close=true")
+    return intent.model_copy(
+        update={
+            "should_close": True,
+            "closing": True,
+            "get_user_input": new_get_user_input,
+        }
+    )
+
+
+def _force_axis_rotation(
+    intent: BrainBIntent,
+    *,
+    rubric_axes: list[str],
+    prior_active_axis_prefix: str,
+    prior_consecutive_count: int,
+    surface: Surface,
+) -> tuple[BrainBIntent, bool]:
+    """Rewrite ``active_axis`` when Brain B over-anchors past the rotation budget.
+
+    The interviewer surface tracks how many consecutive prior agent turns
+    stayed on the same active axis. When the count reaches
+    ``_ROTATION_TRIGGER_COUNT`` and the model still emits the same axis prefix
+    on this turn (the third in a row), the orchestrator overwrites
+    ``active_axis`` with the lowest-numbered rubric axis whose score is 0.0.
+    Designer turns (no rubric_axes) and surfaces that do not pass this
+    context bypass the override.
+
+    The override never reverses the model's positive scoring; it only swaps
+    the chosen probe axis. If every rubric axis already has positive score,
+    no rotation target exists and the intent is left as-is.
+
+    Returns ``(intent, rotated)`` where ``rotated`` is True when the active
+    axis was actually swapped. Callers use the flag to skip the substantive-
+    turn floor on this turn so a freshly-rotated axis is not credited with
+    evidence from the prior axis.
+    """
+    if prior_consecutive_count < _ROTATION_TRIGGER_COUNT:
+        return intent, False
+    if not prior_active_axis_prefix:
+        return intent, False
+    emitted_prefix = _axis_prefix(intent.active_axis)
+    if not emitted_prefix or emitted_prefix != prior_active_axis_prefix:
+        return intent, False
+
+    score_by_prefix: dict[str, float] = {}
+    for entry in intent.axes_coverage:
+        prefix = _axis_prefix(entry.axis)
+        if not prefix:
+            continue
+        score_by_prefix[prefix] = _clamp_score(entry.score)
+
+    rotation_label = ""
+    rotation_prefix = ""
+    for raw_axis in rubric_axes:
+        prefix = _axis_prefix(raw_axis)
+        if not prefix or prefix == emitted_prefix:
+            continue
+        if score_by_prefix.get(prefix, 0.0) > 0.0:
+            continue
+        rotation_label = raw_axis
+        rotation_prefix = prefix
+        break
+
+    if not rotation_prefix:
+        return intent, False
+
+    logger.warning(
+        "brain_b axis rotation forced surface=%s prior_axis=%s consecutive=%s rotation_to=%s",
+        surface,
+        prior_active_axis_prefix,
+        prior_consecutive_count,
+        rotation_prefix,
+    )
+    return intent.model_copy(update={"active_axis": rotation_label}), True
+
+
 def _is_substantive_turn(intent: BrainBIntent) -> bool:
     """Heuristic: did this turn produce evidence the rubric should credit?
 
@@ -699,6 +963,10 @@ async def run_brain_b_with_tools(
     eligible_question_ids: list[str] | None = None,
     prior_question_coverage: list[QuestionCoverage] | None = None,
     reasoning_budget_tokens: int | None = None,
+    prior_active_axis_prefix: str = "",
+    prior_consecutive_active_axis_count: int = 0,
+    last_participant_message: str = "",
+    participant_extracted_concepts: list[str] | None = None,
 ) -> BrainBLoopResult:
     """Single tool-calling loop shared by Designer and Interviewer Brain B.
 
@@ -864,7 +1132,11 @@ async def run_brain_b_with_tools(
             continue
 
         raw_output = _message_content(message)
-        normalized = _normalize_discuss_more(raw_output)
+        normalized = _normalize_discuss_more(
+            raw_output,
+            last_participant_message=last_participant_message,
+            participant_extracted_concepts=participant_extracted_concepts,
+        )
         try:
             intent = BrainBIntent.model_validate_json(normalized)
         except (ValidationError, ValueError) as exc:
@@ -927,7 +1199,15 @@ async def run_brain_b_with_tools(
                 merge_stats.final_count,
             )
         if rubric_axes is not None:
-            intent = _floor_active_axis(intent, rubric_axes=rubric_axes)
+            intent, rotation_forced = _force_axis_rotation(
+                intent,
+                rubric_axes=rubric_axes,
+                prior_active_axis_prefix=prior_active_axis_prefix,
+                prior_consecutive_count=prior_consecutive_active_axis_count,
+                surface=surface,
+            )
+            if not rotation_forced:
+                intent = _floor_active_axis(intent, rubric_axes=rubric_axes)
         _log_brain_b_summary(
             surface=surface,
             iterations=iteration + 1,

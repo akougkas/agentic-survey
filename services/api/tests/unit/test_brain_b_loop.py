@@ -9,7 +9,9 @@ import pytest
 from agentic_survey.agents.brain_b_loop import (
     BrainBLoopError,
     BrainBToolBudgetExceeded,
+    _apply_closing_prose_guard,
     _floor_active_axis,
+    _force_axis_rotation,
     _question_intent_is_axis_label,
     run_brain_b_with_tools,
 )
@@ -354,6 +356,130 @@ def test_brain_b_summary_log_includes_search_queries_and_axes(caplog) -> None:
     assert "search_knowledge" in body["tool_names"]
 
 
+def test_chip_grounding_drops_abstract_chips_when_corpus_present() -> None:
+    """Chips with zero overlap with the participant's last turn are dropped.
+
+    Reproduces session-C turn-2 where the participant told a concrete dataset-
+    versioning story (data-corpus v0.4.2 vs v0.4.3, three re-tokenized tasks)
+    but Mira's chips were generic architecture phrases ("modular pipeline",
+    "shared data catalog", "event-driven workflow engine"). The grounding
+    filter drops the generic chips and lets the concrete one through.
+    """
+    payload = _intent_payload(
+        options=[
+            "Begin with a modular pipeline approach",
+            "Use a shared data catalog for everyone",
+            "Pin checkpoints to dataset version v0.4.2",
+        ]
+    )
+    router = _ScriptedRouter([_completion(content=json.dumps(payload))])
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[],
+            registry=ToolRegistry(),
+            router=router,
+            last_participant_message=(
+                "We had a v0.4.2 dataset that re-tokenized into v0.4.3 and broke "
+                "three checkpoints downstream."
+            ),
+            participant_extracted_concepts=[
+                "dataset version",
+                "checkpoint",
+                "re-tokenize",
+            ],
+        )
+    )
+    options = result.intent.get_user_input.options
+    assert "Pin checkpoints to dataset version v0.4.2" in options
+    assert all("modular pipeline" not in opt.lower() for opt in options)
+    assert all("shared data catalog" not in opt.lower() for opt in options)
+    assert options[-1] == "Discuss this more."
+
+
+def test_chip_grounding_passes_through_when_corpus_empty() -> None:
+    """Cold start: no participant turn yet → grounding filter is permissive."""
+    payload = _intent_payload(
+        options=[
+            "An anchor about modular pipelines",
+            "An anchor about event-driven flow",
+            "An anchor about shared catalogs",
+        ]
+    )
+    router = _ScriptedRouter([_completion(content=json.dumps(payload))])
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[],
+            registry=ToolRegistry(),
+            router=router,
+            last_participant_message="",
+            participant_extracted_concepts=None,
+        )
+    )
+    options = result.intent.get_user_input.options
+    # All three abstract chips survive when corpus is empty.
+    assert len(options) == 4
+    assert options[-1] == "Discuss this more."
+
+
+def test_chip_grounding_keeps_one_anchor_when_filter_kills_everything() -> None:
+    """Filter dropping every chip would shrink options below the schema minimum.
+    The fallback path keeps one ungrounded anchor so the schema stays valid.
+    """
+    payload = _intent_payload(
+        options=[
+            "An abstract pattern about modular pipelines",
+            "An abstract architecture for shared catalogs",
+            "An abstract event-driven workflow engine",
+        ]
+    )
+    router = _ScriptedRouter([_completion(content=json.dumps(payload))])
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[],
+            registry=ToolRegistry(),
+            router=router,
+            last_participant_message="Lustre Globus cryoSPARC TRPV1 cryo-EM",
+            participant_extracted_concepts=["Lustre", "Globus"],
+        )
+    )
+    options = result.intent.get_user_input.options
+    assert len(options) == 2
+    assert options[-1] == "Discuss this more."
+
+
+def test_chip_grounding_concept_label_match_is_phrase_aware() -> None:
+    """Multi-word concept labels match a chip that contains the same phrase."""
+    payload = _intent_payload(
+        options=[
+            "Use the Lustre filesystem during staging",
+            "Skip the Globus pull entirely",
+            "Add an unrelated decoration to the monitor",
+        ]
+    )
+    router = _ScriptedRouter([_completion(content=json.dumps(payload))])
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[],
+            registry=ToolRegistry(),
+            router=router,
+            last_participant_message="staging via Globus into the cluster scratch",
+            participant_extracted_concepts=["Lustre filesystem", "Globus"],
+        )
+    )
+    options = result.intent.get_user_input.options
+    assert "Use the Lustre filesystem during staging" in options
+    assert "Skip the Globus pull entirely" in options
+    assert all("decoration" not in opt.lower() for opt in options)
+
+
 def test_chip_normalizer_caps_total_options_at_four() -> None:
     payload = _intent_payload(
         options=[
@@ -606,6 +732,204 @@ def test_question_intent_is_axis_label_passes_operational_sentence() -> None:
         active_prefix="R1",
         rubric_axes=["R1 — Lifecycle pain topology"],
     )
+
+
+def test_force_axis_rotation_overrides_third_consecutive_turn() -> None:
+    """Two prior R1 turns, model emits R1 again — orchestrator rotates to R2."""
+    intent = _build_intent(
+        active_axis="R1 — Lifecycle pain topology",
+        axes=[("R1", 0.20), ("R2", 0.0), ("R3", 0.0)],
+    )
+    rotated, fired = _force_axis_rotation(
+        intent,
+        rubric_axes=[
+            "R1 — Lifecycle pain topology",
+            "R2 — Tooling exposure",
+            "R3 — Handoffs",
+        ],
+        prior_active_axis_prefix="R1",
+        prior_consecutive_count=2,
+        surface="interviewer",
+    )
+    assert fired is True
+    assert rotated.active_axis == "R2 — Tooling exposure"
+
+
+def test_force_axis_rotation_skips_when_under_budget() -> None:
+    """Only one prior turn on R1; orchestrator must not rotate yet."""
+    intent = _build_intent(
+        active_axis="R1",
+        axes=[("R1", 0.20), ("R2", 0.0)],
+    )
+    rotated, fired = _force_axis_rotation(
+        intent,
+        rubric_axes=["R1 — A", "R2 — B"],
+        prior_active_axis_prefix="R1",
+        prior_consecutive_count=1,
+        surface="interviewer",
+    )
+    assert fired is False
+    assert rotated.active_axis == "R1"
+
+
+def test_force_axis_rotation_skips_when_model_already_rotated() -> None:
+    """Two prior R1 turns, but model emits R3 itself — orchestrator stays out."""
+    intent = _build_intent(
+        active_axis="R3 — Handoffs",
+        axes=[("R1", 0.20), ("R2", 0.0), ("R3", 0.0)],
+    )
+    rotated, fired = _force_axis_rotation(
+        intent,
+        rubric_axes=["R1 — A", "R2 — B", "R3 — Handoffs"],
+        prior_active_axis_prefix="R1",
+        prior_consecutive_count=3,
+        surface="interviewer",
+    )
+    assert fired is False
+    assert rotated.active_axis == "R3 — Handoffs"
+
+
+def test_force_axis_rotation_skips_when_no_unfired_axis_available() -> None:
+    """Every rubric axis already has positive score; nothing to rotate to."""
+    intent = _build_intent(
+        active_axis="R1",
+        axes=[("R1", 0.55), ("R2", 0.30)],
+    )
+    rotated, fired = _force_axis_rotation(
+        intent,
+        rubric_axes=["R1 — A", "R2 — B"],
+        prior_active_axis_prefix="R1",
+        prior_consecutive_count=4,
+        surface="interviewer",
+    )
+    assert fired is False
+    assert rotated.active_axis == "R1"
+
+
+def test_force_axis_rotation_picks_lowest_numbered_unfired_axis() -> None:
+    """R1 saturated, R2 fired-but-low, R3 still 0.0 — orchestrator picks R3
+    when prior axis was R2 and R3 is the lowest-numbered axis at 0.0."""
+    intent = _build_intent(
+        active_axis="R2",
+        axes=[("R1", 0.45), ("R2", 0.20), ("R3", 0.0), ("R4", 0.0)],
+    )
+    rotated, fired = _force_axis_rotation(
+        intent,
+        rubric_axes=["R1 — A", "R2 — B", "R3 — C", "R4 — D"],
+        prior_active_axis_prefix="R2",
+        prior_consecutive_count=2,
+        surface="interviewer",
+    )
+    assert fired is True
+    assert rotated.active_axis == "R3 — C"
+
+
+def test_axis_rotation_after_two_consecutive_turns_on_same_axis() -> None:
+    """End-to-end: prior_consecutive=2, model emits R1 third time → orchestrator rotates.
+
+    Acceptance criterion called out in the Phase 1.1 plan. Exercises the
+    forced rotation path through the full ``run_brain_b_with_tools`` loop
+    with rubric_axes wired and a scripted Brain B emission that camps on
+    the prior active axis.
+    """
+    payload = {
+        "active_axis": "R1",
+        "axes_coverage": [
+            {"axis": "R1", "score": 0.20},
+            {"axis": "R2", "score": 0.0},
+            {"axis": "R3", "score": 0.0},
+        ],
+        "question_coverage": [],
+        "question_intent": "R1: another R1 probe",
+        "get_user_input": {
+            "question": "Tell me more about that staging step.",
+            "options": ["Lustre staging", "Globus pull", "ChimeraX export", "Discuss this more."],
+            "allow_free_text": True,
+        },
+        "outline_patch": None,
+        "ready_for_review": False,
+        "should_close": False,
+        "closing": False,
+        "retrieval_used": False,
+        "retrieval_chunks": [],
+    }
+    router = _ScriptedRouter([_completion(content=json.dumps(payload))])
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[],
+            registry=ToolRegistry(),
+            router=router,
+            rubric_axes=[
+                "R1 — Lifecycle pain topology",
+                "R2 — Tooling exposure",
+                "R3 — Handoffs",
+            ],
+            prior_axes_coverage=[
+                AxisCoverage(axis="R1", score=0.20),
+            ],
+            prior_active_axis_prefix="R1",
+            prior_consecutive_active_axis_count=2,
+        )
+    )
+    intent = result.intent
+    assert intent.active_axis == "R2 — Tooling exposure"
+    scores = {entry.axis: entry.score for entry in intent.axes_coverage}
+    assert scores["R1"] == pytest.approx(0.20)
+    # Forced rotation skips the floor on the rotated axis so a fresh axis
+    # is not credited with evidence from the prior axis.
+    assert scores["R2"] == 0.0
+
+
+def test_closing_prose_forces_should_close() -> None:
+    """Brain A reply with closing language forces should_close + closing chips.
+
+    Reproduces session-C turn-8 where Mira's prose said "I have enough to
+    wrap up. Thank you for the time." but the planner intent stayed at
+    should_close=False and emitted quote-back chips. The orchestrator must
+    detect the drift and reconcile.
+    """
+    intent = _build_intent(
+        active_axis="R4",
+        axes=[("R4", 0.40)],
+        question_intent="Quote back the participant's lineage requirement.",
+    )
+    reply_text = (
+        "We have covered your requirements for lineage and the boundaries "
+        "of where a system should stay out of the judgment layer. "
+        "I have enough to wrap up. Thank you for the time."
+    )
+    forced = _apply_closing_prose_guard(intent, reply_text=reply_text)
+    assert forced.should_close is True
+    assert forced.closing is True
+    assert forced.get_user_input.options == ["End conversation", "Discuss this more."]
+
+
+def test_closing_prose_guard_no_op_when_already_closing() -> None:
+    intent = _build_intent(
+        active_axis="R4",
+        axes=[("R4", 0.40)],
+    )
+    intent = intent.model_copy(update={"should_close": True, "closing": True})
+    forced = _apply_closing_prose_guard(intent, reply_text="I have enough to wrap up")
+    assert forced is intent  # idempotent: same object returned
+
+
+def test_closing_prose_guard_no_op_on_substantive_reply() -> None:
+    intent = _build_intent(active_axis="R1", axes=[("R1", 0.20)])
+    reply_text = "Tell me more about that staging step in cryo-EM."
+    forced = _apply_closing_prose_guard(intent, reply_text=reply_text)
+    assert forced.should_close is False
+    assert forced.get_user_input.options[-1] == "Discuss this more."
+
+
+def test_closing_prose_guard_matches_thanks_phrasing() -> None:
+    intent = _build_intent(active_axis="R8", axes=[("R8", 0.40)])
+    reply_text = "Got it. Thanks for the time you spent on this."
+    forced = _apply_closing_prose_guard(intent, reply_text=reply_text)
+    assert forced.should_close is True
+    assert forced.get_user_input.options == ["End conversation", "Discuss this more."]
 
 
 def test_question_intent_reformation_promotes_axis_label_to_operational() -> None:

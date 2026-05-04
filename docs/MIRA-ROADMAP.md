@@ -169,7 +169,7 @@ Any future milestone should know these so they don't re-litigate:
 
 13. **Bundle paths.** The active bundle is `citadl/bundle` (via `SURVEY_PRODUCT_BUNDLE_DIR`). The `from-seed` endpoint expects `seed_slug`, not `slug` — field name landmine.
 
-14. **Cookie jar dies on API reload.** Every `--reload` invalidates the admin session cookie. Re-login after any file save if you're scripting curl probes.
+14. **Cookie jar dies on API reload.** Every `--reload` invalidates the admin session cookie. Re-login after any file save if you're scripting curl probes. **Smoke runs (manual or `infra/ops/smoke.sh`) should always drop `--reload`** so a stray editor mtime bump on `services/api/agentic_survey/...` does not silently invalidate the operator session mid-flow. Production runs without `--reload`; this is dev-only.
 
 ## Gotchas discovered during M2
 

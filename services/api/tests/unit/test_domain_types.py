@@ -51,11 +51,21 @@ def test_get_user_input_options_rejects_wrong_last_option() -> None:
 
 
 def test_get_user_input_options_rejects_too_few_options() -> None:
+    """A single-option payload is below the closing-turn floor of 2."""
     with pytest.raises(ValidationError):
         GetUserInputOptions(
             question="?",
-            options=["only", DISCUSS_MORE_OPTION],
+            options=[DISCUSS_MORE_OPTION],
         )
+
+
+def test_get_user_input_options_accepts_closing_pair() -> None:
+    """Closing turns collapse to two options: a closing affordance + Discuss this more."""
+    payload = GetUserInputOptions(
+        question="?",
+        options=["End conversation", DISCUSS_MORE_OPTION],
+    )
+    assert payload.options == ["End conversation", DISCUSS_MORE_OPTION]
 
 
 def test_outline_artifact_defaults_are_empty_and_permissive() -> None:

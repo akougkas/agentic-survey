@@ -54,6 +54,10 @@ async def run_brain_b_interviewer(
     enable_tools: bool = True,
     reasoning_budget_tokens: int | None = None,
     compact_context: bool = False,
+    prior_active_axis_prefix: str = "",
+    prior_consecutive_active_axis_count: int = 0,
+    last_participant_message: str = "",
+    participant_extracted_concepts: list[str] | None = None,
 ) -> BrainBIntent:
     """Run Interviewer Brain B as a tool-calling agent.
 
@@ -127,6 +131,17 @@ async def run_brain_b_interviewer(
             "Prior axes coverage (monotonicity floor; enforced server-side):\n"
             + json.dumps([c.model_dump() for c in prior_axes_coverage], indent=2)
         )
+    if prior_active_axis_prefix:
+        system_context.append(
+            "Axis rotation context (server tracks consecutive turns on the same axis):\n"
+            + json.dumps(
+                {
+                    "prior_active_axis": prior_active_axis_prefix,
+                    "consecutive_turns_on_prior_axis": prior_consecutive_active_axis_count,
+                },
+                indent=2,
+            )
+        )
     result = await run_brain_b_with_tools(
         surface="interviewer",
         system_context=system_context,
@@ -140,6 +155,10 @@ async def run_brain_b_interviewer(
         eligible_question_ids=eligible_question_ids,
         prior_question_coverage=prior_question_coverage,
         reasoning_budget_tokens=reasoning_budget_tokens,
+        prior_active_axis_prefix=prior_active_axis_prefix,
+        prior_consecutive_active_axis_count=prior_consecutive_active_axis_count,
+        last_participant_message=last_participant_message,
+        participant_extracted_concepts=participant_extracted_concepts,
     )
     return result.intent
 

@@ -302,15 +302,23 @@ async def _session_event_stream(
         bus.unsubscribe(campaign_id, queue)
 
 
-@router.post(
-    "/{session_id}/finish",
-    dependencies=[Depends(require_admin_session)],
-)
+@router.post("/{session_id}/finish")
 async def finish_session(
     session_id: str,
+    request: Request,
+    settings: Settings = Depends(get_settings),
     repository: InMemoryRepository = Depends(get_repository),
 ) -> InterviewSessionRecord:
-    session = repository.get_interview_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return repository.finish_interview_session(session_id, close_reason="scientist_override")
+    """Close a session as either the participant or the scientist.
+
+    Participant tokens close their own session (``close_reason='participant_self_close'``)
+    so the chat page's "End conversation" affordance has a backend path that
+    does not require admin login. Admin tokens still close as
+    ``scientist_override``. Anonymous callers get 401 via
+    ``_require_session_access``.
+    """
+    session = _require_session_access(request, session_id, settings, repository)
+    participant = get_participant_session_from_request(request, settings, repository)
+    is_participant = participant is not None and participant.id == session.id
+    close_reason = "participant_self_close" if is_participant else "scientist_override"
+    return repository.finish_interview_session(session_id, close_reason=close_reason)

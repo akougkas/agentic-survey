@@ -12,6 +12,7 @@ from agentic_survey.agents.brain_b_interviewer import (
     filter_question_bank_for_role,
     run_brain_b_interviewer,
 )
+from agentic_survey.agents.brain_b_loop import _apply_closing_prose_guard
 from agentic_survey.agents.validator import Validator
 from agentic_survey.domain.intent import AxisCoverage, BrainBIntent, QuestionCoverage
 from agentic_survey.engine.graph_builder import apply_validator_to_graph
@@ -405,6 +406,7 @@ async def run_interview_turn(
         events.append(InterviewEvent(name="token", data={"text": token}))
 
     reply_text = "".join(chunks).strip()
+    intent = _apply_closing_prose_guard(intent, reply_text=reply_text)
 
     agent_turn = repository.append_interview_turn(
         refreshed.id,
@@ -616,6 +618,12 @@ async def _post_turn_background_inner(
     signals = compute_signals(refreshed, campaign.outline, participant_validations)
     prior_axes = _last_axes_coverage(refreshed)
     prior_question_coverage = _last_question_coverage(refreshed)
+    prior_active_axis_prefix, prior_consecutive_active_axis_count = (
+        _consecutive_active_axis_history(refreshed)
+    )
+    last_participant_message, participant_extracted_concepts = (
+        _last_participant_grounding(refreshed)
+    )
     transcript_tail = _transcript_tail(refreshed)
     search_fn = build_search_knowledge(
         repository=repository,
@@ -645,6 +653,10 @@ async def _post_turn_background_inner(
         prior_axes_coverage=prior_axes,
         eligible_question_ids=eligible_question_ids,
         prior_question_coverage=prior_question_coverage,
+        prior_active_axis_prefix=prior_active_axis_prefix,
+        prior_consecutive_active_axis_count=prior_consecutive_active_axis_count,
+        last_participant_message=last_participant_message,
+        participant_extracted_concepts=participant_extracted_concepts,
     )
     intent = _attach_question_coverage_turn_ids(
         intent,
@@ -868,6 +880,79 @@ def _extract_chunk_text(chunk: object) -> str:
     if isinstance(delta, dict):
         return str(delta.get("content") or "")
     return str(getattr(delta, "content", "") or "")
+
+
+def _last_participant_grounding(
+    session: InterviewSessionRecord,
+) -> tuple[str, list[str]]:
+    """Return ``(last_participant_text, extracted_concept_labels)``.
+
+    Walks turns newest-first for the most recent participant turn. The
+    text is the raw message body; the concept labels are extracted from
+    that turn's validation snapshot. Both pieces feed the chip grounding
+    filter so the orchestrator can drop chips that have zero overlap with
+    the participant's own vocabulary.
+    """
+    for turn in reversed(session.turns):
+        if turn.role != "participant":
+            continue
+        text = (turn.content or "").strip()
+        labels: list[str] = []
+        validation = turn.validation
+        if isinstance(validation, dict):
+            for entry in validation.get("extracted_concepts") or []:
+                if not isinstance(entry, dict):
+                    continue
+                label = entry.get("label")
+                if isinstance(label, str) and label.strip():
+                    labels.append(label.strip())
+        return text, labels
+    return "", []
+
+
+def _consecutive_active_axis_history(
+    session: InterviewSessionRecord,
+) -> tuple[str, int]:
+    """Walk back through agent turns and count consecutive same-axis runs.
+
+    Returns ``(prefix, count)`` where ``prefix`` is the leading code (``R1``,
+    ``R2``, etc.) of the most recent agent turn's ``active_axis`` and
+    ``count`` is the number of consecutive prior agent turns whose
+    ``active_axis`` shares that prefix. The orchestrator surfaces both
+    values back to Brain B so the planner can rotate before the
+    server-side override kicks in. Returns ``("", 0)`` on a cold start or
+    when prior agent turns lack a ``brain_b_intent``.
+    """
+    prefix = ""
+    count = 0
+    for turn in reversed(session.turns):
+        if turn.role != "agent":
+            continue
+        intent = turn.brain_b_intent
+        if intent is None:
+            continue
+        emitted_prefix = ""
+        raw = (intent.active_axis or "").strip()
+        for separator in (" ", "—", "-", ":"):
+            head = raw.split(separator, 1)[0].strip()
+            if head.upper().startswith("R") and head[1:].isdigit():
+                emitted_prefix = head.upper()
+                break
+        if not emitted_prefix:
+            head = raw.upper()
+            if head.startswith("R") and head[1:].isdigit():
+                emitted_prefix = head
+        if not emitted_prefix:
+            break
+        if not prefix:
+            prefix = emitted_prefix
+            count = 1
+            continue
+        if emitted_prefix == prefix:
+            count += 1
+        else:
+            break
+    return prefix, count
 
 
 def _last_axes_coverage(session: InterviewSessionRecord) -> list[AxisCoverage]:
