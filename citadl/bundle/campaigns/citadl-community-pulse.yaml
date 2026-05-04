@@ -56,9 +56,18 @@ outline:
     - Other or multiple of the above
     axis_tag: R1
     notes: "Replaces team-size binning with handoff context."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the last handoff where responsibility changed between people"
+    - "name the role or team that receives the data next"
+    - "ask what gets lost, rewritten, or checked at that handoff"
+    saturation_signals:
+    - "respondent has named at least two roles or teams that touch the data"
+    - "respondent has identified where responsibility changes hands"
+    - "respondent has described one consequence of that transfer"
+    leading_language_avoid:
+    - "org chart"
+    - "collaboration maturity"
+    - "best practice"
   - id: A-Q4
     tier: A
     kind: open
@@ -73,9 +82,18 @@ outline:
     - Other or multiple of the above
     axis_tag: R1
     notes: "Capture order of magnitude, cadence, and whether scale changes the pain."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for an order of magnitude using the units the respondent already used"
+    - "ask how often a new batch, run, or stream arrives"
+    - "ask whether growth in scale changes where the work breaks"
+    saturation_signals:
+    - "respondent has given approximate data size or rate"
+    - "respondent has described cadence such as per run, per day, per campaign, or continuous"
+    - "respondent has said whether scale changes storage, movement, or preparation work"
+    leading_language_avoid:
+    - "big data"
+    - "exabyte"
+    - "benchmark"
   - id: A-Q5
     tier: A
     kind: open
@@ -88,9 +106,19 @@ outline:
     - Other or multiple of the above
     axis_tag: R6
     notes: "Use named platforms and boundaries as R6 context."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the named machines, facilities, services, or clouds touched in order"
+    - "ask where credentials, policies, or network boundaries interrupt the flow"
+    - "ask which boundary is hardest to cross in practice"
+    saturation_signals:
+    - "respondent has named at least two environments or said the workflow stays in one"
+    - "respondent has identified a boundary between environments or said there is none"
+    - "respondent has named one integration constraint tied to those environments"
+    leading_language_avoid:
+    - "agentic"
+    - "autonomous"
+    - "AI"
+    - "seamless integration"
   - id: A-Q6
     tier: A
     kind: open
@@ -103,9 +131,18 @@ outline:
     - Other or multiple of the above
     axis_tag: R1
     notes: "Primary scientist R1 pain episode."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the most recent episode with a date or project anchor"
+    - "ask what the respondent tried before the work moved forward"
+    - "ask who else was blocked or pulled into the workaround"
+    saturation_signals:
+    - "respondent has located the time loss in a specific workflow step"
+    - "respondent has estimated cost in hours, days, people, or delayed output"
+    - "respondent has described the workaround or recovery path"
+    leading_language_avoid:
+    - "efficiency"
+    - "productivity"
+    - "just automate it"
   - id: A-Q7
     tier: A
     kind: open
@@ -120,10 +157,10 @@ outline:
     notes: "Opening workflow walkthrough for scientist and RSE paths."
     follow_up_hints:
     - "name a specific tool or platform used at each storage or movement step"
-    - "name the most recent failure point in the workflow"
-    - "estimate the time or people-cost of that failure"
+    - "name the most recent break point in the workflow"
+    - "estimate the time or people cost of that breakdown"
     saturation_signals:
-    - "respondent has named a concrete workflow, at least two systems, and one recent failure or bottleneck"
+    - "respondent has named a concrete workflow, at least two systems, and one recent break point or bottleneck"
     - "respondent explicitly declines to go into workflow detail"
     leading_language_avoid:
     - "agentic"
@@ -142,9 +179,19 @@ outline:
     - Other or multiple of the above
     axis_tag: R1
     notes: "Metadata as context-loss evidence."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask what record, file, note, or naming convention carries the context today"
+    - "ask for the last time missing context forced reconstruction"
+    - "ask who knew the missing detail and how they found it"
+    saturation_signals:
+    - "respondent has named a concrete context carrier or said none exists"
+    - "respondent has described a missing detail they had to recover later"
+    - "respondent has identified where reconstruction happened in the workflow"
+    leading_language_avoid:
+    - "metadata"
+    - "FAIR"
+    - "ontology"
+    - "provenance"
   - id: A-Q12
     tier: A
     kind: open
@@ -157,9 +204,19 @@ outline:
     - Other or multiple of the above
     axis_tag: R1
     notes: "Storage policy, convenience, and responsibility."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask who makes the initial placement decision and what information they use"
+    - "ask for the last time data moved because the first placement stopped working"
+    - "ask what rule, habit, quota, or convenience drives the decision"
+    saturation_signals:
+    - "respondent has named the decision maker or rule for placement"
+    - "respondent has described at least one storage location or tier involved"
+    - "respondent has named a trigger that changes placement"
+    leading_language_avoid:
+    - "smart tiering"
+    - "policy engine"
+    - "optimization"
+    - "autonomous"
   - id: A-Q15
     tier: A
     kind: open
@@ -169,9 +226,19 @@ outline:
     applies_to_roles: []
     axis_tag: R4
     notes: "R4 intent sentence. Fire for every respondent."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the exact sentence in the respondent's own words"
+    - "ask what work the sentence would save this week or this project"
+    - "ask for a narrower version they would trust sooner"
+    saturation_signals:
+    - "respondent has provided one concrete request in sentence form"
+    - "respondent has tied the request to a real workflow or project"
+    - "respondent has described the work the request would remove or shorten"
+    leading_language_avoid:
+    - "magic wand"
+    - "prompt"
+    - "AI assistant"
+    - "agent"
   - id: A-Q17
     tier: A
     kind: open
@@ -213,9 +280,19 @@ outline:
     - Other or multiple of the above
     axis_tag: R6
     notes: "R6 adoption enablers and reject conditions."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the first small trial they would permit in a real workflow"
+    - "ask what would cause rejection after one bad experience"
+    - "ask which existing tool or platform the service would need to fit beside"
+    saturation_signals:
+    - "respondent has named at least one adoption condition and one reject condition"
+    - "respondent has tied a condition to an existing workflow, tool, or platform"
+    - "respondent has distinguished a trial use from sustained use"
+    leading_language_avoid:
+    - "trustworthy"
+    - "frictionless"
+    - "disruptive"
+    - "AI"
   - id: A-Q19
     tier: A
     kind: open
@@ -232,9 +309,19 @@ outline:
     - Other or multiple of the above
     axis_tag: R5
     notes: "R5 never-delegable boundary."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the task boundary where judgment must stay with a person"
+    - "ask why that boundary exists, using the respondent's last example"
+    - "ask what evidence, if any, would move that boundary"
+    saturation_signals:
+    - "respondent has named one task that should require human judgment"
+    - "respondent has explained the reason for the boundary"
+    - "respondent has said whether the boundary is fixed or could move"
+    leading_language_avoid:
+    - "never say never"
+    - "just a policy"
+    - "irrational"
+    - "automation"
   - id: B-Q2
     tier: B
     kind: open
@@ -249,9 +336,19 @@ outline:
     - Other or multiple of the above
     axis_tag: R6
     notes: "Operator and tool-developer context."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the organization type and the communities or users it serves"
+    - "ask which part of the stack the respondent personally owns"
+    - "ask for the scale or maturity level needed to interpret later answers"
+    saturation_signals:
+    - "respondent has identified facility, tool ecosystem, or organizational setting"
+    - "respondent has named their operational or development scope"
+    - "respondent has described the user communities or domains served"
+    leading_language_avoid:
+    - "vendor"
+    - "customer"
+    - "platform category"
+    - "CITADL"
   - id: B-Q6
     tier: B
     kind: open
@@ -265,9 +362,19 @@ outline:
     - Institutional or platform lead
     axis_tag: R6
     notes: "Service coverage by phase."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for concrete service or library names rather than categories"
+    - "ask which phase each named service covers in real use"
+    - "ask where users still fall between the named services"
+    saturation_signals:
+    - "respondent has named at least two services, libraries, or tools"
+    - "respondent has mapped each named item to one or more workflow phases"
+    - "respondent has identified a gap or overlap in coverage"
+    leading_language_avoid:
+    - "full stack"
+    - "end to end"
+    - "agentic"
+    - "AI"
   - id: B-Q7
     tier: B
     kind: open
@@ -281,9 +388,18 @@ outline:
     - Institutional or platform lead
     axis_tag: R1
     notes: "Operator R1 pain episode."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the most recent incident that made the hard phase visible"
+    - "ask who noticed the problem first and how it was escalated"
+    - "ask what changed afterward, if anything"
+    saturation_signals:
+    - "respondent has named one hard operational phase"
+    - "respondent has described a recent incident or recurring failure pattern"
+    - "respondent has identified user or operator impact"
+    leading_language_avoid:
+    - "blame"
+    - "failure of staff"
+    - "easy fix"
   - id: B-Q9
     tier: B
     kind: open
@@ -297,9 +413,19 @@ outline:
     - Institutional or platform lead
     axis_tag: R1
     notes: "Decision path for storage and lifecycle policy."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the rule or approval path behind one recent placement decision"
+    - "ask where users still make manual decisions or exceptions"
+    - "ask what information is missing when retention or deletion is decided"
+    saturation_signals:
+    - "respondent has described how at least one placement, migration, retention, or deletion decision is made"
+    - "respondent has identified the actor, rule, or system involved"
+    - "respondent has named where users intervene or override the path"
+    leading_language_avoid:
+    - "self tuning"
+    - "optimal policy"
+    - "smart storage"
+    - "AI"
   - id: B-Q11
     tier: B
     kind: open
@@ -313,9 +439,19 @@ outline:
     - Institutional or platform lead
     axis_tag: R6
     notes: "Operator I/O and storage-performance awareness, restored from the review-deferred set per operator decision."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the last degraded performance episode and how it was detected"
+    - "ask what signals were checked before choosing an action"
+    - "ask where monitoring stops and human diagnosis begins"
+    saturation_signals:
+    - "respondent has named one detection channel or monitoring source"
+    - "respondent has described how confirmation happens before action"
+    - "respondent has explained one decision path for remediation"
+    leading_language_avoid:
+    - "anomaly detection"
+    - "observability"
+    - "AIOps"
+    - "root cause"
   - id: B-Q12
     tier: B
     kind: open
@@ -354,9 +490,19 @@ outline:
     - Institutional or platform lead
     axis_tag: R5
     notes: "R5 readiness gradient by phase."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask why the nearest phase is lower risk than the furthest phase"
+    - "ask what demonstration would move the next phase into consideration"
+    - "ask for one phase the respondent would keep under review for now"
+    saturation_signals:
+    - "respondent has named a closest and furthest phase"
+    - "respondent has explained the criteria behind the readiness contrast"
+    - "respondent has described evidence that would change the ranking"
+    leading_language_avoid:
+    - "ready for production"
+    - "maturity level"
+    - "agentic"
+    - "autonomous"
   - id: B-Q16
     tier: B
     kind: open
@@ -370,9 +516,19 @@ outline:
     - Institutional or platform lead
     axis_tag: R6
     notes: "First production blocker."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the first approval, security, policy, or staffing barrier that would stop evaluation"
+    - "ask whether the blocker is technical, institutional, or both"
+    - "ask what limited trial would still be possible despite the blocker"
+    saturation_signals:
+    - "respondent has named a first production blocker"
+    - "respondent has classified the blocker by source or owner"
+    - "respondent has described whether a constrained trial could proceed"
+    leading_language_avoid:
+    - "irrational fear"
+    - "security theater"
+    - "innovation blocker"
+    - "AI"
   - id: B-Q17
     tier: B
     kind: open
@@ -384,9 +540,18 @@ outline:
     - Institutional or platform lead
     axis_tag: R6
     notes: "Deployment boundary and refusal line."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask where the system would physically or administratively run"
+    - "ask what privilege level or data path would be unacceptable"
+    - "ask what boundary has already been tested with another outside service"
+    saturation_signals:
+    - "respondent has named a deployment location or topology"
+    - "respondent has identified at least one refusal boundary"
+    - "respondent has tied the boundary to policy, security, or operations"
+    leading_language_avoid:
+    - "centralized control"
+    - "run anywhere"
+    - "bring your own agent"
   - id: B-Q18
     tier: B
     kind: open
@@ -400,9 +565,19 @@ outline:
     - Institutional or platform lead
     axis_tag: R6
     notes: "API, auth, telemetry, and privilege surface."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for named interfaces, protocols, or APIs rather than broad categories"
+    - "ask which interface would be read only and which could perform changes"
+    - "ask what identity, authorization, or logging would have to wrap the interface"
+    saturation_signals:
+    - "respondent has named at least two concrete interfaces, protocols, or APIs"
+    - "respondent has distinguished read access from write or action access"
+    - "respondent has named one authentication, authorization, or logging requirement"
+    leading_language_avoid:
+    - "universal API"
+    - "plugin"
+    - "agent"
+    - "AI"
   - id: B-Q19
     tier: B
     kind: open
@@ -416,9 +591,20 @@ outline:
     - Institutional or platform lead
     axis_tag: R2
     notes: "Operator R2 and secondary R7."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask which action would require approval before execution"
+    - "ask what an audit record would need to contain"
+    - "ask what rollback means for their most sensitive data path"
+    - "ask where a sandbox would end and production access would begin"
+    saturation_signals:
+    - "respondent has named at least two non negotiable controls"
+    - "respondent has tied each control to a concrete production action"
+    - "respondent has described who grants approval or reviews the record"
+    leading_language_avoid:
+    - "compliance checkbox"
+    - "trust us"
+    - "agentic"
+    - "autonomous"
   - id: B-Q20
     tier: B
     kind: open
@@ -432,9 +618,19 @@ outline:
     - Institutional or platform lead
     axis_tag: R6
     notes: "User-visible infrastructure capability."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask what users would notice in their day to day work"
+    - "ask which current ticket, script, or support request would disappear"
+    - "ask what existing service the new capability would have to connect with"
+    saturation_signals:
+    - "respondent has named one user visible capability"
+    - "respondent has tied the capability to a current pain point or support burden"
+    - "respondent has described how users would recognize the improvement"
+    leading_language_avoid:
+    - "national platform"
+    - "moonshot"
+    - "killer app"
+    - "AI"
   - id: C-Q1
     tier: C
     kind: open
@@ -448,9 +644,18 @@ outline:
     - Other or multiple of the above
     axis_tag: R6
     notes: "Relevant expertise bridge."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for a concrete project, system, or dataset that creates the bridge"
+    - "ask what part of the work is scientific data rather than general software"
+    - "ask what role the respondent played in that work"
+    saturation_signals:
+    - "respondent has named the relevant work area or project"
+    - "respondent has explained the connection to scientific data workflows"
+    - "respondent has identified their role in that work"
+    leading_language_avoid:
+    - "pure methods"
+    - "just tooling"
+    - "CITADL"
   - id: C-Q2
     tier: C
     kind: open
@@ -463,9 +668,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R6
     notes: "Action-taking systems experience without imposing a definition."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the environment where actions were chosen and executed"
+    - "ask what actions the system could take without step by step instruction"
+    - "ask how errors or unsafe actions were limited"
+    saturation_signals:
+    - "respondent has described one action taking system or said they have none"
+    - "respondent has named the environment and action set"
+    - "respondent has described a limit, safeguard, or evaluation context"
+    leading_language_avoid:
+    - "agentic"
+    - "autonomous"
+    - "AI"
+    - "LangChain"
   - id: C-Q5
     tier: C
     kind: open
@@ -478,9 +693,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R5
     notes: "Technical readiness contrast."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the phase that would work first and the phase that would fail first"
+    - "ask what evidence supports each side of the contrast"
+    - "ask whether the judgment comes from building, reading, or operating systems"
+    saturation_signals:
+    - "respondent has named at least one closer phase and one less ready phase"
+    - "respondent has explained the criteria for the contrast"
+    - "respondent has grounded the judgment in experience or evidence"
+    leading_language_avoid:
+    - "hype cycle"
+    - "ready for production"
+    - "maturity score"
+    - "agentic"
   - id: C-Q6
     tier: C
     kind: open
@@ -493,9 +718,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R6
     notes: "Architecture choice and rationale."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the first pattern they would implement and the second pattern they would reject"
+    - "ask what state, tools, and approval points the pattern would need"
+    - "ask what part they would build from scratch rather than reuse"
+    saturation_signals:
+    - "respondent has named an architecture pattern or described one concretely"
+    - "respondent has explained why it fits scientific data management"
+    - "respondent has identified one required component or rejected alternative"
+    leading_language_avoid:
+    - "single agent"
+    - "multi agent"
+    - "hierarchical"
+    - "best architecture"
   - id: C-Q7
     tier: C
     kind: open
@@ -508,9 +743,18 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R6
     notes: "Load-bearing model or planner capability."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the first capability that would block real use if it failed"
+    - "ask how the respondent would test that capability"
+    - "ask what current systems get wrong about that capability"
+    saturation_signals:
+    - "respondent has named one load bearing capability"
+    - "respondent has described why it matters for scientific data management"
+    - "respondent has named a test, failure mode, or current limitation"
+    leading_language_avoid:
+    - "human level"
+    - "AGI"
+    - "magic"
   - id: C-Q8
     tier: C
     kind: open
@@ -523,9 +767,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R6
     notes: "First practical technical failure mode."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the first practical failure mode in a real deployment"
+    - "ask what signal would reveal the barrier before damage happened"
+    - "ask whether the barrier is model behavior, state management, tool use, or infrastructure"
+    saturation_signals:
+    - "respondent has named one primary technical barrier"
+    - "respondent has described how it would break an end to end workflow"
+    - "respondent has identified where the barrier would surface in practice"
+    leading_language_avoid:
+    - "hallucination"
+    - "unsolved"
+    - "fundamental"
+    - "AI safety"
   - id: C-Q9
     tier: C
     kind: open
@@ -561,9 +815,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R3
     notes: "Technical R3 coordination mechanism."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask what state needs to move from one step to the next"
+    - "ask where that state should live and who can change it"
+    - "ask what happens when two steps disagree about the current state"
+    saturation_signals:
+    - "respondent has named a coordination mechanism or state sharing pattern"
+    - "respondent has explained what information must be carried across steps"
+    - "respondent has described conflict, ownership, or failure handling"
+    leading_language_avoid:
+    - "blackboard"
+    - "orchestrator"
+    - "knowledge graph"
+    - "pub/sub"
   - id: C-Q11
     tier: C
     kind: open
@@ -577,9 +841,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R2
     notes: "Technical R2 safety gate."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the first mechanism required before production contact"
+    - "ask what evidence would show the mechanism works"
+    - "ask who gets alerted or can stop the action when the mechanism trips"
+    saturation_signals:
+    - "respondent has named one required mechanism"
+    - "respondent has tied it to a production action or risk"
+    - "respondent has described verification, alerting, or stop authority"
+    leading_language_avoid:
+    - "formal verification"
+    - "red team"
+    - "circuit breaker"
+    - "trustworthy"
   - id: C-Q13
     tier: C
     kind: open
@@ -594,9 +868,19 @@ outline:
     - Institutional or platform lead
     axis_tag: R7
     notes: "R7 accountability."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask what decision record would make the assignment legitimate"
+    - "ask how responsibility should differ for developer, operator, and user actions"
+    - "ask for a precedent where accountability worked or failed"
+    saturation_signals:
+    - "respondent has named who should be accountable or described a shared model"
+    - "respondent has explained what makes the assignment legitimate"
+    - "respondent has connected accountability to a concrete error type or precedent"
+    leading_language_avoid:
+    - "blame"
+    - "liability"
+    - "fault"
+    - "black box"
   - id: C-Q14
     tier: C
     kind: open
@@ -609,9 +893,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R6
     notes: "Cross-domain readiness as an R6 architecture signal, included per operator decision."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask what reusable structure would carry across domains"
+    - "ask what domain details would still need local adaptation"
+    - "ask where the approach would fail first outside its original domain"
+    saturation_signals:
+    - "respondent has named a starting approach for cross domain use"
+    - "respondent has separated reusable parts from domain specific parts"
+    - "respondent has described a likely failure mode or adaptation requirement"
+    leading_language_avoid:
+    - "one size fits all"
+    - "foundation model solves it"
+    - "domain agnostic"
+    - "AGI"
   - id: C-Q15
     tier: C
     kind: open
@@ -624,9 +918,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R6
     notes: "Evaluation evidence for readiness."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for the specific task suite, metric, or scenario the benchmark should include"
+    - "ask what failure would disqualify the system even if average performance looked good"
+    - "ask who should judge success in the evaluation"
+    saturation_signals:
+    - "respondent has named at least one benchmark component, metric, or scenario"
+    - "respondent has defined success and failure conditions"
+    - "respondent has identified an evaluator, dataset source, or deployment context"
+    leading_language_avoid:
+    - "leaderboard"
+    - "accuracy only"
+    - "ready for production"
+    - "Turing test"
   - id: C-Q16
     tier: C
     kind: open
@@ -639,9 +943,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R2
     notes: "Rigor boundary."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for a recent validation step the respondent would not skip"
+    - "ask what evidence would justify speed in lower stakes cases"
+    - "ask who sets the policy when speed and rigor conflict"
+    saturation_signals:
+    - "respondent has named a boundary where rigor overrides speed"
+    - "respondent has explained how stakes or domain context change the rule"
+    - "respondent has named who decides or enforces the boundary"
+    leading_language_avoid:
+    - "move fast"
+    - "acceptable loss"
+    - "good enough science"
+    - "automation"
   - id: C-Q17
     tier: C
     kind: open
@@ -655,9 +969,19 @@ outline:
     - Institutional or platform lead
     axis_tag: R7
     notes: "R7 deployment governance."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask which functions belong centrally and which must stay local"
+    - "ask what update or versioning model would be acceptable"
+    - "ask for a prior infrastructure model they would borrow from or avoid"
+    saturation_signals:
+    - "respondent has separated central and local responsibilities"
+    - "respondent has explained the governance or technical reason for the split"
+    - "respondent has named a model for updates, registry, or version control"
+    leading_language_avoid:
+    - "centralized by default"
+    - "one platform"
+    - "central control"
+    - "local obstruction"
   - id: C-Q18
     tier: C
     kind: open
@@ -670,9 +994,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R8
     notes: "Technical R8 path for ML respondents."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask why that problem threatens the whole vision rather than one component"
+    - "ask what evidence would make the respondent less worried"
+    - "ask which part of the vision should be narrowed until the problem is solved"
+    saturation_signals:
+    - "respondent has named one open research problem or strongest technical objection"
+    - "respondent has explained how it threatens end to end viability"
+    - "respondent has described evidence, scope reduction, or a milestone that would change their view"
+    leading_language_avoid:
+    - "defend"
+    - "near term"
+    - "just engineering"
+    - "but"
   - id: C-Q19
     tier: C
     kind: open
@@ -685,9 +1019,19 @@ outline:
     - AI or ML researcher or practitioner
     axis_tag: R6
     notes: "Starting framework grounded in build experience, included as an R6 signal per operator decision."
-    follow_up_hints: []
-    saturation_signals: []
-    leading_language_avoid: []
+    follow_up_hints:
+    - "ask for one tool or framework they have actually used or evaluated"
+    - "ask what would need to change before it fits scientific data workflows"
+    - "ask what they would avoid reusing from that tool"
+    saturation_signals:
+    - "respondent has named at least one actual tool, framework, or platform"
+    - "respondent has described the first required change or missing capability"
+    - "respondent has grounded the view in build, use, or evaluation experience"
+    leading_language_avoid:
+    - "LangChain"
+    - "AutoGen"
+    - "CrewAI"
+    - "OpenAI"
   - id: X-Q1
     tier: X
     kind: open
