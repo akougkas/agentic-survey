@@ -614,9 +614,19 @@ async def run_pre_plan_background(
         )
         session = repository.get_interview_session(session_id)
         if session is None:
+            repository.update_preplan_status(
+                session_id,
+                status="failed",
+                error_detail="session not found at warmup start",
+            )
             return
         campaign = repository.get_campaign(session.campaign_id)
         if campaign is None:
+            repository.update_preplan_status(
+                session_id,
+                status="failed",
+                error_detail=f"campaign {session.campaign_id!r} not found at warmup start",
+            )
             return
         transcript_tail = _transcript_tail(session)
         signals = compute_signals(session, campaign.outline, [])
@@ -655,14 +665,21 @@ async def run_pre_plan_background(
         )
         latest = repository.get_interview_session(session_id)
         if latest is None:
+            repository.update_preplan_status(
+                session_id,
+                status="failed",
+                error_detail="session disappeared during warmup",
+            )
             return
         if any(turn.role == "participant" for turn in latest.turns):
             logger.info(
                 "pre-plan skipped because participant turn already exists: session=%s",
                 session_id,
             )
+            repository.update_preplan_status(session_id, status="late_skipped")
             return
         repository.update_next_plan(session_id, intent)
+        repository.update_preplan_status(session_id, status="ready")
         bus.publish_many(
             campaign_id,
             [
@@ -675,12 +692,23 @@ async def run_pre_plan_background(
                 )
             ],
         )
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "pre-plan background failed: session=%s campaign=%s",
             session_id,
             campaign_id,
         )
+        try:
+            repository.update_preplan_status(
+                session_id,
+                status="failed",
+                error_detail=str(exc),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "pre-plan background failed to record terminal failed status: session=%s",
+                session_id,
+            )
 
 
 def _last_agent_content_before(

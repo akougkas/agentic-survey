@@ -59,6 +59,9 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return list(self._tools)
 
+    def __contains__(self, name: object) -> bool:
+        return isinstance(name, str) and name in self._tools
+
     def is_empty(self) -> bool:
         return not self._tools
 

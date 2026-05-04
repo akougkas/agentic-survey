@@ -67,11 +67,22 @@ def spawn_pre_plan_bg(
     router: LiteLLMRouter,
     cache: RetrievalCache,
     bus: CampaignEventBus,
-) -> asyncio.Task[None]:
-    existing = _pre_plan_tasks_by_session.get(session_id)
-    if existing is not None and not existing.done():
-        logger.info("pre-plan already in flight: session=%s", session_id)
-        return existing
+) -> asyncio.Task[None] | None:
+    """Schedule a pre-plan warmup behind a session-level single-flight CAS.
+
+    Two HTTP paths can call this back-to-back: invite redemption and
+    ``POST /sessions/{sid}/start``. The DB-level CAS on
+    ``preplan_inflight`` guarantees only one warmup runs per session
+    even when both paths fire in the same request lifecycle. Returns
+    ``None`` when the lock could not be acquired so callers can ignore
+    duplicate dispatches without inspecting an in-flight task handle.
+    """
+    if not repository.try_acquire_preplan_lock(session_id):
+        logger.info(
+            "pre-plan single-flight skip: session=%s already in flight",
+            session_id,
+        )
+        return None
 
     logger.info("spawning pre-plan background task: session=%s campaign=%s", session_id, campaign_id)
     task = asyncio.create_task(

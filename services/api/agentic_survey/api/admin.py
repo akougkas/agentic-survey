@@ -40,6 +40,12 @@ class TurnRetrievalAudit(BaseModel):
     scores: list[float] = []
 
 
+class SessionPreplanAudit(BaseModel):
+    status: str = "pending"
+    error_detail: str | None = None
+    inflight: bool = False
+
+
 class TurnAuditResponse(BaseModel):
     turn_id: str
     session_id: str
@@ -49,6 +55,7 @@ class TurnAuditResponse(BaseModel):
     brain_b_intent: dict[str, Any] | None = None
     validation: dict[str, Any] | None = None
     retrieval: TurnRetrievalAudit
+    preplan: SessionPreplanAudit
 
 
 class AdminLoginRequest(BaseModel):
@@ -438,6 +445,48 @@ async def get_turn_audit(
             query=retrieval_query,
             chunks=retrieval_rows,
             scores=retrieval_scores,
+        ),
+        preplan=SessionPreplanAudit(
+            status=session.preplan_status,
+            error_detail=session.preplan_error_detail,
+            inflight=session.preplan_inflight,
+        ),
+    )
+
+
+class SessionPreplanSummaryResponse(BaseModel):
+    session_id: str
+    campaign_id: str
+    preplan: SessionPreplanAudit
+
+
+@router.get(
+    "/campaigns/{campaign_id}/sessions/{session_id}/preplan",
+    dependencies=[Depends(require_admin_session)],
+)
+async def get_session_preplan_summary(
+    campaign_id: str,
+    session_id: str,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> SessionPreplanSummaryResponse:
+    """Operator-facing summary of the pre-plan warmup state.
+
+    Useful when inspecting a session that booted via invite redemption
+    to check whether the eager Brain B warmup landed before the
+    participant's first foreground turn arrived.
+    """
+    session = _require_campaign_session(
+        campaign_id=campaign_id,
+        session_id=session_id,
+        repository=repository,
+    )
+    return SessionPreplanSummaryResponse(
+        session_id=session.id,
+        campaign_id=session.campaign_id,
+        preplan=SessionPreplanAudit(
+            status=session.preplan_status,
+            error_detail=session.preplan_error_detail,
+            inflight=session.preplan_inflight,
         ),
     )
 

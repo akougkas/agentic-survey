@@ -222,6 +222,9 @@ class InterviewSessionRecord(BaseModel):
     micro_form_answers: dict[str, str] = Field(default_factory=dict)
     turns: list[InterviewTurnRecord] = Field(default_factory=list)
     next_plan: BrainBIntent | None = None
+    preplan_status: Literal["pending", "ready", "late_skipped", "failed"] = "pending"
+    preplan_error_detail: str | None = None
+    preplan_inflight: bool = False
 
 
 DEFAULT_PERSONA_HINTS = {
@@ -825,6 +828,48 @@ class InMemoryRepository:
         with self._lock:
             session = self._interview_sessions[session_id]
             session.next_plan = plan.model_copy(deep=True) if plan is not None else None
+            session.updated_at = _timestamp()
+        return session.model_copy(deep=True)
+
+    def try_acquire_preplan_lock(self, session_id: str) -> bool:
+        """Atomic check-and-set on ``preplan_inflight``.
+
+        Returns ``True`` when the caller successfully claimed the lock
+        and ``False`` when another caller already holds it. The state
+        machine resets ``preplan_status`` to ``pending`` and clears
+        ``preplan_error_detail`` on a fresh acquire so a retry after a
+        ``failed`` terminal can move forward.
+        """
+        with self._lock:
+            session = self._interview_sessions[session_id]
+            if session.preplan_inflight:
+                return False
+            session.preplan_inflight = True
+            session.preplan_status = "pending"
+            session.preplan_error_detail = None
+            session.updated_at = _timestamp()
+        return True
+
+    def update_preplan_status(
+        self,
+        session_id: str,
+        *,
+        status: Literal["pending", "ready", "late_skipped", "failed"],
+        error_detail: str | None = None,
+    ) -> InterviewSessionRecord:
+        """Record the terminal preplan outcome and release the lock.
+
+        ``status='pending'`` is allowed for callers that need to roll a
+        session back into a queued state, but the dispatcher should not
+        use it. The terminal callers are ``ready``, ``late_skipped``,
+        and ``failed``. ``preplan_inflight`` always falls back to
+        ``False`` so a subsequent acquire can succeed.
+        """
+        with self._lock:
+            session = self._interview_sessions[session_id]
+            session.preplan_status = status
+            session.preplan_error_detail = error_detail
+            session.preplan_inflight = False
             session.updated_at = _timestamp()
         return session.model_copy(deep=True)
 

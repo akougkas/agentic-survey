@@ -536,6 +536,29 @@ async def run_brain_b_with_tools(
         tool_calls = _normalize_tool_calls(message)
 
         if tool_calls:
+            # Local models occasionally emit tool_calls for output-contract
+            # fields like ``get_user_input``. Drop unknown names so the
+            # turn proceeds on whatever content is also present; if there
+            # is no content, the existing parse-retry path will force a
+            # terminal call. The dropped call never reaches the assistant
+            # message we append below, which keeps the OpenAI tool_call_id
+            # ↔ tool message pairing consistent.
+            filtered_tool_calls: list[dict[str, Any]] = []
+            for call in tool_calls:
+                function = call.get("function") or {}
+                candidate_name = str(function.get("name") or "")
+                if candidate_name and candidate_name in registry:
+                    filtered_tool_calls.append(call)
+                else:
+                    logger.warning(
+                        "brain_b dropped unknown tool_call surface=%s name=%s known=%s",
+                        surface,
+                        candidate_name or "<empty>",
+                        sorted(registry.names()),
+                    )
+            tool_calls = filtered_tool_calls
+
+        if tool_calls:
             if len(tool_calls_made) + len(tool_calls) > max_tool_calls:
                 raise BrainBToolBudgetExceeded(
                     f"Brain B exceeded tool-call budget of {max_tool_calls}",

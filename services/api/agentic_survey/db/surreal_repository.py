@@ -711,6 +711,9 @@ class SurrealRepository:
             "updated_at": now_dt,
             "micro_form_answers": answers,
             "next_plan": None,
+            "preplan_status": "pending",
+            "preplan_error_detail": None,
+            "preplan_inflight": False,
         }
         self._db().create(RecordID("interview_session", session_id), payload)
         return InterviewSessionRecord(
@@ -726,6 +729,9 @@ class SurrealRepository:
             started_at=now,
             updated_at=now,
             micro_form_answers=answers,
+            preplan_status="pending",
+            preplan_error_detail=None,
+            preplan_inflight=False,
         )
 
     def _latest_outline_revision(self, campaign_id: str) -> OutlineRevision | None:
@@ -875,6 +881,55 @@ class SurrealRepository:
                 updated_at: $ts
             };""",
             {"sid": session_id, "plan": payload, "ts": now_dt},
+        )
+        session = self.get_interview_session(session_id)
+        assert session is not None
+        return session
+
+    def try_acquire_preplan_lock(self, session_id: str) -> bool:
+        """Atomic CAS on ``preplan_inflight``.
+
+        SurrealQL's ``UPDATE ... WHERE ...`` only mutates rows that
+        match the predicate. Asking the database to flip the boolean
+        only when it is still ``false`` is the closest thing we have to
+        a compare-and-swap, and it makes the dispatcher safe under
+        concurrent invite redemption + start-loop calls (and across
+        replicas when a Coolify deploy briefly runs two backends).
+        """
+        now_dt = _utcnow()
+        rows = self._query(
+            """UPDATE type::thing('interview_session', $sid) MERGE {
+                preplan_inflight: true,
+                preplan_status: 'pending',
+                preplan_error_detail: NONE,
+                updated_at: $ts
+            } WHERE preplan_inflight = false RETURN AFTER;""",
+            {"sid": session_id, "ts": now_dt},
+        )
+        return bool(rows)
+
+    def update_preplan_status(
+        self,
+        session_id: str,
+        *,
+        status: Literal["pending", "ready", "late_skipped", "failed"],
+        error_detail: str | None = None,
+    ) -> InterviewSessionRecord:
+        """Persist the preplan outcome and clear the inflight flag."""
+        now_dt = _utcnow()
+        self._query(
+            """UPDATE type::thing('interview_session', $sid) MERGE {
+                preplan_status: $status,
+                preplan_error_detail: $error_detail,
+                preplan_inflight: false,
+                updated_at: $ts
+            };""",
+            {
+                "sid": session_id,
+                "status": status,
+                "error_detail": error_detail,
+                "ts": now_dt,
+            },
         )
         session = self.get_interview_session(session_id)
         assert session is not None
@@ -1119,6 +1174,9 @@ class SurrealRepository:
             micro_form_answers=dict(row.get("micro_form_answers") or {}),
             turns=turns,
             next_plan=BrainBIntent.model_validate(row["next_plan"]) if row.get("next_plan") else None,
+            preplan_status=row.get("preplan_status") or "pending",
+            preplan_error_detail=row.get("preplan_error_detail"),
+            preplan_inflight=bool(row.get("preplan_inflight") or False),
         )
 
     def _row_to_interview_turn(self, session_id: str, row: dict) -> InterviewTurnRecord:

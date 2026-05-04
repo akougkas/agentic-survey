@@ -8,9 +8,12 @@ COPY services/api/pyproject.toml ./pyproject.toml
 COPY services/api/agentic_survey ./agentic_survey
 COPY services/api/tests ./tests
 COPY examples ./examples
+COPY docker/entrypoint.sh /usr/local/bin/agentic-survey-entrypoint
+RUN chmod +x /usr/local/bin/agentic-survey-entrypoint
 
 RUN uv pip install --system .
 
 EXPOSE 8100
 
+ENTRYPOINT ["agentic-survey-entrypoint"]
 CMD ["uvicorn", "agentic_survey.main:app", "--host", "0.0.0.0", "--port", "8100"]

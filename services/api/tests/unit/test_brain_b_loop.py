@@ -312,6 +312,57 @@ def test_unknown_tool_name_raises_in_registry() -> None:
         asyncio.run(registry.dispatch("nonexistent", "{}"))
 
 
+def test_unknown_tool_call_in_loop_is_dropped_with_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """``get_user_input`` is the JSON output contract, not a callable tool.
+
+    OMNI occasionally emits a tool_call for it. The loop must log a
+    warning and drop the call so the turn proceeds on whatever content
+    is also available, with the parse-retry path covering a stub model
+    that emits no content.
+    """
+    registry = _registry_with_search(results=[])
+    router = _ScriptedRouter(
+        [
+            # First model response: ONLY a bogus tool_call, no content.
+            _completion(
+                tool_calls=[
+                    _tool_call(
+                        call_id="c-bogus",
+                        name="get_user_input",
+                        arguments={"question": "anything"},
+                    )
+                ]
+            ),
+            # Second iteration: parse-retry kicks in (terminal_only path)
+            # and the model finally emits a proper intent.
+            _completion(content=json.dumps(_intent_payload())),
+        ]
+    )
+
+    caplog.set_level("WARNING", logger="agentic_survey.agents.brain_b_loop")
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[],
+            registry=registry,
+            router=router,
+        )
+    )
+
+    assert result.tool_calls == []
+    assert result.intent.active_axis == "sampling_frame"
+    bogus_warnings = [
+        record for record in caplog.records if "get_user_input" in record.getMessage()
+    ]
+    assert bogus_warnings, "expected a warning about the dropped get_user_input tool call"
+    assert any(
+        "dropped unknown tool_call" in record.getMessage() for record in bogus_warnings
+    )
+
+
 def test_malformed_tool_arguments_raise_in_registry() -> None:
     async def search(query: str, k: int, mode: str = "hybrid") -> list[dict[str, Any]]:
         return []

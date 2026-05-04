@@ -107,6 +107,11 @@ DEFINE FIELD IF NOT EXISTS paused_reason ON TABLE interview_session TYPE option<
 DEFINE FIELD IF NOT EXISTS abandoned_reason ON TABLE interview_session TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS micro_form_answers ON TABLE interview_session FLEXIBLE TYPE object DEFAULT {};
 DEFINE FIELD IF NOT EXISTS next_plan ON TABLE interview_session FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS preplan_status ON TABLE interview_session TYPE string
+    ASSERT $value IN ['pending','ready','late_skipped','failed']
+    DEFAULT 'pending';
+DEFINE FIELD IF NOT EXISTS preplan_error_detail ON TABLE interview_session TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS preplan_inflight ON TABLE interview_session TYPE bool DEFAULT false;
 
 DEFINE TABLE IF NOT EXISTS interview_turn SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS session ON TABLE interview_turn TYPE record<interview_session>;

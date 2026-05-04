@@ -6,7 +6,7 @@ WEB_PORT ?= 5270
 WEB_PUBLIC_BASE_URL ?= http://$(WEB_HOST):$(WEB_PORT)
 API_PROXY_TARGET ?= http://$(API_HOST):$(API_PORT)
 
-.PHONY: api-dev api-dev-citadl api-test web-dev web-build web-check bundle-validate bundle-validate-citadl verify
+.PHONY: api-dev api-dev-citadl api-test web-dev web-build web-check bundle-validate bundle-validate-citadl schema-apply verify
 
 api-dev:
 	cd services/api && SURVEY_PUBLIC_BASE_URL=$(WEB_PUBLIC_BASE_URL) SURVEY_FRONTEND_ORIGIN=$(WEB_PUBLIC_BASE_URL) uv run uvicorn agentic_survey.main:app --reload --host $(API_HOST) --port $(API_PORT)
@@ -31,5 +31,8 @@ bundle-validate:
 
 bundle-validate-citadl:
 	cd services/api && SURVEY_PRODUCT_BUNDLE_DIR=$(ROOT_DIR)/citadl/bundle uv run python -m agentic_survey.bundles
+
+schema-apply:
+	cd services/api && uv run python -m agentic_survey.db.schema
 
 verify: bundle-validate api-test web-check web-build
