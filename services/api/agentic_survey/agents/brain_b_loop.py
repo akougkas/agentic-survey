@@ -105,13 +105,58 @@ def _strip_json_schema_annotations(value: Any) -> Any:
     return value
 
 
-def _normalize_discuss_more(raw: str) -> str:
-    """Force ``get_user_input.options`` to end with exactly 'Discuss this more.'.
+_OPTION_MAX_LEN = 120
+_OPTION_TOTAL_CAP = 4
+_OPTION_REJECT_SUBSTRINGS: tuple[str, ...] = (
+    # Schema-rule fragments small models occasionally lift verbatim from
+    # the system prompt instead of synthesizing a real chip.
+    "options_are_3_or_4_strings",
+    "discuss_this_more",
+    "must contain 3 or 4 strings",
+    "the last string must be literally",
+    "[noun]",
+)
 
-    Local models sometimes skip the verbatim contract. We dedupe a trailing
-    match, truncate to four options, and append the canonical string. If the
-    payload is not parseable JSON the text flows through unchanged so the
-    caller's ValidationError diagnostics stay intact.
+
+def _sanitize_option(raw: str) -> str:
+    """Normalize a single chip option string for participant display.
+
+    Strips whitespace, drops surrounding square brackets ("[Skip this]"
+    is a documented prompt foible), collapses repeated whitespace, and
+    truncates to ``_OPTION_MAX_LEN`` so a paragraph-quote of the
+    participant's prior message can never reach the UI as a chip.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    if text.startswith("[") and text.endswith("]") and len(text) > 2:
+        text = text[1:-1].strip()
+    text = " ".join(text.split())
+    if len(text) > _OPTION_MAX_LEN:
+        text = text[: _OPTION_MAX_LEN - 1].rstrip() + "…"
+    return text
+
+
+def _normalize_discuss_more(raw: str) -> str:
+    """Force ``get_user_input.options`` to a clean 3-4 chip set ending with
+    'Discuss this more.'.
+
+    Local models sometimes skip the verbatim contract, parrot the prompt's
+    schema rules, paragraph-quote the participant's prior message, or emit
+    duplicate options. The normalizer:
+
+    - Drops empty and ``Discuss this more.``-equivalent entries.
+    - Strips bracket-wrapping (``"[Skip this]"`` is a known prompt foible)
+      and caps each chip at ``_OPTION_MAX_LEN`` so paragraph-quotes
+      cannot reach the UI.
+    - Drops chips whose text matches a known schema-rule fragment so
+      prompt leakage like ``options_are_3_or_4_strings…`` never displays.
+    - Deduplicates case-insensitively while preserving first occurrence.
+    - Caps the total to ``_OPTION_TOTAL_CAP`` (3 anchors + the canonical
+      "Discuss this more." closing).
+
+    If the payload is not parseable JSON the text flows through unchanged
+    so the caller's ValidationError diagnostics stay intact.
     """
     try:
         payload = json.loads(raw)
@@ -123,9 +168,23 @@ def _normalize_discuss_more(raw: str) -> str:
     options = gui.get("options")
     if not isinstance(options, list) or not options:
         return raw
-    cleaned = [str(opt).strip() for opt in options if str(opt).strip()]
-    cleaned = [opt for opt in cleaned if opt.lower() != _DISCUSS_MORE.lower()]
-    cleaned = cleaned[:4]
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for opt in options:
+        text = _sanitize_option(str(opt))
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered == _DISCUSS_MORE.lower():
+            continue
+        if any(marker in lowered for marker in _OPTION_REJECT_SUBSTRINGS):
+            continue
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        cleaned.append(text)
+        if len(cleaned) >= _OPTION_TOTAL_CAP - 1:
+            break
     cleaned.append(_DISCUSS_MORE)
     gui["options"] = cleaned
     payload["get_user_input"] = gui

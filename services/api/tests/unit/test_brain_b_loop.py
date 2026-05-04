@@ -257,6 +257,75 @@ def test_discuss_more_normalizer_appends_missing_option() -> None:
     assert len(result.intent.get_user_input.options) == 4
 
 
+def test_chip_normalizer_drops_paragraph_quotes_and_dedupes() -> None:
+    long_quote = (
+        "The data starts at the K3 detector on the Krios microscope, lands on a "
+        "buffer disk in the imaging room, and we ship it nightly to the cluster "
+        "scratch via Globus. Motion correction and CTF estimation run on GPU "
+        "nodes; the per-particle stacks live on /scratch for the active run."
+    )
+    payload = _intent_payload(
+        options=[
+            long_quote,
+            long_quote,
+            long_quote,
+            "options_are_3_or_4_strings_with_last_option_literally_Discuss_this_more._,",
+            "[Skip this]",
+            "  ",
+        ]
+    )
+    router = _ScriptedRouter([_completion(content=json.dumps(payload))])
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="designer",
+            system_context=[],
+            transcript_tail=[],
+            registry=ToolRegistry(),
+            router=router,
+        )
+    )
+    options = result.intent.get_user_input.options
+    # Cap is 4 total; at minimum the closing chip is always present.
+    assert 1 <= len(options) <= 4
+    assert options[-1] == "Discuss this more."
+    # Schema-rule fragment must not reach the UI.
+    assert all("options_are_3_or_4_strings" not in opt for opt in options)
+    # Square-bracket wrapping is stripped, never displayed verbatim.
+    assert all(not (opt.startswith("[") and opt.endswith("]")) for opt in options)
+    # Length cap stops paragraph-quotes from leaking through; the lone
+    # surviving non-discuss chip is the truncated paragraph-quote.
+    for opt in options[:-1]:
+        assert len(opt) <= 120
+    # Duplicates collapse to a single entry plus the closing chip.
+    paragraph_chips = [opt for opt in options if opt != "Discuss this more."]
+    assert len({chip.lower() for chip in paragraph_chips}) == len(paragraph_chips)
+
+
+def test_chip_normalizer_caps_total_options_at_four() -> None:
+    payload = _intent_payload(
+        options=[
+            "First anchor episode",
+            "Second anchor episode",
+            "Third anchor episode",
+            "Fourth anchor episode",
+            "Fifth anchor episode",
+        ]
+    )
+    router = _ScriptedRouter([_completion(content=json.dumps(payload))])
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="designer",
+            system_context=[],
+            transcript_tail=[],
+            registry=ToolRegistry(),
+            router=router,
+        )
+    )
+    options = result.intent.get_user_input.options
+    assert len(options) == 4
+    assert options[-1] == "Discuss this more."
+
+
 def test_tool_registry_rejects_duplicate_names() -> None:
     async def handler(_args: dict[str, Any]) -> dict[str, Any]:
         return {}
