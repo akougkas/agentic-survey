@@ -118,6 +118,16 @@ export interface AxisCoverage {
   gap: string;
 }
 
+export type QuestionCoverageStatus = 'pending' | 'targeting' | 'partial' | 'satisfied' | 'skipped';
+
+export interface QuestionCoverage {
+  question_id: string;
+  status: QuestionCoverageStatus;
+  confidence: number;
+  evidence_quote: string;
+  turn_id: string;
+}
+
 export type OutlinePatchOp = 'replace' | 'append' | 'remove';
 
 export interface OutlinePatchSection {
@@ -135,6 +145,7 @@ export interface OutlinePatch {
 export interface BrainBIntent {
   active_axis: string;
   axes_coverage: AxisCoverage[];
+  question_coverage: QuestionCoverage[];
   question_intent: string;
   get_user_input: GetUserInputOptions;
   outline_patch: OutlinePatch | null;

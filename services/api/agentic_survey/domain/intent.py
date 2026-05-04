@@ -11,6 +11,8 @@ __all__ = [
     "BrainBIntent",
     "OutlinePatch",
     "OutlinePatchSection",
+    "QuestionCoverage",
+    "QuestionCoverageStatus",
 ]
 
 OutlinePatchOp = Literal["replace", "append", "remove"]
@@ -46,6 +48,19 @@ class AxisCoverage(BaseModel):
     gap: str = ""
 
 
+QuestionCoverageStatus = Literal[
+    "pending", "targeting", "partial", "satisfied", "skipped"
+]
+
+
+class QuestionCoverage(BaseModel):
+    question_id: str
+    status: QuestionCoverageStatus = "pending"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    evidence_quote: str = ""
+    turn_id: str = ""
+
+
 class BrainBIntent(BaseModel):
     """Inter-brain handoff payload emitted by Designer Brain B each turn.
 
@@ -56,6 +71,7 @@ class BrainBIntent(BaseModel):
 
     active_axis: str
     axes_coverage: list[AxisCoverage] = Field(default_factory=list)
+    question_coverage: list[QuestionCoverage] = Field(default_factory=list)
     question_intent: str
     get_user_input: GetUserInputOptions
     outline_patch: OutlinePatch | None = None
