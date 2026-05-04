@@ -248,8 +248,12 @@ def test_opening_turn_message_names_controls_once() -> None:
 @pytest.mark.parametrize(
     "raw,expected_head",
     [
-        ("Storage engineer, HPC, tape", "Storage engineer"),
-        ("Run a Slurm cluster for a physics group", "Run a Slurm cluster for a physics"),
+        # Sentence-initial capitalization is dropped because the opener
+        # embeds the phrase mid-sentence ("You mentioned <phrase>"); proper
+        # nouns like ``Slurm`` keep their casing because the pivot is a
+        # whole-word regex, not a global lowercase.
+        ("Storage engineer, HPC, tape", "storage engineer"),
+        ("Run a Slurm cluster for a physics group", "run a Slurm cluster for a physics"),
         ("  hot-tier reclamation.  ", "hot-tier reclamation"),
     ],
 )
@@ -258,6 +262,42 @@ def test_noun_phrase_extractor_handles_clauses_and_whitespace(raw: str, expected
 
     head = _extract_noun_phrase(raw)
     assert head.startswith(expected_head) or head == expected_head
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Bare "I" → "You" (capitalized, not all-caps); proper nouns kept.
+        ("I run cryo-EM on a Slurm cluster", "You run cryo-EM on a Slurm cluster"),
+        ("We operate a tape archive", "Your team operate a tape archive"),
+        ("My team supports BIDS workflows", "Your team supports BIDS workflows"),
+        # No first-person tokens: pass through unchanged.
+        ("Storage engineer, HPC, tape", "Storage engineer, HPC, tape"),
+        ("I'm a research software engineer", "You're a research software engineer"),
+    ],
+)
+def test_pivot_to_second_person_preserves_casing_of_proper_nouns(raw: str, expected: str) -> None:
+    from agentic_survey.engine.interview_loop import _pivot_to_second_person
+
+    assert _pivot_to_second_person(raw) == expected
+
+
+def test_opening_turn_message_quotes_in_second_person_when_evidence_is_first_person() -> None:
+    campaign, repo, session_id = _campaign_with_answers(
+        {
+            "evidence_of_belonging": "I run cryo-EM single-particle reconstruction on a university cluster.",
+        }
+    )
+    session = repo.get_interview_session(session_id)
+    assert session is not None
+    message = opening_turn_message(campaign, session)
+    # The participant's first-person self-description must be pivoted; the
+    # raw "I run …" string would make Mira sound like she did the work.
+    assert "You mentioned I run" not in message
+    assert "you run cryo-EM" in message
+    # Proper-noun casing (Slurm, BIDS, etc.) is preserved by the pivot's
+    # whole-word regex; that survives the opener template too.
+    assert "cryo-EM" in message
 
 
 def test_update_next_plan_round_trips_brain_b_intent() -> None:

@@ -65,8 +65,11 @@ def opening_turn_message(campaign: Campaign, session: InterviewSessionRecord) ->
     Title-free and calibrated: when the participant has already answered
     ``evidence_of_belonging`` in the pre-interview micro-form, the opener
     echoes a short noun phrase back and asks for a concrete recent
-    episode. When no answer is present, it invites a light self
-    description. Controls are named once before the question.
+    episode. The micro-form answer is written in first person ("I run …");
+    the opener pivots it to second person before quoting so Mira doesn't
+    sound like she is talking about herself. When no answer is present, it
+    invites a light self description. Controls are named once before the
+    question.
     """
     del campaign  # title is intentionally not quoted; leaked vocabulary is a risk.
     answers = getattr(session, "micro_form_answers", {}) or {}
@@ -88,12 +91,91 @@ def opening_turn_message(campaign: Campaign, session: InterviewSessionRecord) ->
     )
 
 
+# Pivot table: first-person pronouns and contractions in a micro-form answer
+# get rewritten as second-person before the opener quotes them. Order matters:
+# longer multi-word phrases run first so contractions like "I'm" don't get
+# eaten by a bare-"i" rule. Bare "i" / "we" / "us" / "my" / "me" / "mine"
+# / "myself" / "ours" only fire on whole-word boundaries so proper nouns
+# like ``Slurm`` or domain terms like ``MIME`` survive untouched.
+_PRONOUN_PIVOTS: tuple[tuple[str, str], ...] = (
+    ("i'm", "you're"),
+    ("i've", "you've"),
+    ("i'd", "you'd"),
+    ("i'll", "you'll"),
+    ("we're", "your team is"),
+    ("we've", "your team has"),
+    ("we'd", "your team would"),
+    ("we'll", "your team will"),
+    ("our", "your"),
+    ("ours", "yours"),
+    ("us", "your team"),
+    ("we", "your team"),
+    ("my", "your"),
+    ("mine", "yours"),
+    ("me", "you"),
+    ("myself", "yourself"),
+    ("i", "you"),
+)
+
+_PRONOUN_PIVOT_RE = re.compile(
+    r"(?i)\b(" + "|".join(re.escape(src) for src, _ in _PRONOUN_PIVOTS) + r")\b"
+)
+_PRONOUN_PIVOT_LOOKUP: dict[str, str] = {src: dst for src, dst in _PRONOUN_PIVOTS}
+
+
+def _match_case(token: str, replacement: str) -> str:
+    """Project the casing of ``token`` onto ``replacement``.
+
+    Handles three patterns: all lower, all upper, and capitalized first
+    letter. Single-character tokens (notably ``"I"``) are treated as
+    capitalized rather than fully upper since the bare pronoun is always
+    written that way in English; treating it as an acronym would shout
+    ``YOU`` back at the participant. Anything else falls through to
+    lowercase.
+    """
+    if not replacement:
+        return replacement
+    if len(token) > 1 and token.isupper():
+        return replacement.upper()
+    if token[:1].isupper():
+        return replacement[:1].upper() + replacement[1:]
+    return replacement
+
+
+def _pivot_to_second_person(text: str) -> str:
+    """Rewrite first-person pronouns to second-person inside a quoted phrase.
+
+    The micro-form answer is the participant's own self-description ("I
+    run cryo-EM…", "We operate a tape archive…"). The opener wraps it in
+    "You mentioned <phrase>"; quoting the phrase verbatim makes Mira
+    appear to be claiming the work as hers. We rewrite first-person tokens
+    to second-person on whole-word boundaries so proper nouns like
+    ``Slurm`` and acronyms keep their original casing.
+    """
+    if not text:
+        return text
+
+    def _swap(match: "re.Match[str]") -> str:
+        token = match.group(0)
+        replacement = _PRONOUN_PIVOT_LOOKUP.get(token.lower(), token)
+        return _match_case(token, replacement)
+
+    return _PRONOUN_PIVOT_RE.sub(_swap, text)
+
+
 def _extract_noun_phrase(text: str, *, max_words: int = 12) -> str:
     """Pull a short head-of-sentence phrase from free text.
 
     Naive slice: the first clause before a comma, or the first
-    ``max_words`` tokens. Trailing punctuation is stripped. This runs
-    deterministically on the respondent's own words; no LLM call.
+    ``max_words`` tokens. Trailing punctuation is stripped. The result is
+    pivoted to second person so the opener can quote it inside "You
+    mentioned …" without making Mira sound like she did the work herself.
+    This runs deterministically on the respondent's own words; no LLM call.
+
+    The first character is lowercased after pivoting because the opener
+    embeds the phrase mid-sentence ("You mentioned <phrase>") — keeping
+    the leading "I"/"We"/etc. as a sentence-initial capital after pivot
+    would produce a stilted "You mentioned You run …".
     """
     cleaned = text.strip()
     if not cleaned:
@@ -102,7 +184,11 @@ def _extract_noun_phrase(text: str, *, max_words: int = 12) -> str:
     tokens = head.split()
     if len(tokens) > max_words:
         head = " ".join(tokens[:max_words])
-    return head.rstrip(".!?;:").strip()
+    head = head.rstrip(".!?;:").strip()
+    pivoted = _pivot_to_second_person(head)
+    if pivoted and pivoted[:1].isupper():
+        pivoted = pivoted[:1].lower() + pivoted[1:]
+    return pivoted
 
 INTERVIEWER_BRAIN_A_PROMPT = "interviewer_brain_a.md"
 
