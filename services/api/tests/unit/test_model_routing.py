@@ -79,7 +79,8 @@ def test_litellm_aliases_are_pinned_to_runtime_envs() -> None:
     embeddings = _entry_by_name(config, "embeddings")
     assert embeddings["litellm_params"] == {
         "model": "openai/${SURVEY_EMBEDDING_MODEL}",
-        "api_base": "${SURVEY_DYNAMO_ENDPOINT_URL}",
+        "api_base": "${SURVEY_EMBEDDING_ENDPOINT_URL}",
+        "api_key": "${SURVEY_EMBEDDING_API_KEY}",
     }
 
 

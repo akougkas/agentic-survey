@@ -68,7 +68,8 @@ model_list:
   - model_name: embeddings
     litellm_params:
       model: openai/${SURVEY_EMBEDDING_MODEL}
-      api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      api_base: ${SURVEY_EMBEDDING_ENDPOINT_URL}
+      api_key: ${SURVEY_EMBEDDING_API_KEY}
 router_settings:
   routing_strategy: simple-shuffle
   retry_policy:

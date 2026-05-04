@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     dynamo_model: str = "nvidia-nemotron-3-nano-omni-30b-a3b-reasoning"
     dynamo_context_window_tokens: int = Field(default=600_000, ge=1)
     embedding_model: str = "text-embedding-nomic-embed-text-v2-moe"
+    # Where embedding requests go. Empty falls back to dynamo_endpoint_url so
+    # the historical LM-Studio-on-dynamo path keeps working unchanged. Set this
+    # to a separate ollama (or whatever) endpoint when the embedding model is
+    # served somewhere different from the chat/reasoning model.
+    embedding_endpoint_url: str = ""
     llm_enabled: bool = False
     llm_timeout_seconds: float = 60.0
     llm_visible_reply_max_tokens: int = Field(default=512, ge=1)

@@ -188,6 +188,17 @@ def get_litellm_router() -> LiteLLMRouter:
     os.environ.setdefault("SURVEY_DYNAMO_ENDPOINT_URL", settings.dynamo_endpoint_url)
     os.environ.setdefault("SURVEY_DYNAMO_MODEL", settings.dynamo_model)
     os.environ.setdefault("SURVEY_EMBEDDING_MODEL", settings.embedding_model)
+    # Embedding endpoint falls back to dynamo URL when the operator has not set
+    # an explicit value, so the historical single-endpoint deploy keeps working
+    # without a config change. setdefault keeps explicit shell exports authoritative.
+    os.environ.setdefault(
+        "SURVEY_EMBEDDING_ENDPOINT_URL",
+        settings.embedding_endpoint_url.strip() or settings.dynamo_endpoint_url,
+    )
+    # LiteLLM's OpenAI-compat client requires an api_key field even when talking
+    # to a local server that ignores it (LM Studio, ollama). Reuse the same
+    # placeholder used by the chat endpoints.
+    os.environ.setdefault("SURVEY_EMBEDDING_API_KEY", os.environ.get("OPENAI_API_KEY", "lm-studio"))
     # OpenRouter fallback. setdefault keeps explicit shell exports authoritative.
     os.environ.setdefault("SURVEY_OPENROUTER_API_KEY", settings.openrouter_api_key)
     os.environ.setdefault("SURVEY_OPENROUTER_BASE_URL", settings.openrouter_base_url)
