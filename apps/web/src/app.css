@@ -107,6 +107,18 @@
     @apply text-chalk;
   }
 
+  .participant-footer {
+    @apply mt-12 flex flex-col items-center gap-1 border-t border-[color:var(--line)] pt-6 pb-4 text-center;
+  }
+
+  .participant-footer-credits {
+    @apply m-0 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.22em] text-[color:var(--muted)];
+  }
+
+  .participant-footer-copyright {
+    @apply m-0 font-mono text-[10px] uppercase tracking-[0.22em] text-[color:var(--muted)] opacity-70;
+  }
+
   /* =============================================================
      3. EDITORIAL PRIMITIVES
      ============================================================= */

@@ -131,6 +131,10 @@ ui:
     submit_idle: Send
     submit_pending: Working...
     submit_finished: Session complete
+  footer:
+    hosted_by: Hosted by OSU and IIT.
+    developed_by: Developed by GRC.
+    copyright: © 2026 CITADL.
 
 research_agent_hook:
   provider: null

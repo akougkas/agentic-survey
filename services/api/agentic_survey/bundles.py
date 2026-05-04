@@ -188,11 +188,27 @@ class BundleChatCopy(BaseModel):
     submit_finished: str = "Session complete"
 
 
+class BundleFooterCopy(BaseModel):
+    """Quiet credits rendered under the participant chrome only.
+
+    Operator (admin) routes never render this; the footer is participant-
+    facing study credit (host institutions, developer attribution,
+    copyright). All three lines are optional — empty strings are simply
+    omitted at render time so a bundle can opt out of any one without
+    leaking layout artifacts.
+    """
+
+    hosted_by: str = ""
+    developed_by: str = ""
+    copyright: str = ""
+
+
 class BundleCopy(BaseModel):
     home: BundleHomeCopy = Field(default_factory=BundleHomeCopy)
     admin: BundleAdminCopy = Field(default_factory=BundleAdminCopy)
     invite: BundleInviteCopy = Field(default_factory=BundleInviteCopy)
     chat: BundleChatCopy = Field(default_factory=BundleChatCopy)
+    footer: BundleFooterCopy = Field(default_factory=BundleFooterCopy)
 
 
 class ProductBundleManifest(BaseModel):

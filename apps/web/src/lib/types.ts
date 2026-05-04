@@ -247,11 +247,18 @@ export interface BundleChatCopy {
   submit_finished: string;
 }
 
+export interface BundleFooterCopy {
+  hosted_by: string;
+  developed_by: string;
+  copyright: string;
+}
+
 export interface BundleUiCopy {
   home: BundleHomeCopy;
   admin: BundleAdminCopy;
   invite: BundleInviteCopy;
   chat: BundleChatCopy;
+  footer: BundleFooterCopy;
 }
 
 export interface ProductBundleManifest {
