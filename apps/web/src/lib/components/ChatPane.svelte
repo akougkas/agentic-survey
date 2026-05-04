@@ -132,6 +132,34 @@
     dispatch('submit', { content });
   }
 
+  async function prefillChip(content: string): Promise<void> {
+    if (disabled || pending || paused) {
+      return;
+    }
+    pressedChip = content;
+    setTimeout(() => {
+      pressedChip = null;
+    }, 220);
+
+    const trimmed = content.trim();
+    const existing = draft;
+    const needsLeadingSpace = existing.length > 0 && !/\s$/.test(existing);
+    draft = `${existing}${needsLeadingSpace ? ' ' : ''}${trimmed} `;
+    liveAnnouncement = `Inserted: ${trimmed} Continue typing.`;
+
+    await tick();
+    if (textareaEl) {
+      textareaEl.focus();
+      const end = draft.length;
+      try {
+        textareaEl.setSelectionRange(end, end);
+      } catch {
+        // setSelectionRange throws on hidden inputs in some browsers; ignore.
+      }
+      autoResize();
+    }
+  }
+
   function handleResume(): void {
     if (resumePending) {
       return;
@@ -269,7 +297,8 @@
             class="chip"
             class:chip--pressed={pressedChip === option}
             disabled={disabled || pending || paused}
-            on:click={() => submitChip(option)}
+            aria-label={`Insert sentence starter: ${option}`}
+            on:click={() => prefillChip(option)}
           >
             {option}
           </button>
@@ -294,9 +323,7 @@
         rows="3"
         disabled={disabled || pending || paused}
         class="transcript-textarea"
-        placeholder={activePrompt && activePrompt.options.length
-          ? 'Tap an anchor above, or type your own answer'
-          : placeholder}
+        placeholder={placeholder}
         aria-describedby={composerInstructionId || undefined}
         on:input={handleInput}
         on:keydown={handleKeydown}

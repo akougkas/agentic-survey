@@ -60,36 +60,110 @@ logger = logging.getLogger(__name__)
 def opening_turn_message(campaign: Campaign, session: InterviewSessionRecord) -> str:
     """The first agent turn at the top of a participant session.
 
-    Kept deterministic (no LLM) so a session boots cleanly even when the
-    router is cold; ``run_interview_turn`` takes over from turn 2 onward.
+    Three beats, deterministic (no LLM) so a session boots cleanly even
+    when the router is cold:
 
-    Title-free and calibrated: when the participant has already answered
-    ``evidence_of_belonging`` in the pre-interview micro-form, the opener
-    echoes a short noun phrase back and asks for a concrete recent
-    episode. The micro-form answer is written in first person ("I run …");
-    the opener pivots it to second person before quoting so Mira doesn't
-    sound like she is talking about herself. When no answer is present, it
-    invites a light self description. Controls are named once before the
-    question.
+    1. Greeting and role-aware purpose. When the participant picked a role
+       at intake, the greeting calls it out so the conversation lands as
+       "with someone who's done what you do," not as a generic survey.
+    2. Orientation. Names the axis count, time bound, consent posture,
+       and the four control verbs (skip, pause, come back, stop).
+    3. Soft opener. Echoes ``evidence_of_belonging`` when present and
+       invites one concrete moment. If the participant skipped the
+       optional role question, the opener asks it back in plain language
+       instead of fabricating one. Never the R-axis probe — Brain B fires
+       those after the participant answers this.
+
+    The micro-form answer is written in first person ("I run …"); the
+    opener pivots it to second person before quoting so Mira doesn't
+    sound like she is talking about herself. ``run_interview_turn`` takes
+    over from turn 2 onward.
     """
-    del campaign  # title is intentionally not quoted; leaked vocabulary is a risk.
     answers = getattr(session, "micro_form_answers", {}) or {}
     evidence = (answers.get("evidence_of_belonging") or "").strip()
+    role_self_description = (answers.get("role_self_description") or "").strip()
+    consent_mode = getattr(session, "consent_mode", "anonymous")
+    axis_count = sum(1 for axis in (campaign.outline.axes or []) if axis and axis.strip())
+
+    role_phrase = _role_phrase_for_opener(role_self_description)
+    if role_phrase:
+        greeting = (
+            f"Welcome. I'm Mira, here to learn how {role_phrase} actually work with data day-to-day."
+        )
+    else:
+        greeting = "Welcome. I'm Mira."
+
+    axes_word = _axis_count_word(axis_count)
+    if consent_mode == "named":
+        consent_phrase = "Your responses can be attributed to you, as you chose at intake."
+    else:
+        consent_phrase = "Your responses stay anonymous."
     controls = "You can skip, pause, come back later, or stop anytime."
+    orientation = (
+        f"We'll move through {axes_word} short topic threads at whatever depth "
+        f"your time allows. {consent_phrase} {controls}"
+    )
+
     if evidence:
         noun_phrase = _extract_noun_phrase(evidence)
-        return (
-            f"Mira here. You mentioned {noun_phrase}. "
-            f"{controls} "
-            "Walk me through the last time that cost you a day you didn't expect."
+        opener = (
+            f"To start: you mentioned {noun_phrase}. "
+            "What does a typical day with that look like for you these days?"
         )
-    return (
-        "Mira here. "
-        f"{controls} "
-        "Tell me in a sentence or two what you work on with scientific or research data, "
-        "whatever feels natural: role, domain, a recent project. "
-        "I'll take it from there."
-    )
+    elif not role_self_description:
+        opener = (
+            "To start: in a sentence, what kind of work brings you in front of "
+            "scientific or research data?"
+        )
+    else:
+        opener = (
+            "To start: what does a recent ordinary day with data look like for you?"
+        )
+
+    return f"{greeting} {orientation} {opener}"
+
+
+# Mapping the optional intake role to a peer-style noun the greeting can use.
+# Empty result means the opener falls back to the role-less greeting; that
+# avoids fabricating a role for the "Other or multiple" path or for
+# participants who skipped the optional question entirely.
+_ROLE_PHRASE_BY_OPTION: dict[str, str] = {
+    "Research scientist or engineer generating or analyzing data": "scientists like you",
+    "Facility operator or systems administrator": "facility operators like you",
+    "Tool, library, or service developer": "tool builders like you",
+    "Research software engineer supporting scientific applications": "research software engineers like you",
+    "AI or ML researcher or practitioner": "ML researchers like you",
+    "Institutional or platform lead": "platform leads like you",
+}
+
+
+def _role_phrase_for_opener(role_self_description: str) -> str:
+    cleaned = role_self_description.strip()
+    if not cleaned:
+        return ""
+    return _ROLE_PHRASE_BY_OPTION.get(cleaned, "")
+
+
+_AXIS_COUNT_WORDS: dict[int, str] = {
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+    9: "nine",
+    10: "ten",
+}
+
+
+def _axis_count_word(count: int) -> str:
+    if count <= 0:
+        return "a handful of"
+    if count in _AXIS_COUNT_WORDS:
+        return _AXIS_COUNT_WORDS[count]
+    return str(count)
 
 
 # Pivot table: first-person pronouns and contractions in a micro-form answer

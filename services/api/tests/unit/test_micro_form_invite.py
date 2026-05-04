@@ -207,7 +207,7 @@ def test_opening_turn_message_echoes_noun_phrase_when_evidence_present() -> None
     assert session is not None
     message = opening_turn_message(campaign, session)
     assert "storage" in message.lower() or "hpc" in message.lower()
-    assert message.startswith("Mira here.")
+    assert message.startswith("Welcome. I'm Mira")
 
 
 def test_opening_turn_message_forbidden_substrings_absent_in_both_branches() -> None:
@@ -243,6 +243,85 @@ def test_opening_turn_message_names_controls_once() -> None:
     message = opening_turn_message(campaign, session)
     controls_sentence = "You can skip, pause, come back later, or stop anytime."
     assert message.count(controls_sentence) == 1
+
+
+def test_opening_turn_message_has_three_beats_and_under_word_budget() -> None:
+    """Greeting + orientation + soft opener; under 120 words; ends with one '?'.
+
+    Beat-1 marker: starts with the greeting.
+    Beat-2 marker: names the controls verbatim and the consent posture.
+    Beat-3 marker: ends with a single question and includes the soft-opener cue.
+    """
+    campaign, repo, session_id = _campaign_with_answers(
+        {"evidence_of_belonging": "I run cryo-EM single-particle reconstruction on a university cluster."}
+    )
+    session = repo.get_interview_session(session_id)
+    assert session is not None
+    message = opening_turn_message(campaign, session)
+    word_count = len(message.split())
+    assert word_count <= 120, f"opener exceeded 120 words: {word_count} → {message}"
+    assert message.startswith("Welcome. I'm Mira")
+    assert "You can skip, pause, come back later, or stop anytime." in message
+    assert "anonymous" in message.lower()
+    assert "To start:" in message
+    assert message.count("?") == 1, f"opener must end with one question: {message!r}"
+
+
+def test_opening_turn_message_does_not_fabricate_role_when_unset() -> None:
+    """Named-no-role redemption asks the role question rather than guessing."""
+    repo = InMemoryRepository()
+    outline = OutlineArtifact(
+        consent_language="ok",
+        micro_form_schema=[
+            MicroFormField(
+                key="evidence_of_belonging",
+                label="tell us",
+                field_type="long_text",
+                required=True,
+            ),
+        ],
+    )
+    campaign = repo.create_campaign(
+        title="CITADEL Community Pulse",
+        min_n=3,
+        max_n=10,
+        outline=outline,
+        source="seed",
+        state=CampaignState.LIVE,
+    )
+    invite = repo.create_invite(campaign.id, label="opener")
+    session = repo.start_interview_session(
+        campaign_id=campaign.id,
+        invite_id=invite.id,
+        consent_mode="named",
+        identity_label="A. Researcher",
+        persona_snapshot=dict(outline.persona_hints),
+        pinned_endpoint="mini",
+        micro_form_answers={},
+    )
+    refreshed = repo.get_interview_session(session.id)
+    assert refreshed is not None
+    message = opening_turn_message(campaign, refreshed)
+    # No role guess and no evidence to echo: the opener must invite a soft
+    # self-description rather than name a role for them.
+    assert "scientists like you" not in message
+    assert "operators like you" not in message
+    assert "what kind of work" in message.lower()
+    # Named consent must not produce the anonymous phrasing.
+    assert "stay anonymous" not in message.lower()
+
+
+def test_opening_turn_message_uses_role_phrase_when_role_picked() -> None:
+    campaign, repo, session_id = _campaign_with_answers(
+        {
+            "evidence_of_belonging": "I run cryo-EM single-particle reconstruction on a university cluster.",
+            "role_self_description": "Research scientist or engineer generating or analyzing data",
+        }
+    )
+    session = repo.get_interview_session(session_id)
+    assert session is not None
+    message = opening_turn_message(campaign, session)
+    assert "scientists like you" in message
 
 
 @pytest.mark.parametrize(

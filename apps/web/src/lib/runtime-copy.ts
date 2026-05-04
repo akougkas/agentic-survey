@@ -112,9 +112,14 @@ export const runtimeCopy = {
     empty_state:
       "The conversation will begin with Mira's first question as soon as the session is ready.",
     placeholder_default: 'Answer in your own words.',
-    placeholder_with_chips: 'Tap one of the anchors above, or write your own answer.',
+    placeholder_with_chips: 'Tap a starter, or type your own answer.',
     submit_idle: 'Send',
     submit_pending: 'Working...',
     submit_finished: 'Session complete'
+  },
+  footer: {
+    hosted_by: '',
+    developed_by: '',
+    copyright: ''
   }
 } as const;
