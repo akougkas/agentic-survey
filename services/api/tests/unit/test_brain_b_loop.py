@@ -301,6 +301,51 @@ def test_chip_normalizer_drops_paragraph_quotes_and_dedupes() -> None:
     assert len({chip.lower() for chip in paragraph_chips}) == len(paragraph_chips)
 
 
+def test_brain_b_summary_log_includes_search_queries_and_axes(caplog) -> None:
+    payload = _intent_payload()
+    router = _ScriptedRouter(
+        [
+            _completion(
+                tool_calls=[
+                    _tool_call(
+                        call_id="c1",
+                        name="search_knowledge",
+                        arguments={"query": "scientific data lifecycle phases", "k": 3},
+                    )
+                ]
+            ),
+            _completion(content=json.dumps(payload)),
+        ]
+    )
+
+    async def _search(query: str, k: int, mode: str = "hybrid") -> list[dict[str, Any]]:
+        return [{"chunk_id": "kc1", "score": 0.5}]
+
+    registry = ToolRegistry([search_knowledge_tool(search_fn=_search)])
+    with caplog.at_level("WARNING", logger="agentic_survey.agents.brain_b_loop"):
+        asyncio.run(
+            run_brain_b_with_tools(
+                surface="interviewer",
+                system_context=[],
+                transcript_tail=[],
+                registry=registry,
+                router=router,
+            )
+        )
+    summary_lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("brain_b_summary")
+    ]
+    assert summary_lines, "brain_b_summary line missing from WARNING log"
+    body = json.loads(summary_lines[0].split(" ", 1)[1])
+    assert body["surface"] == "interviewer"
+    assert body["tool_calls_count"] == 1
+    assert body["search_queries"] == ["scientific data lifecycle phases"]
+    assert body["retrieval_used"] is True
+    assert "search_knowledge" in body["tool_names"]
+
+
 def test_chip_normalizer_caps_total_options_at_four() -> None:
     payload = _intent_payload(
         options=[

@@ -263,6 +263,84 @@ def _summarize(value: Any) -> str:
     return rendered[:_RESULT_LOG_LIMIT] + "…"
 
 
+def _observed_search_queries(tool_calls: list[ToolCallRecord]) -> list[str]:
+    """Pull the ``query`` arg from every observed ``search_knowledge`` call.
+
+    The audit drawer needs this to show the operator what Mira actually
+    asked the knowledge base, since the BrainBIntent model itself does
+    not carry tool-call history.
+    """
+    queries: list[str] = []
+    for call in tool_calls:
+        if call.name != "search_knowledge":
+            continue
+        if not isinstance(call.arguments, dict):
+            continue
+        query = call.arguments.get("query")
+        if isinstance(query, str) and query.strip():
+            queries.append(query.strip())
+    return queries
+
+
+def _log_brain_b_summary(
+    *,
+    surface: Surface,
+    iterations: int,
+    tool_calls: list[ToolCallRecord],
+    intent: BrainBIntent,
+    parse_retries: int,
+) -> None:
+    """Emit one structured audit line per Brain B turn.
+
+    Live ops needs to see Brain B activity in the API log alongside the
+    ``llm_call_audit`` lines from the validator path. The validator path
+    goes through ``LLMClient._acompletion`` which fires success_callback
+    manually; ``brain_b_loop`` calls ``router.acompletion`` directly so
+    no audit row appears in the log otherwise.
+
+    This summary captures the load-bearing fields: tool-call count, the
+    actual retrieval queries, axes-coverage spread, question-coverage
+    totals, should_close, and parse retries. Logged at WARNING so it
+    shows in the same default uvicorn output as the existing
+    llm_call_audit lines.
+    """
+    search_queries = _observed_search_queries(tool_calls)
+    tool_names = sorted({call.name for call in tool_calls})
+    axes_scores = [coverage.score for coverage in intent.axes_coverage]
+    axes_max = max(axes_scores) if axes_scores else 0.0
+    axes_zero_count = sum(1 for score in axes_scores if score <= 0.0)
+    payload = {
+        "surface": surface,
+        "iterations": iterations,
+        "parse_retries": parse_retries,
+        "tool_calls_count": len(tool_calls),
+        "tool_names": tool_names,
+        "search_queries": search_queries,
+        "retrieval_used": bool(intent.retrieval_used),
+        "retrieval_chunks_count": len(intent.retrieval_chunks),
+        "axes_count": len(axes_scores),
+        "axes_max": axes_max,
+        "axes_zero_count": axes_zero_count,
+        "question_coverage_count": len(intent.question_coverage),
+        "should_close": bool(intent.should_close),
+    }
+    logger.warning("brain_b_summary %s", json.dumps(payload, sort_keys=True, default=str))
+    if (
+        intent.retrieval_used
+        and axes_scores
+        and axes_zero_count == len(axes_scores)
+    ):
+        # Substantive turn: retrieval fired and the model emitted a full
+        # axes_coverage payload, but every score is zero. The orchestrator's
+        # monotonic backstop accepts that (zero is monotonic vs zero), but
+        # operators need a visible signal that the model is no longer
+        # scoring the rubric.
+        logger.warning(
+            "brain_b axes_coverage stayed all-zero on substantive turn surface=%s",
+            surface,
+        )
+
+
 def _observed_retrieval_chunks(tool_calls: list[ToolCallRecord]) -> list[str]:
     chunk_ids: list[str] = []
     for call in tool_calls:
@@ -739,6 +817,13 @@ async def run_brain_b_with_tools(
                 merge_stats.regressions_overridden,
                 merge_stats.final_count,
             )
+        _log_brain_b_summary(
+            surface=surface,
+            iterations=iteration + 1,
+            tool_calls=tool_calls_made,
+            intent=intent,
+            parse_retries=parse_retries,
+        )
         return BrainBLoopResult(intent=intent, tool_calls=tool_calls_made, raw_output=raw_output)
 
     raise BrainBLoopError(
