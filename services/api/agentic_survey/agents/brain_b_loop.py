@@ -21,7 +21,9 @@ __all__ = [
     "BrainBLoopResult",
     "BrainBToolBudgetExceeded",
     "ToolCallRecord",
+    "_floor_active_axis",
     "_merge_question_coverage",
+    "_question_intent_is_axis_label",
     "run_brain_b_with_tools",
 ]
 
@@ -433,12 +435,13 @@ def _normalize_axes_coverage(
         active_axis = axis_by_prefix[active_prefix]
 
     question_intent = intent.question_intent.strip()
-    if (
-        active_prefix
-        and question_intent.upper() == active_prefix
-        and intent.get_user_input.question.strip()
+    if intent.get_user_input.question.strip() and _question_intent_is_axis_label(
+        question_intent,
+        active_prefix=active_prefix,
+        rubric_axes=rubric_axes,
     ):
-        question_intent = f"{active_prefix}: {intent.get_user_input.question.strip()}"
+        prefix_lead = f"{active_prefix}: " if active_prefix else ""
+        question_intent = prefix_lead + intent.get_user_input.question.strip()
 
     return intent.model_copy(
         update={
@@ -447,6 +450,112 @@ def _normalize_axes_coverage(
             "question_intent": question_intent,
         }
     )
+
+
+def _question_intent_is_axis_label(
+    question_intent: str,
+    *,
+    active_prefix: str,
+    rubric_axes: list[str],
+) -> bool:
+    """Return True when ``question_intent`` is a rubric label, not an operational sentence.
+
+    Brain B sometimes emits a study-level descriptor (the bare axis prefix
+    ``R1``, the axis heading ``R1 — Lifecycle pain topology``, or the full
+    rubric axis label) instead of a turn-level intent that names what answer
+    the probe is trying to elicit. The orchestrator detects those shapes and
+    reforms the field from ``get_user_input.question`` so downstream audit
+    and analyst rollups carry a real operational intent.
+
+    A normal operational intent like ``R1: Where in your last cryo-EM run did
+    staging cost the most time?`` is left untouched because it is neither the
+    bare prefix nor a prefix-equality match against any rubric label segment.
+    """
+    qi = question_intent.strip()
+    if not qi:
+        return False
+    qi_upper = qi.upper()
+    if active_prefix and qi_upper == active_prefix.upper():
+        return True
+    for raw_axis in rubric_axes:
+        axis_norm = (raw_axis or "").strip().upper()
+        if not axis_norm:
+            continue
+        if qi_upper == axis_norm:
+            return True
+        for separator in (":", "—", "-"):
+            head = axis_norm.split(separator, 1)[0].strip()
+            if head and qi_upper == head:
+                return True
+    return False
+
+
+_ACTIVE_AXIS_FLOOR = 0.20
+
+
+def _floor_active_axis(
+    intent: BrainBIntent,
+    *,
+    rubric_axes: list[str],
+    floor: float = _ACTIVE_AXIS_FLOOR,
+) -> BrainBIntent:
+    """Bump the active axis to a minimum floor when a substantive turn left it at zero.
+
+    Some local backends (notably Nemotron OMNI) emit ``axes_coverage`` as
+    all-zeros even on substantive turns. The monotonic backstop in
+    ``_normalize_axes_coverage`` accepts zero-vs-zero, which leaves the
+    operator console showing flat rubric coverage despite real evidence in
+    the transcript. This floor catches that case: when the turn is
+    substantive (retrieval fired or Brain B advanced any question's status
+    to ``partial`` or ``satisfied``) AND the active axis is in the rubric
+    AND its current score is below ``floor``, raise it to ``floor``.
+
+    Brain B's own positive emissions are preserved untouched. Non-substantive
+    turns are left alone so the floor does not wash out a genuinely empty
+    response.
+    """
+    if not _is_substantive_turn(intent):
+        return intent
+    active_prefix = _axis_prefix(intent.active_axis)
+    if not active_prefix:
+        return intent
+    rubric_prefixes = {_axis_prefix(axis) for axis in rubric_axes if axis}
+    if active_prefix not in rubric_prefixes:
+        return intent
+    new_axes: list[AxisCoverage] = []
+    bumped = False
+    for entry in intent.axes_coverage:
+        prefix = _axis_prefix(entry.axis)
+        if prefix == active_prefix and entry.score < floor:
+            new_axes.append(entry.model_copy(update={"score": floor}))
+            bumped = True
+        else:
+            new_axes.append(entry)
+    if not bumped:
+        return intent
+    logger.warning(
+        "brain_b axes_coverage floor-bumped active axis axis=%s floor=%s",
+        active_prefix,
+        floor,
+    )
+    return intent.model_copy(update={"axes_coverage": new_axes})
+
+
+def _is_substantive_turn(intent: BrainBIntent) -> bool:
+    """Heuristic: did this turn produce evidence the rubric should credit?
+
+    True when retrieval fired (Brain B believed grounding was worth fetching)
+    OR when Brain B advanced any question's status to ``partial`` or
+    ``satisfied`` (Brain B believed the participant gave usable evidence).
+    A ``targeting`` emission alone is not enough; targeting just announces
+    intent for the next turn, not evidence on this one.
+    """
+    if intent.retrieval_used:
+        return True
+    for entry in intent.question_coverage:
+        if entry.status in {"partial", "satisfied"}:
+            return True
+    return False
 
 
 def _enforce_close_guard(
@@ -817,6 +926,8 @@ async def run_brain_b_with_tools(
                 merge_stats.regressions_overridden,
                 merge_stats.final_count,
             )
+        if rubric_axes is not None:
+            intent = _floor_active_axis(intent, rubric_axes=rubric_axes)
         _log_brain_b_summary(
             surface=surface,
             iterations=iteration + 1,

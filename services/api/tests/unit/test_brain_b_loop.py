@@ -9,8 +9,16 @@ import pytest
 from agentic_survey.agents.brain_b_loop import (
     BrainBLoopError,
     BrainBToolBudgetExceeded,
+    _floor_active_axis,
+    _question_intent_is_axis_label,
     run_brain_b_with_tools,
 )
+from agentic_survey.domain.intent import (
+    AxisCoverage,
+    BrainBIntent,
+    QuestionCoverage,
+)
+from agentic_survey.domain.tools import GetUserInputOptions
 from agentic_survey.agents.tools.definitions import (
     get_outline_state_tool,
     search_knowledge_tool,
@@ -484,3 +492,153 @@ def test_malformed_tool_arguments_raise_in_registry() -> None:
     registry = ToolRegistry([search_knowledge_tool(search_fn=search)])
     with pytest.raises(ToolDispatchError):
         asyncio.run(registry.dispatch("search_knowledge", "{not json"))
+
+
+def _build_intent(
+    *,
+    active_axis: str = "R1",
+    axes: list[tuple[str, float]] | None = None,
+    question_intent: str = "operational intent text",
+    retrieval_used: bool = False,
+    question_coverage: list[QuestionCoverage] | None = None,
+) -> BrainBIntent:
+    axes_payload = axes if axes is not None else [("R1", 0.0), ("R2", 0.0)]
+    return BrainBIntent(
+        active_axis=active_axis,
+        axes_coverage=[AxisCoverage(axis=prefix, score=score) for prefix, score in axes_payload],
+        question_coverage=question_coverage or [],
+        question_intent=question_intent,
+        get_user_input=GetUserInputOptions(
+            question="What happened most recently?",
+            options=["A", "B", "C", "Discuss this more."],
+            allow_free_text=True,
+        ),
+        retrieval_used=retrieval_used,
+    )
+
+
+def test_floor_active_axis_bumps_zero_on_retrieval_turn() -> None:
+    intent = _build_intent(
+        active_axis="R1 — Lifecycle pain topology",
+        axes=[("R1", 0.0), ("R2", 0.0)],
+        retrieval_used=True,
+    )
+    bumped = _floor_active_axis(intent, rubric_axes=["R1 — Lifecycle pain topology", "R2 — Other"])
+    scores = {entry.axis: entry.score for entry in bumped.axes_coverage}
+    assert scores["R1"] == pytest.approx(0.20)
+    assert scores["R2"] == 0.0
+
+
+def test_floor_active_axis_bumps_when_question_advanced_to_partial() -> None:
+    intent = _build_intent(
+        active_axis="R1",
+        axes=[("R1", 0.0)],
+        retrieval_used=False,
+        question_coverage=[QuestionCoverage(question_id="A-Q7", status="partial", confidence=0.5)],
+    )
+    bumped = _floor_active_axis(intent, rubric_axes=["R1 — Lifecycle"])
+    assert bumped.axes_coverage[0].score == pytest.approx(0.20)
+
+
+def test_floor_active_axis_preserves_existing_positive_score() -> None:
+    intent = _build_intent(
+        active_axis="R1",
+        axes=[("R1", 0.55), ("R2", 0.0)],
+        retrieval_used=True,
+    )
+    bumped = _floor_active_axis(intent, rubric_axes=["R1 — A", "R2 — B"])
+    scores = {entry.axis: entry.score for entry in bumped.axes_coverage}
+    assert scores["R1"] == pytest.approx(0.55)
+    assert scores["R2"] == 0.0
+
+
+def test_floor_active_axis_skips_non_substantive_turn() -> None:
+    intent = _build_intent(
+        active_axis="R1",
+        axes=[("R1", 0.0), ("R2", 0.0)],
+        retrieval_used=False,
+        question_coverage=[QuestionCoverage(question_id="A-Q7", status="targeting", confidence=0.0)],
+    )
+    bumped = _floor_active_axis(intent, rubric_axes=["R1 — A", "R2 — B"])
+    assert bumped.axes_coverage[0].score == 0.0
+    assert bumped.axes_coverage[1].score == 0.0
+
+
+def test_floor_active_axis_skips_active_axis_outside_rubric() -> None:
+    intent = _build_intent(
+        active_axis="R9",
+        axes=[("R1", 0.0)],
+        retrieval_used=True,
+    )
+    bumped = _floor_active_axis(intent, rubric_axes=["R1 — A"])
+    assert bumped.axes_coverage[0].score == 0.0
+
+
+def test_question_intent_is_axis_label_detects_bare_prefix() -> None:
+    assert _question_intent_is_axis_label(
+        "R1",
+        active_prefix="R1",
+        rubric_axes=["R1 — Lifecycle pain topology"],
+    )
+
+
+def test_question_intent_is_axis_label_detects_full_label() -> None:
+    assert _question_intent_is_axis_label(
+        "R1 — Lifecycle pain topology",
+        active_prefix="R1",
+        rubric_axes=["R1 — Lifecycle pain topology"],
+    )
+
+
+def test_question_intent_is_axis_label_detects_full_label_with_description() -> None:
+    full = "R1 — Lifecycle pain topology: where friction concentrates per phase"
+    assert _question_intent_is_axis_label(
+        full,
+        active_prefix="R1",
+        rubric_axes=[full],
+    )
+
+
+def test_question_intent_is_axis_label_passes_operational_sentence() -> None:
+    operational = "R1: Where in your last cryo-EM run did staging cost you the most time?"
+    assert not _question_intent_is_axis_label(
+        operational,
+        active_prefix="R1",
+        rubric_axes=["R1 — Lifecycle pain topology"],
+    )
+
+
+def test_question_intent_reformation_promotes_axis_label_to_operational() -> None:
+    """End-to-end: Brain B emits the rubric label; orchestrator reforms it from the question."""
+
+    payload = {
+        "active_axis": "R1",
+        "axes_coverage": [{"axis": "R1", "score": 0.0}],
+        "question_coverage": [],
+        "question_intent": "R1 — Lifecycle pain topology",
+        "get_user_input": {
+            "question": "Walk me through the last time staging held up your analysis.",
+            "options": ["The TRPV1 run", "The 12 TB pull", "Last quarter", "Discuss this more."],
+            "allow_free_text": True,
+        },
+        "outline_patch": None,
+        "ready_for_review": False,
+        "should_close": False,
+        "closing": False,
+        "retrieval_used": False,
+        "retrieval_chunks": [],
+    }
+    router = _ScriptedRouter([_completion(content=json.dumps(payload))])
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[],
+            registry=ToolRegistry(),
+            router=router,
+            rubric_axes=["R1 — Lifecycle pain topology"],
+        )
+    )
+    intent = result.intent
+    assert intent.question_intent.startswith("R1: ")
+    assert "staging held up your analysis" in intent.question_intent
