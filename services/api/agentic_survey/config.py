@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     llm_reasoning_final_response_tokens: int = Field(default=4096, ge=1)
     llm_preplan_reasoning_budget_tokens: int = Field(default=1024, ge=1)
 
+    # OpenRouter fallback for dynamo-served roles. Empty key + flag=False keeps
+    # the router on the local LM Studio dynamo only.
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_dynamo_model: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+    openrouter_fallback_enabled: bool = False
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

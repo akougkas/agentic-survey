@@ -82,6 +82,15 @@ def set_lmstudio_thinking(
     return request
 
 
+def _mode_to_reasoning_effort(mode: str) -> str:
+    """Map our internal reasoning_mode to OpenAI / OpenRouter reasoning_effort."""
+    if mode == "on":
+        return "high"
+    if mode == "budget":
+        return "medium"
+    return "minimal"
+
+
 def apply_reasoning_settings(
     resolution: CatalogResolution,
     request: dict[str, Any],
@@ -108,6 +117,12 @@ def apply_reasoning_settings(
                 enabled=True,
                 min_tokens=reasoning_completion_tokens(budget),
             )
+        # Mirror the mode onto reasoning_effort so the same prepared request
+        # works when the same model_name rotates to OpenRouter (which speaks
+        # the OpenAI-style reasoning_effort param). LM Studio ignores it; the
+        # `extra_body.chat_template_kwargs.enable_thinking` is ignored by
+        # OpenRouter. One request shape fits both backends.
+        request["reasoning_effort"] = _mode_to_reasoning_effort(mode)
         return request
 
     if kwarg == "reasoning_effort":

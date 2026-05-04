@@ -27,6 +27,18 @@ class LiteLLMRouterError(RuntimeError):
     """Raised when LiteLLM router initialization or invocation fails."""
 
 
+def _openrouter_fallback_enabled() -> bool:
+    """OpenRouter fallback is on iff the flag is true AND the api key is set.
+
+    Reads from the live process env so YAML interpolation and this gate read the
+    same source. Settings sync env vars in `get_litellm_router` before construction.
+    """
+    flag = os.environ.get("SURVEY_OPENROUTER_FALLBACK_ENABLED", "false").strip().lower()
+    if flag not in {"1", "true", "yes", "on"}:
+        return False
+    return bool(os.environ.get("SURVEY_OPENROUTER_API_KEY", "").strip())
+
+
 def _resolve_path(raw_path: str) -> Path:
     candidate = Path(raw_path).expanduser()
     if candidate.is_absolute():
@@ -43,19 +55,21 @@ def _resolve_path(raw_path: str) -> Path:
     return candidates[0]
 
 
-def _interpolate(value: Any) -> Any:
+def _interpolate(value: Any, *, allow_missing: bool = False) -> Any:
     if isinstance(value, str):
         def replace(match: re.Match[str]) -> str:
             key = match.group(1)
             if key not in os.environ:
+                if allow_missing:
+                    return ""
                 raise LiteLLMRouterError(f"Missing interpolation variable: {key}")
             return os.environ[key]
 
         return _ENV_PATTERN.sub(replace, value)
     if isinstance(value, list):
-        return [_interpolate(item) for item in value]
+        return [_interpolate(item, allow_missing=allow_missing) for item in value]
     if isinstance(value, dict):
-        return {key: _interpolate(item) for key, item in value.items()}
+        return {key: _interpolate(item, allow_missing=allow_missing) for key, item in value.items()}
     return value
 
 
@@ -85,7 +99,26 @@ class LiteLLMRouter:
         if not self._config_path.exists():
             raise LiteLLMRouterError(f"LiteLLM config not found: {self._config_path}")
         raw = yaml.safe_load(self._config_path.read_text()) or {}
-        return _interpolate(raw)
+
+        openrouter_enabled = _openrouter_fallback_enabled()
+        # Pre-filter OpenRouter entries before interpolation so the missing-var
+        # check in _interpolate stays strict for the always-on entries.
+        filtered_model_list: list[Any] = []
+        for entry in raw.get("model_list", []) or []:
+            if isinstance(entry, dict) and entry.get("_openrouter_fallback"):
+                if not openrouter_enabled:
+                    continue
+                # Allow missing OpenRouter env vars to surface as empty strings
+                # so a half-configured fallback fails on the call, not at boot.
+                interpolated = _interpolate(entry, allow_missing=True)
+                interpolated.pop("_openrouter_fallback", None)
+                filtered_model_list.append(interpolated)
+            else:
+                filtered_model_list.append(_interpolate(entry))
+        raw["model_list"] = filtered_model_list
+        if "router_settings" in raw:
+            raw["router_settings"] = _interpolate(raw["router_settings"])
+        return raw
 
     def _install_callbacks(self, litellm_module: Any) -> None:
         litellm_module.success_callback = list(self._success_callbacks)
@@ -155,6 +188,14 @@ def get_litellm_router() -> LiteLLMRouter:
     os.environ.setdefault("SURVEY_DYNAMO_ENDPOINT_URL", settings.dynamo_endpoint_url)
     os.environ.setdefault("SURVEY_DYNAMO_MODEL", settings.dynamo_model)
     os.environ.setdefault("SURVEY_EMBEDDING_MODEL", settings.embedding_model)
+    # OpenRouter fallback. setdefault keeps explicit shell exports authoritative.
+    os.environ.setdefault("SURVEY_OPENROUTER_API_KEY", settings.openrouter_api_key)
+    os.environ.setdefault("SURVEY_OPENROUTER_BASE_URL", settings.openrouter_base_url)
+    os.environ.setdefault("SURVEY_OPENROUTER_DYNAMO_MODEL", settings.openrouter_dynamo_model)
+    os.environ.setdefault(
+        "SURVEY_OPENROUTER_FALLBACK_ENABLED",
+        "true" if settings.openrouter_fallback_enabled else "false",
+    )
     return LiteLLMRouter(settings.litellm_config_path)
 
 
