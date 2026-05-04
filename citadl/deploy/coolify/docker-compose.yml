@@ -3,6 +3,10 @@ x-api-environment: &api-environment
   SURVEY_FRONTEND_ORIGIN: https://citadl.gnosis.run
   SURVEY_PRODUCT_BUNDLE_DIR: /app/citadl/bundle
   SURVEY_ADMIN_PASSWORD: ${SURVEY_ADMIN_PASSWORD}
+  # LiteLLM's OpenAI-compatible client requires an api_key field even when
+  # talking to local LM Studio / llama-server endpoints that ignore it. Any
+  # non-empty value satisfies the check.
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-lm-studio}
   SURVEY_LLM_ENABLED: ${SURVEY_LLM_ENABLED:-true}
   SURVEY_LITELLM_CONFIG: ${SURVEY_LITELLM_CONFIG:-agentic_survey/llm/litellm_config.yaml}
   SURVEY_MINI_ENDPOINT_URL: ${SURVEY_MINI_ENDPOINT_URL}
