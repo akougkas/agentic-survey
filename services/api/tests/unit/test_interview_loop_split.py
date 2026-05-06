@@ -514,6 +514,30 @@ def test_post_turn_background_floors_answered_axis_from_validator(
     assert scores["R2"] == 0.0
 
 
+def test_validator_floor_uses_active_axis_when_answered_axis_missing() -> None:
+    intent = BrainBIntent(
+        active_axis="R2",
+        axes_coverage=[
+            {"axis": "R1", "score": 0.0},
+            {"axis": "R2", "score": 0.0},
+        ],
+        question_intent="Ask about the next axis.",
+        get_user_input=GetUserInputOptions(
+            question="Where did the handoff break next?",
+            options=["During staging", "At the transfer", "Discuss this more."],
+            allow_free_text=True,
+        ),
+    )
+    floored = interview_loop_module._floor_answered_axis_from_validator(
+        intent,
+        answered_axis_prefix="",
+        validation={"coverage_score": 0.8, "quality_score": 0.7},
+    )
+    scores = {entry.axis: entry.score for entry in floored.axes_coverage}
+    assert scores["R1"] == 0.0
+    assert scores["R2"] == pytest.approx(0.20)
+
+
 def test_cold_start_pre_plan_populates_next_plan_before_first_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

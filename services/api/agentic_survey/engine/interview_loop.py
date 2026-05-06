@@ -830,14 +830,15 @@ def _floor_answered_axis_from_validator(
     validation: dict[str, Any],
     floor: float = _ANSWERED_AXIS_FLOOR,
 ) -> BrainBIntent:
-    if not answered_axis_prefix:
+    target_axis_prefix = answered_axis_prefix or _axis_prefix(intent.active_axis)
+    if not target_axis_prefix:
         return intent
     if not _validator_found_substantive_evidence(validation):
         return intent
     updated_axes: list[AxisCoverage] = []
     bumped = False
     for entry in intent.axes_coverage:
-        if _axis_prefix(entry.axis) == answered_axis_prefix and entry.score < floor:
+        if _axis_prefix(entry.axis) == target_axis_prefix and entry.score < floor:
             updated_axes.append(entry.model_copy(update={"score": floor}))
             bumped = True
         else:
@@ -846,7 +847,7 @@ def _floor_answered_axis_from_validator(
         return intent
     logger.warning(
         "brain_b axes_coverage floor-bumped answered axis axis=%s floor=%s",
-        answered_axis_prefix,
+        target_axis_prefix,
         floor,
     )
     return intent.model_copy(update={"axes_coverage": updated_axes})
