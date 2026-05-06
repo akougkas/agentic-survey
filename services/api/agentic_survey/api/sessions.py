@@ -14,7 +14,11 @@ from agentic_survey.auth import (
     get_participant_session_from_request,
     require_admin_session,
 )
-from agentic_survey.api.background_tasks import spawn_post_turn_bg, spawn_pre_plan_bg
+from agentic_survey.api.background_tasks import (
+    cancel_pre_plan_bg,
+    spawn_post_turn_bg,
+    spawn_pre_plan_bg,
+)
 from agentic_survey.config import Settings, get_settings
 from agentic_survey.engine.event_bus import (
     EventEnvelope,
@@ -186,6 +190,7 @@ async def submit_participant_turn(
     if session.status != "active":
         raise HTTPException(status_code=409, detail="Session is no longer active")
     campaign = _load_campaign(repository, session.campaign_id)
+    cancel_pre_plan_bg(session_id=session.id, repository=repository)
 
     result = await run_interview_turn(
         session_id=session.id,

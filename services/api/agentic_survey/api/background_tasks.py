@@ -14,6 +14,7 @@ from agentic_survey.llm.router import LiteLLMRouter
 from agentic_survey.repository import InMemoryRepository
 
 __all__ = [
+    "cancel_pre_plan_bg",
     "spawn_post_turn_bg",
     "spawn_pre_plan_bg",
 ]
@@ -42,7 +43,7 @@ def spawn_post_turn_bg(
     cache: RetrievalCache,
     bus: CampaignEventBus,
 ) -> asyncio.Task[None]:
-    _cancel_pre_plan_bg(
+    cancel_pre_plan_bg(
         session_id=session_id,
         repository=repository,
     )
@@ -63,7 +64,7 @@ def spawn_post_turn_bg(
     return task
 
 
-def _cancel_pre_plan_bg(
+def cancel_pre_plan_bg(
     *,
     session_id: str,
     repository: InMemoryRepository,
