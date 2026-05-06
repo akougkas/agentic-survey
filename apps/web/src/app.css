@@ -86,7 +86,7 @@
   }
 
   .participant-mast {
-    @apply flex items-baseline justify-between gap-6 border-b border-[color:var(--line)] pb-4;
+    @apply flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-[color:var(--line)] pb-4;
   }
 
   .participant-wordmark {

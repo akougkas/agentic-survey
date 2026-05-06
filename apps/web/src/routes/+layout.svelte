@@ -37,7 +37,7 @@
     <header class="participant-mast">
       <a class="participant-wordmark" href="/" aria-label="Home">{wordmark}</a>
       <a class="participant-attribution" href="/about"
-        ><span class="hidden sm:inline">Powered by&nbsp;</span>Agentic Survey</a>
+        ><span>Powered by&nbsp;</span>Agentic Survey</a>
     </header>
 
     <main id="main" class="contents">
