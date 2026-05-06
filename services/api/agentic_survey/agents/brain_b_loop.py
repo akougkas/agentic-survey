@@ -1314,7 +1314,6 @@ async def run_brain_b_with_tools(
             messages.append({"role": "system", "content": extra})
     messages.extend(transcript_tail)
 
-    registry_tools_schema = registry.openai_schema() if not registry.is_empty() else []
     output_tool_schema = _brain_b_output_tool_schema()
     tool_calls_made: list[ToolCallRecord] = []
     parse_retries = 0
@@ -1322,10 +1321,9 @@ async def run_brain_b_with_tools(
     last_exc: Exception | None = None
 
     # LM Studio handles OpenAI tool calls more reliably than response_format
-    # on the long Brain B prompt. Retrieval and graph lookups remain normal
-    # tools. Brain B's final handoff is also a tool call. Repair calls expose
-    # only emit_brain_b_intent so every configured route can use tools without
-    # a provider-specific forced tool_choice parameter.
+    # on the long Brain B prompt. Brain B's final handoff is a tool call, and
+    # the request exposes only that output tool so every configured route has
+    # a small, unambiguous schema to satisfy.
     #
     # Gemma can spend the whole completion budget in hidden reasoning before
     # reaching a tool call on the long Brain B prompt. Tool mode is therefore
@@ -1382,10 +1380,7 @@ async def run_brain_b_with_tools(
             )
         else:
             set_lmstudio_thinking(completion_kwargs, enabled=False)
-        if terminal_only:
-            completion_kwargs["tools"] = [output_tool_schema]
-        else:
-            completion_kwargs["tools"] = [*registry_tools_schema, output_tool_schema]
+        completion_kwargs["tools"] = [output_tool_schema]
 
         start_time = time.monotonic()
         response = await router.acompletion(**completion_kwargs)
@@ -1423,6 +1418,12 @@ async def run_brain_b_with_tools(
                 intent = BrainBIntent.model_validate_json(normalized)
             except (ValidationError, ValueError) as exc:
                 last_exc = exc
+                logger.warning(
+                    "brain_b output tool validation failed surface=%s error=%s raw=%s",
+                    surface,
+                    exc,
+                    _clip_text(raw_output, 1200),
+                )
                 if parse_retries >= max_parse_retries:
                     break
                 parse_retries += 1
