@@ -17,6 +17,7 @@ from agentic_survey.llm.pool import AgentRole, EndpointConfig, EndpointPool
 from agentic_survey.llm.reasoning import (
     apply_reasoning_settings,
     repair_completion_tokens,
+    sanitize_thinking_messages,
     set_lmstudio_thinking,
 )
 from agentic_survey.llm.router import LiteLLMRouter, LiteLLMRouterError, get_litellm_router
@@ -279,6 +280,16 @@ class LLMClient:
             set_lmstudio_thinking(request, enabled=False)
         elif resolution is not None:
             apply_reasoning_settings(resolution, request)
+        # Gemma's llama-server rejects thinking-enabled requests whose final
+        # message is ``role: assistant`` (it reads the entry as a response
+        # prefill). Validator and Analyst message stacks always end on
+        # ``user`` today, so this is defense in depth that keeps us safe if a
+        # future caller passes a multi-turn history ending on assistant.
+        chat_template_kwargs = (
+            request.get("extra_body", {}).get("chat_template_kwargs") or {}
+        )
+        if chat_template_kwargs.get("enable_thinking") is True:
+            request["messages"] = sanitize_thinking_messages(request["messages"])
         start_time = datetime.now(tz=UTC)
         try:
             response = await self._router.acompletion(**request)

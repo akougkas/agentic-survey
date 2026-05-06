@@ -15,6 +15,7 @@ from agentic_survey.agents.brain_b_loop import (
     _question_intent_is_axis_label,
     run_brain_b_with_tools,
 )
+from agentic_survey.llm.reasoning import TrailingAssistantRoleError
 from agentic_survey.domain.intent import (
     AxisCoverage,
     BrainBIntent,
@@ -966,3 +967,96 @@ def test_question_intent_reformation_promotes_axis_label_to_operational() -> Non
     intent = result.intent
     assert intent.question_intent.startswith("R1: ")
     assert "staging held up your analysis" in intent.question_intent
+
+
+def test_trailing_assistant_transcript_is_wrapped_into_user_followup() -> None:
+    """Brain B sends a follow-up user turn when transcript_tail ends on assistant.
+
+    Reproduces the production failure: dynamo's Gemma backend rejects a
+    thinking-enabled request whose final message is ``role: assistant`` with
+    HTTP 400 ``Assistant response prefill is incompatible with enable_thinking``.
+    The loop must wrap the trailing assistant entry into an additional ``user``
+    follow-up before handing the messages list to the router so llama-server
+    treats the assistant turn as completed context.
+    """
+    transcript_tail = [
+        {"role": "user", "content": "Walk me through last week's run."},
+        {"role": "assistant", "content": "Let's stay on the staging step. Where did time go?"},
+    ]
+    router = _ScriptedRouter([_completion(content=json.dumps(_intent_payload()))])
+    asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=transcript_tail,
+            registry=ToolRegistry(),
+            router=router,
+        )
+    )
+    sent_messages = router.calls[0]["messages"]
+    assert sent_messages[-1] == {"role": "user", "content": "Continue."}
+    assert sent_messages[-2]["role"] == "assistant"
+    assert sent_messages[-2]["content"].startswith("Let's stay on the staging step")
+    extra_body = router.calls[0].get("extra_body") or {}
+    chat_template_kwargs = extra_body.get("chat_template_kwargs") or {}
+    assert chat_template_kwargs.get("enable_thinking") is True
+
+
+def test_trailing_user_tool_or_system_message_is_passed_through_unchanged() -> None:
+    """Sanitizer is a no-op when the final message is a non-assistant role.
+
+    The transcript_tail ending on ``user`` (the common case) and the loop's
+    own internal message after a tool dispatch (``role: tool``) and after a
+    parse-retry nudge (``role: system``) all flow to llama-server unchanged.
+    """
+    base_intent = json.dumps(_intent_payload())
+
+    for trailing in (
+        {"role": "user", "content": "Here is what happened."},
+        {"role": "tool", "tool_call_id": "c0", "name": "search_knowledge", "content": "[]"},
+        {"role": "system", "content": "Operator note: prefer concrete probes."},
+    ):
+        router = _ScriptedRouter([_completion(content=base_intent)])
+        asyncio.run(
+            run_brain_b_with_tools(
+                surface="interviewer",
+                system_context=[],
+                transcript_tail=[trailing],
+                registry=ToolRegistry(),
+                router=router,
+            )
+        )
+        sent_messages = router.calls[0]["messages"]
+        # The loop also prepends a system prompt; the trailing role we
+        # supplied must remain the final entry untouched.
+        assert sent_messages[-1] == trailing
+
+
+def test_trailing_assistant_tool_calls_without_content_raises_typed_error() -> None:
+    """Sanitizer raises TrailingAssistantRoleError on a malformed pre-dispatch payload.
+
+    An assistant message that only carries ``tool_calls`` (no content) must
+    be followed by ``role: tool`` rows from the dispatch loop. If it ever
+    reaches the LLM call as the trailing message, the call would 400; the
+    sanitizer surfaces a typed error instead so the CLAUDE.md
+    "No silent errors" invariant holds.
+    """
+    transcript_tail = [
+        {"role": "user", "content": "Start the call."},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "c0", "type": "function", "function": {"name": "search_knowledge", "arguments": "{}"}}],
+        },
+    ]
+    router = _ScriptedRouter([_completion(content=json.dumps(_intent_payload()))])
+    with pytest.raises(TrailingAssistantRoleError):
+        asyncio.run(
+            run_brain_b_with_tools(
+                surface="interviewer",
+                system_context=[],
+                transcript_tail=transcript_tail,
+                registry=ToolRegistry(),
+                router=router,
+            )
+        )

@@ -82,6 +82,89 @@ def set_lmstudio_thinking(
     return request
 
 
+class TrailingAssistantRoleError(RuntimeError):
+    """Raised when a thinking-enabled request carries a malformed trailing role.
+
+    Gemma's llama-server chat template treats a trailing ``assistant`` message
+    as a partial-response prefill the model should continue from. When
+    ``chat_template_kwargs.enable_thinking=true`` is also set, the server
+    rejects the request with HTTP 400 ``Assistant response prefill is
+    incompatible with enable_thinking``. The sanitizer below normalizes a
+    trailing assistant message into a follow-up ``user`` turn so the chat
+    template treats it as completed assistant context. Any role outside the
+    OpenAI-spec set ``{system, user, assistant, tool}`` raises this error so
+    the caller surfaces a clear failure instead of letting llama-server emit
+    a cryptic 400.
+    """
+
+
+_VALID_OPENAI_ROLES: frozenset[str] = frozenset(
+    {"system", "user", "assistant", "tool"}
+)
+
+
+def sanitize_thinking_messages(
+    messages: list[dict[str, Any]],
+    *,
+    follow_up: str = "Continue.",
+) -> list[dict[str, Any]]:
+    """Ensure ``messages[-1]`` is safe for a thinking-enabled llama-server call.
+
+    Gemma's llama-server chat template reads a trailing ``assistant`` entry as
+    a response prefill it should continue from. When the same request also
+    carries ``chat_template_kwargs.enable_thinking=true``, the server returns
+    HTTP 400 ``Assistant response prefill is incompatible with enable_thinking``.
+    The same call shape works on the dynamo Gemma backend that ships every
+    Brain B / Validator / Analyst role, so the sanitizer fires before each
+    thinking-enabled completion call:
+
+    - Last message is ``assistant`` with a non-empty ``content``: append a
+      synthetic ``{"role": "user", "content": follow_up}`` so the chat template
+      sees a completed assistant turn followed by a fresh user prompt.
+    - Last message is ``assistant`` with empty ``content`` and no ``tool_calls``:
+      drop it. The empty entry carries no signal and would still trigger the
+      prefill path. If dropping leaves an empty message list the sanitizer
+      raises so the caller surfaces a clear failure.
+    - Last message is ``assistant`` with ``tool_calls`` but no ``content``:
+      this is a malformed payload pre-tool-dispatch (an assistant tool-call
+      message must be followed by ``tool`` rows). Raise ``TrailingAssistantRoleError``.
+    - Last message is ``tool``, ``user``, or ``system``: no-op.
+    - Last message has any other role: raise ``TrailingAssistantRoleError``.
+
+    The function returns a NEW list. The caller's ``messages`` reference is
+    untouched so the loop's tool-call accounting (which still appends to the
+    original list across iterations) keeps working.
+    """
+    if not messages:
+        raise TrailingAssistantRoleError(
+            "thinking-enabled request must carry at least one message"
+        )
+    last = messages[-1]
+    role = str(last.get("role") or "").strip()
+    if role not in _VALID_OPENAI_ROLES:
+        raise TrailingAssistantRoleError(
+            f"thinking-enabled request has invalid trailing role {role!r}; "
+            f"expected one of {sorted(_VALID_OPENAI_ROLES)}"
+        )
+    if role != "assistant":
+        return list(messages)
+    content = str(last.get("content") or "").strip()
+    tool_calls = last.get("tool_calls")
+    if not content:
+        if tool_calls:
+            raise TrailingAssistantRoleError(
+                "thinking-enabled request ends on an assistant tool_calls message; "
+                "tool dispatch must append role=tool rows before the next call"
+            )
+        if len(messages) <= 1:
+            raise TrailingAssistantRoleError(
+                "thinking-enabled request would be emptied by stripping the "
+                "trailing assistant message"
+            )
+        return list(messages[:-1])
+    return [*messages, {"role": "user", "content": follow_up}]
+
+
 def _mode_to_reasoning_effort(mode: str) -> str:
     """Map our internal reasoning_mode to OpenAI / OpenRouter reasoning_effort."""
     if mode == "on":

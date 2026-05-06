@@ -73,6 +73,6 @@ model_list:
 router_settings:
   routing_strategy: simple-shuffle
   retry_policy:
-    MaxRetries: 2
+    MaxRetries: 0
     TimeoutBackoffMultiplier: 2
   cooldown_time: 30
