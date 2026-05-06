@@ -42,6 +42,10 @@ def spawn_post_turn_bg(
     cache: RetrievalCache,
     bus: CampaignEventBus,
 ) -> asyncio.Task[None]:
+    _cancel_pre_plan_bg(
+        session_id=session_id,
+        repository=repository,
+    )
     task = asyncio.create_task(
         run_post_turn_background(
             session_id=session_id,
@@ -57,6 +61,28 @@ def spawn_post_turn_bg(
     )
     _track(task)
     return task
+
+
+def _cancel_pre_plan_bg(
+    *,
+    session_id: str,
+    repository: InMemoryRepository,
+) -> None:
+    task = _pre_plan_tasks_by_session.get(session_id)
+    if task is None or task.done():
+        return
+    task.cancel()
+    logger.info(
+        "pre-plan background cancelled by participant turn: session=%s",
+        session_id,
+    )
+    try:
+        repository.update_preplan_status(session_id, status="late_skipped")
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "pre-plan cancellation failed to mark late_skipped: session=%s",
+            session_id,
+        )
 
 
 def spawn_pre_plan_bg(

@@ -14,7 +14,8 @@ from typing import Any
 
 import pytest
 
-from agentic_survey.api.background_tasks import spawn_pre_plan_bg
+from agentic_survey.api import background_tasks as background_tasks_module
+from agentic_survey.api.background_tasks import spawn_post_turn_bg, spawn_pre_plan_bg
 from agentic_survey.domain.intent import BrainBIntent
 from agentic_survey.domain.tools import GetUserInputOptions
 from agentic_survey.engine import interview_loop as interview_loop_module
@@ -281,3 +282,64 @@ def test_single_flight_can_re_dispatch_after_terminal_release(
     asyncio.run(main())
 
     assert call_count == 2
+
+
+def test_post_turn_cancels_obsolete_preplan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = asyncio.Event()
+
+    async def stuck_preplan(**_kwargs: Any) -> None:
+        started.set()
+        await asyncio.sleep(60)
+
+    async def fast_post_turn(**_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(
+        background_tasks_module,
+        "run_pre_plan_background",
+        stuck_preplan,
+    )
+    monkeypatch.setattr(
+        background_tasks_module,
+        "run_post_turn_background",
+        fast_post_turn,
+    )
+
+    repo = InMemoryRepository()
+    campaign, session = _seed_session(repo)
+    bus = CampaignEventBus()
+
+    async def main() -> None:
+        preplan = spawn_pre_plan_bg(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            repository=repo,
+            router=_StubRouter(),
+            cache=RetrievalCache(),
+            bus=bus,
+        )
+        assert preplan is not None
+        await asyncio.wait_for(started.wait(), timeout=1)
+        post_turn = spawn_post_turn_bg(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            participant_turn_id="participant-1",
+            agent_turn_id="agent-1",
+            repository=repo,
+            router=_StubRouter(),
+            validator=None,  # type: ignore[arg-type]
+            cache=RetrievalCache(),
+            bus=bus,
+        )
+        await post_turn
+        cancelled = await asyncio.gather(preplan, return_exceptions=True)
+        assert isinstance(cancelled[0], asyncio.CancelledError)
+
+    asyncio.run(main())
+
+    final = repo.get_interview_session(session.id)
+    assert final is not None
+    assert final.preplan_status == "late_skipped"
+    assert final.preplan_inflight is False

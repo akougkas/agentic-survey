@@ -449,6 +449,71 @@ def test_post_turn_background_skips_stale_plan_write_after_brain_b_race(
     assert planned_envelopes == []
 
 
+def test_post_turn_background_floors_answered_axis_from_validator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fast_brain_a(monkeypatch)
+
+    async def zero_scoring_brain_b(**kwargs: Any) -> BrainBIntent:
+        return BrainBIntent(
+            active_axis="R2",
+            axes_coverage=[
+                {"axis": "R1", "score": 0.0},
+                {"axis": "R2", "score": 0.0},
+            ],
+            question_intent="Ask about the next axis.",
+            get_user_input=GetUserInputOptions(
+                question="Where did the handoff break next?",
+                options=["During staging", "At the transfer", "Discuss this more."],
+                allow_free_text=True,
+            ),
+            retrieval_used=False,
+            retrieval_chunks=[],
+        )
+
+    monkeypatch.setattr(interview_loop_module, "run_brain_b_interviewer", zero_scoring_brain_b)
+
+    repo = InMemoryRepository()
+    campaign, session = _seed_live_session(repo, axes=["R1 — Workflow", "R2 — Trust"])
+    bus = CampaignEventBus()
+
+    async def main() -> None:
+        result = await run_interview_turn(
+            session_id=session.id,
+            participant_content="The archive queue failed before the transfer completed.",
+            chip_selected=None,
+            repository=repo,
+            validator=_PassValidator(),
+            router=_StubRouter(),
+            cache=RetrievalCache(),
+        )
+        assert result.agent_turn is not None
+        assert result.participant_turn is not None
+        await run_post_turn_background(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            participant_turn_id=result.participant_turn.id,
+            agent_turn_id=result.agent_turn.id,
+            repository=repo,
+            router=_StubRouter(),
+            validator=_PassValidator(),
+            cache=RetrievalCache(),
+            bus=bus,
+        )
+
+    asyncio.run(main())
+
+    refreshed = repo.get_interview_session(session.id)
+    assert refreshed is not None
+    assert refreshed.next_plan is not None
+    scores = {
+        entry.axis: entry.score
+        for entry in refreshed.next_plan.axes_coverage
+    }
+    assert scores["R1"] == pytest.approx(0.20)
+    assert scores["R2"] == 0.0
+
+
 def test_cold_start_pre_plan_populates_next_plan_before_first_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -560,6 +560,7 @@ async def run_post_turn_background(
             session_id=session_id,
             campaign_id=campaign_id,
             participant_turn_id=participant_turn_id,
+            agent_turn_id=agent_turn_id,
             repository=repository,
             router=router,
             validator=validator,
@@ -590,6 +591,7 @@ async def _post_turn_background_inner(
     session_id: str,
     campaign_id: str,
     participant_turn_id: str,
+    agent_turn_id: str,
     repository: InMemoryRepository,
     router: LiteLLMRouter,
     validator: Validator,
@@ -615,6 +617,7 @@ async def _post_turn_background_inner(
         )
 
     existing_validation = participant_turn.validation or {}
+    validation_payload: dict[str, Any] = existing_validation
     is_control = "control_signal" in existing_validation
 
     # Step 1: Validator.
@@ -742,6 +745,14 @@ async def _post_turn_background_inner(
         prior_question_coverage=prior_question_coverage,
         participant_turn_id=participant_turn_id,
     )
+    intent = _floor_answered_axis_from_validator(
+        intent,
+        answered_axis_prefix=_answered_axis_prefix_for_agent_turn(
+            refreshed,
+            agent_turn_id=agent_turn_id,
+        ),
+        validation=validation_payload,
+    )
     latest = repository.get_interview_session(session_id)
     if latest is None or not _should_plan_after_participant_turn(
         latest,
@@ -769,6 +780,76 @@ async def _post_turn_background_inner(
             )
         ],
     )
+
+
+_AXIS_PREFIX_RE = re.compile(r"^(R\d+)", re.IGNORECASE)
+_ANSWERED_AXIS_FLOOR = 0.20
+
+
+def _axis_prefix(value: str) -> str:
+    match = _AXIS_PREFIX_RE.match((value or "").strip())
+    if match:
+        return match.group(1).upper()
+    return ""
+
+
+def _answered_axis_prefix_for_agent_turn(
+    session: InterviewSessionRecord,
+    *,
+    agent_turn_id: str,
+) -> str:
+    for turn in session.turns:
+        if turn.id != agent_turn_id:
+            continue
+        intent = turn.brain_b_intent
+        if intent is None:
+            return ""
+        return _axis_prefix(intent.active_axis)
+    return ""
+
+
+def _validator_found_substantive_evidence(validation: dict[str, Any]) -> bool:
+    if validation.get("control_signal"):
+        return False
+    if bool(validation.get("is_spam")):
+        return False
+    for key in ("coverage_score", "quality_score"):
+        try:
+            if float(validation.get(key) or 0.0) > 0.0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    concepts = validation.get("extracted_concepts") or []
+    return bool(concepts)
+
+
+def _floor_answered_axis_from_validator(
+    intent: BrainBIntent,
+    *,
+    answered_axis_prefix: str,
+    validation: dict[str, Any],
+    floor: float = _ANSWERED_AXIS_FLOOR,
+) -> BrainBIntent:
+    if not answered_axis_prefix:
+        return intent
+    if not _validator_found_substantive_evidence(validation):
+        return intent
+    updated_axes: list[AxisCoverage] = []
+    bumped = False
+    for entry in intent.axes_coverage:
+        if _axis_prefix(entry.axis) == answered_axis_prefix and entry.score < floor:
+            updated_axes.append(entry.model_copy(update={"score": floor}))
+            bumped = True
+        else:
+            updated_axes.append(entry)
+    if not bumped:
+        return intent
+    logger.warning(
+        "brain_b axes_coverage floor-bumped answered axis axis=%s floor=%s",
+        answered_axis_prefix,
+        floor,
+    )
+    return intent.model_copy(update={"axes_coverage": updated_axes})
 
 
 def _latest_participant_turn_id(session: InterviewSessionRecord) -> str:
