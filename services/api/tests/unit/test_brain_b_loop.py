@@ -297,10 +297,7 @@ def test_parse_retry_uses_tool_route_then_user_repair_without_thinking() -> None
     assert [tool["function"]["name"] for tool in retry_kwargs["tools"]] == [
         "emit_brain_b_intent"
     ]
-    assert retry_kwargs["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "emit_brain_b_intent"},
-    }
+    assert "tool_choice" not in retry_kwargs
 
 
 def test_parse_failure_beyond_retry_budget_raises() -> None:

@@ -246,13 +246,6 @@ def _brain_b_output_tool_schema() -> dict[str, Any]:
     }
 
 
-def _forced_output_tool_choice() -> dict[str, Any]:
-    return {
-        "type": "function",
-        "function": {"name": _EMIT_INTENT_TOOL_NAME},
-    }
-
-
 _OPTION_MAX_LEN = 120
 _OPTION_TOTAL_CAP = 4
 _OPTION_REJECT_SUBSTRINGS: tuple[str, ...] = (
@@ -1330,9 +1323,9 @@ async def run_brain_b_with_tools(
 
     # LM Studio handles OpenAI tool calls more reliably than response_format
     # on the long Brain B prompt. Retrieval and graph lookups remain normal
-    # tools. Brain B's final handoff is also a tool call
-    # (emit_brain_b_intent), with forced tool_choice used only after a parse
-    # failure so repair cannot drift into prose.
+    # tools. Brain B's final handoff is also a tool call. Repair calls expose
+    # only emit_brain_b_intent so every configured route can use tools without
+    # a provider-specific forced tool_choice parameter.
     #
     # Gemma can spend the whole completion budget in hidden reasoning before
     # reaching a tool call on the long Brain B prompt. Tool mode is therefore
@@ -1391,7 +1384,6 @@ async def run_brain_b_with_tools(
             set_lmstudio_thinking(completion_kwargs, enabled=False)
         if terminal_only:
             completion_kwargs["tools"] = [output_tool_schema]
-            completion_kwargs["tool_choice"] = _forced_output_tool_choice()
         else:
             completion_kwargs["tools"] = [*registry_tools_schema, output_tool_schema]
 
