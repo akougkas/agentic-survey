@@ -329,6 +329,126 @@ def test_populated_next_plan_is_rendered_not_scaffold(
     assert refreshed.next_plan is None
 
 
+def test_stale_post_turn_background_skips_brain_b_planning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fast_brain_a(monkeypatch)
+    calls = 0
+
+    async def brain_b_should_not_run(**kwargs: Any) -> BrainBIntent:
+        nonlocal calls
+        calls += 1
+        return _planned_intent()
+
+    monkeypatch.setattr(interview_loop_module, "run_brain_b_interviewer", brain_b_should_not_run)
+
+    repo = InMemoryRepository()
+    campaign, session = _seed_live_session(repo, axes=["workflow"])
+    bus = CampaignEventBus()
+
+    async def main() -> str:
+        first = await run_interview_turn(
+            session_id=session.id,
+            participant_content="The first answer names the archive queue.",
+            chip_selected=None,
+            repository=repo,
+            validator=_PassValidator(),
+            router=_StubRouter(),
+            cache=RetrievalCache(),
+        )
+        assert first.agent_turn is not None
+        assert first.participant_turn is not None
+        await run_interview_turn(
+            session_id=session.id,
+            participant_content="The newer answer arrived before the old plan finished.",
+            chip_selected=None,
+            repository=repo,
+            validator=_PassValidator(),
+            router=_StubRouter(),
+            cache=RetrievalCache(),
+        )
+        await run_post_turn_background(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            participant_turn_id=first.participant_turn.id,
+            agent_turn_id=first.agent_turn.id,
+            repository=repo,
+            router=_StubRouter(),
+            validator=_PassValidator(),
+            cache=RetrievalCache(),
+            bus=bus,
+        )
+        return first.participant_turn.id
+
+    first_participant_id = asyncio.run(main())
+
+    refreshed = repo.get_interview_session(session.id)
+    assert refreshed is not None
+    assert refreshed.next_plan is None
+    assert calls == 0
+    first_participant = next(turn for turn in refreshed.turns if turn.id == first_participant_id)
+    assert first_participant.validation is not None
+    assert first_participant.validation["coverage_score"] == 0.4
+    planned_envelopes = [
+        env for env in bus.replay(campaign.id, since=-1) if env.name == "brain_b_planned"
+    ]
+    assert planned_envelopes == []
+
+
+def test_post_turn_background_skips_stale_plan_write_after_brain_b_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fast_brain_a(monkeypatch)
+    repo = InMemoryRepository()
+    campaign, session = _seed_live_session(repo, axes=["workflow"])
+    bus = CampaignEventBus()
+
+    async def brain_b_adds_newer_participant(**kwargs: Any) -> BrainBIntent:
+        repo.append_interview_turn(
+            session.id,
+            role="participant",
+            content="A newer participant turn landed while Brain B was planning.",
+            validation={"pending_validation": True},
+        )
+        return _planned_intent()
+
+    monkeypatch.setattr(interview_loop_module, "run_brain_b_interviewer", brain_b_adds_newer_participant)
+
+    async def main() -> None:
+        first = await run_interview_turn(
+            session_id=session.id,
+            participant_content="The first answer names the archive queue.",
+            chip_selected=None,
+            repository=repo,
+            validator=_PassValidator(),
+            router=_StubRouter(),
+            cache=RetrievalCache(),
+        )
+        assert first.agent_turn is not None
+        assert first.participant_turn is not None
+        await run_post_turn_background(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            participant_turn_id=first.participant_turn.id,
+            agent_turn_id=first.agent_turn.id,
+            repository=repo,
+            router=_StubRouter(),
+            validator=_PassValidator(),
+            cache=RetrievalCache(),
+            bus=bus,
+        )
+
+    asyncio.run(main())
+
+    refreshed = repo.get_interview_session(session.id)
+    assert refreshed is not None
+    assert refreshed.next_plan is None
+    planned_envelopes = [
+        env for env in bus.replay(campaign.id, since=-1) if env.name == "brain_b_planned"
+    ]
+    assert planned_envelopes == []
+
+
 def test_cold_start_pre_plan_populates_next_plan_before_first_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -419,7 +539,7 @@ def test_cold_start_pre_plan_populates_next_plan_before_first_turn(
     }
     assert captured["eligible_question_ids"] == ["operator-q"]
     assert captured["outline_question_ids"] == ["operator-q"]
-    assert captured["enable_tools"] is False
+    assert captured["enable_tools"] is True
     assert captured["reasoning_budget_tokens"] == 1024
     assert captured["compact_context"] is True
 

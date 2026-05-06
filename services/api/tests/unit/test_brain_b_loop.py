@@ -230,7 +230,7 @@ def test_parse_retry_recovers_on_second_attempt() -> None:
     assert len(router.calls) == 2
 
 
-def test_parse_retry_disables_thinking_after_empty_response() -> None:
+def test_parse_retry_uses_tool_route_then_user_repair_without_thinking() -> None:
     router = _ScriptedRouter(
         [
             _completion(content=""),
@@ -254,10 +254,12 @@ def test_parse_retry_disables_thinking_after_empty_response() -> None:
     assert first_kwargs["model"] == "mira-scientist"
     assert first_kwargs["tools"]
     assert "tool_choice" not in first_kwargs
-    assert first_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
+    assert first_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
     assert retry_kwargs["model"] == "mira-scientist"
     assert retry_kwargs["max_tokens"] == repair_completion_tokens()
     assert retry_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+    assert retry_kwargs["messages"][-1]["role"] == "user"
+    assert "BrainBIntent schema validation" in retry_kwargs["messages"][-1]["content"]
     assert "tools" not in retry_kwargs
     assert "tool_choice" not in retry_kwargs
 
@@ -1002,16 +1004,8 @@ def test_question_intent_reformation_promotes_axis_label_to_operational() -> Non
     assert "staging held up your analysis" in intent.question_intent
 
 
-def test_trailing_assistant_transcript_is_wrapped_into_user_followup() -> None:
-    """Brain B sends a follow-up user turn when transcript_tail ends on assistant.
-
-    Reproduces the production failure: dynamo's Gemma backend rejects a
-    thinking-enabled request whose final message is ``role: assistant`` with
-    HTTP 400 ``Assistant response prefill is incompatible with enable_thinking``.
-    The loop must wrap the trailing assistant entry into an additional ``user``
-    follow-up before handing the messages list to the router so llama-server
-    treats the assistant turn as completed context.
-    """
+def test_trailing_assistant_transcript_uses_non_thinking_brain_b_request() -> None:
+    """Brain B avoids the thinking-prefill conflict on assistant-ended tails."""
     transcript_tail = [
         {"role": "user", "content": "Walk me through last week's run."},
         {"role": "assistant", "content": "Let's stay on the staging step. Where did time go?"},
@@ -1027,12 +1021,11 @@ def test_trailing_assistant_transcript_is_wrapped_into_user_followup() -> None:
         )
     )
     sent_messages = router.calls[0]["messages"]
-    assert sent_messages[-1] == {"role": "user", "content": "Continue."}
-    assert sent_messages[-2]["role"] == "assistant"
-    assert sent_messages[-2]["content"].startswith("Let's stay on the staging step")
+    assert sent_messages[-1]["role"] == "assistant"
+    assert sent_messages[-1]["content"].startswith("Let's stay on the staging step")
     extra_body = router.calls[0].get("extra_body") or {}
     chat_template_kwargs = extra_body.get("chat_template_kwargs") or {}
-    assert chat_template_kwargs.get("enable_thinking") is True
+    assert chat_template_kwargs.get("enable_thinking") is False
 
 
 def test_trailing_user_tool_or_system_message_is_passed_through_unchanged() -> None:

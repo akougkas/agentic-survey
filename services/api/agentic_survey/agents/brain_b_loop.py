@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -478,6 +479,46 @@ def _log_brain_b_summary(
             "brain_b axes_coverage stayed all-zero on substantive turn surface=%s",
             surface,
         )
+
+
+def _finish_reason(response: object) -> str:
+    choices = response.get("choices") if isinstance(response, dict) else getattr(response, "choices", None)
+    if not choices:
+        return ""
+    first = choices[0]
+    value = first.get("finish_reason") if isinstance(first, dict) else getattr(first, "finish_reason", "")
+    return str(value or "")
+
+
+def _log_brain_b_llm_result(
+    *,
+    surface: Surface,
+    iteration: int,
+    terminal_only: bool,
+    thinking_enabled: bool,
+    has_tools: bool,
+    has_response_format: bool,
+    elapsed_ms: int,
+    response: object,
+    message: dict[str, Any],
+    tool_calls: list[dict[str, Any]],
+) -> None:
+    content = str(message.get("content") or "")
+    reasoning_content = str(message.get("reasoning_content") or "")
+    payload = {
+        "surface": surface,
+        "iteration": iteration,
+        "terminal_only": terminal_only,
+        "thinking_enabled": thinking_enabled,
+        "has_tools": has_tools,
+        "has_response_format": has_response_format,
+        "elapsed_ms": elapsed_ms,
+        "finish_reason": _finish_reason(response),
+        "content_chars": len(content.strip()),
+        "reasoning_chars": len(reasoning_content.strip()),
+        "tool_call_count": len(tool_calls),
+    }
+    logger.warning("brain_b_llm_result %s", json.dumps(payload, sort_keys=True, default=str))
 
 
 def _observed_retrieval_chunks(tool_calls: list[ToolCallRecord]) -> list[str]:
@@ -1019,10 +1060,15 @@ async def run_brain_b_with_tools(
     # call with ``response_format=json_schema`` to force the structured output.
     # ``tool_choice`` is intentionally omitted: tools default to auto when
     # present, and terminal calls omit tools entirely.
+    #
+    # Gemma can spend the whole completion budget in hidden reasoning before
+    # reaching a tool call on the long Brain B prompt. Tool mode is therefore
+    # run without thinking; direct probes show the same model emits OpenAI
+    # tool_calls promptly with thinking disabled.
     max_iterations = max_tool_calls + max_parse_retries + 2
     for iteration in range(max_iterations):
         terminal_only = not tools_schema or parse_retries > 0
-        thinking_enabled = parse_retries == 0
+        thinking_enabled = False
         completion_token_budget = (
             reasoning_completion_tokens(reasoning_budget_tokens)
             if thinking_enabled
@@ -1042,6 +1088,13 @@ async def run_brain_b_with_tools(
             if thinking_enabled
             else list(messages)
         )
+        if (
+            not thinking_enabled
+            and request_messages
+            and request_messages[-1].get("role") == "assistant"
+            and request_messages[-1].get("tool_calls")
+        ):
+            sanitize_thinking_messages(request_messages)
         completion_kwargs: dict[str, Any] = {
             "model": "mira-scientist",
             "messages": request_messages,
@@ -1068,9 +1121,23 @@ async def run_brain_b_with_tools(
         else:
             completion_kwargs["tools"] = tools_schema
 
+        start_time = time.monotonic()
         response = await router.acompletion(**completion_kwargs)
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
         message = _extract_message(response)
         tool_calls = _normalize_tool_calls(message)
+        _log_brain_b_llm_result(
+            surface=surface,
+            iteration=iteration,
+            terminal_only=terminal_only,
+            thinking_enabled=thinking_enabled,
+            has_tools=bool(completion_kwargs.get("tools")),
+            has_response_format=bool(completion_kwargs.get("response_format")),
+            elapsed_ms=elapsed_ms,
+            response=response,
+            message=message,
+            tool_calls=tool_calls,
+        )
 
         if tool_calls:
             # Local models occasionally emit tool_calls for output-contract
@@ -1171,7 +1238,7 @@ async def run_brain_b_with_tools(
                 messages.append({"role": "assistant", "content": raw_output})
             messages.append(
                 {
-                    "role": "system",
+                    "role": "user",
                     "content": (
                         "Your last response failed BrainBIntent schema validation: "
                         f"{exc}. Respond with a single valid BrainBIntent JSON object only."

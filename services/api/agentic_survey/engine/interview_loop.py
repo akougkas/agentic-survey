@@ -686,6 +686,11 @@ async def _post_turn_background_inner(
     # Step 3: Brain B plans the NEXT turn.
     refreshed = repository.get_interview_session(session_id)
     assert refreshed is not None
+    if not _should_plan_after_participant_turn(
+        refreshed,
+        participant_turn_id=participant_turn_id,
+    ):
+        return
     participant_validations = [
         turn.validation for turn in refreshed.turns if turn.role == "participant"
     ]
@@ -737,6 +742,12 @@ async def _post_turn_background_inner(
         prior_question_coverage=prior_question_coverage,
         participant_turn_id=participant_turn_id,
     )
+    latest = repository.get_interview_session(session_id)
+    if latest is None or not _should_plan_after_participant_turn(
+        latest,
+        participant_turn_id=participant_turn_id,
+    ):
+        return
     repository.update_next_plan(session_id, intent)
     _persist_question_answers(
         repository=repository,
@@ -758,6 +769,38 @@ async def _post_turn_background_inner(
             )
         ],
     )
+
+
+def _latest_participant_turn_id(session: InterviewSessionRecord) -> str:
+    for turn in reversed(session.turns):
+        if turn.role == "participant":
+            return turn.id
+    return ""
+
+
+def _should_plan_after_participant_turn(
+    session: InterviewSessionRecord,
+    *,
+    participant_turn_id: str,
+) -> bool:
+    latest_participant_turn_id = _latest_participant_turn_id(session)
+    if latest_participant_turn_id != participant_turn_id:
+        logger.info(
+            "post-turn brain_b skipped stale participant turn: session=%s participant_turn=%s latest_participant_turn=%s",
+            session.id,
+            participant_turn_id,
+            latest_participant_turn_id or "<none>",
+        )
+        return False
+    if session.status != "active":
+        logger.info(
+            "post-turn brain_b skipped inactive session: session=%s participant_turn=%s status=%s",
+            session.id,
+            participant_turn_id,
+            session.status,
+        )
+        return False
+    return True
 
 
 async def run_pre_plan_background(
@@ -831,7 +874,7 @@ async def run_pre_plan_background(
             prior_axes_coverage=[],
             eligible_question_ids=eligible_question_ids,
             prior_question_coverage=prior_question_coverage,
-            enable_tools=False,
+            enable_tools=True,
             reasoning_budget_tokens=preplan_reasoning_budget_tokens(),
             compact_context=True,
         )
