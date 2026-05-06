@@ -16,6 +16,7 @@ from agentic_survey.agents.brain_b_loop import (
     run_brain_b_with_tools,
 )
 from agentic_survey.llm.reasoning import TrailingAssistantRoleError
+from agentic_survey.llm.reasoning import repair_completion_tokens
 from agentic_survey.domain.intent import (
     AxisCoverage,
     BrainBIntent,
@@ -227,6 +228,38 @@ def test_parse_retry_recovers_on_second_attempt() -> None:
     )
     assert result.intent.get_user_input.options[-1] == "Discuss this more."
     assert len(router.calls) == 2
+
+
+def test_parse_retry_disables_thinking_after_empty_response() -> None:
+    router = _ScriptedRouter(
+        [
+            _completion(content=""),
+            _completion(content=json.dumps(_intent_payload())),
+        ]
+    )
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[],
+            registry=_registry_with_search([]),
+            router=router,
+        )
+    )
+
+    assert result.intent.get_user_input.options[-1] == "Discuss this more."
+    assert len(router.calls) == 2
+    first_kwargs = router.calls[0]
+    retry_kwargs = router.calls[1]
+    assert first_kwargs["model"] == "mira-scientist"
+    assert first_kwargs["tools"]
+    assert "tool_choice" not in first_kwargs
+    assert first_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
+    assert retry_kwargs["model"] == "mira-scientist"
+    assert retry_kwargs["max_tokens"] == repair_completion_tokens()
+    assert retry_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+    assert "tools" not in retry_kwargs
+    assert "tool_choice" not in retry_kwargs
 
 
 def test_parse_failure_beyond_retry_budget_raises() -> None:

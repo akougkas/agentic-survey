@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from agentic_survey.agents.tools.registry import ToolDispatchError, ToolRegistry
 from agentic_survey.domain.intent import AxisCoverage, BrainBIntent, QuestionCoverage
 from agentic_survey.llm.reasoning import (
+    repair_completion_tokens,
     reasoning_completion_tokens,
     sanitize_thinking_messages,
     set_lmstudio_thinking,
@@ -1015,12 +1016,18 @@ async def run_brain_b_with_tools(
     # iterations we send ``tools`` with no ``response_format``. When the model
     # returns content without tool_calls, we try to parse it as BrainBIntent
     # directly. If it is not valid JSON, we escalate to a dedicated terminal
-    # call with ``tool_choice="none"`` and ``response_format=json_schema`` to
-    # force the structured output.
+    # call with ``response_format=json_schema`` to force the structured output.
+    # ``tool_choice`` is intentionally omitted: tools default to auto when
+    # present, and terminal calls omit tools entirely.
     max_iterations = max_tool_calls + max_parse_retries + 2
     for iteration in range(max_iterations):
         terminal_only = not tools_schema or parse_retries > 0
-        completion_token_budget = reasoning_completion_tokens(reasoning_budget_tokens)
+        thinking_enabled = parse_retries == 0
+        completion_token_budget = (
+            reasoning_completion_tokens(reasoning_budget_tokens)
+            if thinking_enabled
+            else repair_completion_tokens()
+        )
         # Gemma's llama-server chat template treats a trailing assistant
         # message as a partial-response prefill and rejects the request when
         # ``enable_thinking=true`` is also set. Brain B's transcript_tail
@@ -1030,7 +1037,11 @@ async def run_brain_b_with_tools(
         # before every thinking-enabled call. The resolved messages list is
         # request-local; the loop's own ``messages`` list keeps appending
         # tool-call records for the next iteration.
-        request_messages = sanitize_thinking_messages(messages)
+        request_messages = (
+            sanitize_thinking_messages(messages)
+            if thinking_enabled
+            else list(messages)
+        )
         completion_kwargs: dict[str, Any] = {
             "model": "mira-scientist",
             "messages": request_messages,
@@ -1041,20 +1052,21 @@ async def run_brain_b_with_tools(
                 "brain": "B",
                 "iteration": iteration,
                 "terminal_only": terminal_only,
+                "thinking_enabled": thinking_enabled,
             },
         }
-        set_lmstudio_thinking(
-            completion_kwargs,
-            enabled=True,
-            min_tokens=completion_token_budget,
-        )
+        if thinking_enabled:
+            set_lmstudio_thinking(
+                completion_kwargs,
+                enabled=True,
+                min_tokens=completion_token_budget,
+            )
+        else:
+            set_lmstudio_thinking(completion_kwargs, enabled=False)
         if terminal_only:
             completion_kwargs["response_format"] = _brain_b_response_format()
-            if tools_schema:
-                completion_kwargs["tool_choice"] = "none"
         else:
             completion_kwargs["tools"] = tools_schema
-            completion_kwargs["tool_choice"] = "auto"
 
         response = await router.acompletion(**completion_kwargs)
         message = _extract_message(response)
@@ -1155,7 +1167,8 @@ async def run_brain_b_with_tools(
             if parse_retries >= max_parse_retries:
                 break
             parse_retries += 1
-            messages.append({"role": "assistant", "content": raw_output})
+            if raw_output:
+                messages.append({"role": "assistant", "content": raw_output})
             messages.append(
                 {
                     "role": "system",
