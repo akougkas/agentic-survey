@@ -101,11 +101,10 @@ def seed_entries() -> list[CatalogEntry]:
             role="validator",
             endpoint="dynamo",
             model_id=dynamo_model,
-            label=f"{dynamo_model} (Validator on dynamo, reasoning budget)",
+            label=f"{dynamo_model} (Validator on dynamo, compact JSON)",
             notes=context_note,
             is_default=True,
-            reasoning_mode="budget",
-            reasoning_budget_tokens=settings.llm_reasoning_budget_tokens,
+            reasoning_mode="off",
             reasoning_kwarg="enable_thinking",
         ),
         CatalogEntry(

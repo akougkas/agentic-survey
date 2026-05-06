@@ -100,7 +100,8 @@ class Validator(BaseAgent):
             messages,
             campaign=campaign,
             temperature=0.0,
-            max_tokens=8192,
+            max_tokens=1024,
+            disable_reasoning=True,
         )
         try:
             return self._parse(raw.content)

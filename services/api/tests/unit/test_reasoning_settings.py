@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from agentic_survey.llm.catalog import CatalogResolution
+from agentic_survey.llm.catalog import CatalogResolution, seed_entries
 from agentic_survey.llm.client import ChatMessage, LLMClient
 from agentic_survey.llm.pool import AgentRole, EndpointConfig
 from agentic_survey.llm.reasoning import (
@@ -95,6 +95,33 @@ def test_visible_reply_requests_disable_thinking() -> None:
     set_lmstudio_thinking(request, enabled=False)
 
     assert request["max_tokens"] == VISIBLE_REPLY_MAX_TOKENS
+    assert request["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def test_validator_catalog_default_disables_thinking() -> None:
+    validator = next(
+        entry
+        for entry in seed_entries()
+        if entry.catalog_id == "dynamo-validator"
+    )
+    request = {"max_tokens": 1024}
+
+    apply_reasoning_settings(
+        CatalogResolution(
+            role=validator.role,
+            source="catalog_default",
+            catalog_id=validator.catalog_id,
+            endpoint=validator.endpoint,
+            model_id=validator.model_id,
+            api_base="http://dynamo:1234/v1",
+            reasoning_mode=validator.reasoning_mode,
+            reasoning_budget_tokens=validator.reasoning_budget_tokens,
+            reasoning_kwarg=validator.reasoning_kwarg,
+        ),
+        request,
+    )
+
+    assert request["max_tokens"] == 1024
     assert request["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
 
 

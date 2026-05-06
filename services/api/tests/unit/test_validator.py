@@ -57,6 +57,7 @@ def test_validator_repairs_malformed_json_with_reasoning_disabled() -> None:
         {"label": "tape archive", "type": "infrastructure"}
     ]
     assert len(llm.calls) == 2
-    assert llm.calls[0].get("disable_reasoning") in (None, False)
+    assert llm.calls[0]["disable_reasoning"] is True
+    assert llm.calls[0]["max_tokens"] == 1024
     assert llm.calls[1]["disable_reasoning"] is True
     assert llm.calls[1]["max_tokens"] == 1024
