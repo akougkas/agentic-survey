@@ -38,6 +38,8 @@ Surface = Literal["designer", "interviewer"]
 _PROMPTS_DIR = Path(__file__).with_name("prompts")
 _DISCUSS_MORE = "Discuss this more."
 _RESULT_LOG_LIMIT = 240
+_REPAIR_CONTEXT_LIMIT = 6000
+_REPAIR_TRANSCRIPT_TURNS = 8
 
 
 class BrainBLoopError(RuntimeError):
@@ -401,6 +403,58 @@ def _summarize(value: Any) -> str:
     if len(rendered) <= _RESULT_LOG_LIMIT:
         return rendered
     return rendered[:_RESULT_LOG_LIMIT] + "…"
+
+
+def _clip_text(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"
+
+
+def _compact_brain_b_repair_messages(
+    *,
+    system_context: list[str],
+    transcript_tail: list[dict[str, Any]],
+    tool_calls_made: list[ToolCallRecord],
+    validation_error: Exception,
+) -> list[dict[str, str]]:
+    context_parts: list[str] = []
+    for item in system_context:
+        if not item:
+            continue
+        context_parts.append(_clip_text(item, 1400))
+        if len("\n\n".join(context_parts)) >= _REPAIR_CONTEXT_LIMIT:
+            break
+    tool_payload = [
+        {
+            "name": call.name,
+            "arguments": call.arguments,
+            "result_summary": call.result_summary,
+        }
+        for call in tool_calls_made
+    ]
+    user_payload = {
+        "validation_error": str(validation_error),
+        "context": _clip_text("\n\n".join(context_parts), _REPAIR_CONTEXT_LIMIT),
+        "transcript_tail": transcript_tail[-_REPAIR_TRANSCRIPT_TURNS:],
+        "observed_tool_calls": tool_payload,
+    }
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are Mira's Brain B planner. Return only one valid BrainBIntent "
+                "JSON object. No markdown. No prose outside JSON. No reasoning text. "
+                "Use axis prefixes from the outline when available. Scores are "
+                "fractions from 0.0 to 1.0. get_user_input.options must end with "
+                "Discuss this more."
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(user_payload, default=str),
+        },
+    ]
 
 
 def _observed_search_queries(tool_calls: list[ToolCallRecord]) -> list[str]:
@@ -1234,16 +1288,11 @@ async def run_brain_b_with_tools(
             if parse_retries >= max_parse_retries:
                 break
             parse_retries += 1
-            if raw_output:
-                messages.append({"role": "assistant", "content": raw_output})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "Your last response failed BrainBIntent schema validation: "
-                        f"{exc}. Respond with a single valid BrainBIntent JSON object only."
-                    ),
-                }
+            messages = _compact_brain_b_repair_messages(
+                system_context=system_context,
+                transcript_tail=transcript_tail,
+                tool_calls_made=tool_calls_made,
+                validation_error=exc,
             )
             continue
 

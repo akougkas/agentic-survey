@@ -258,8 +258,9 @@ def test_parse_retry_uses_tool_route_then_user_repair_without_thinking() -> None
     assert retry_kwargs["model"] == "mira-scientist"
     assert retry_kwargs["max_tokens"] == repair_completion_tokens()
     assert retry_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+    assert len(retry_kwargs["messages"]) == 2
     assert retry_kwargs["messages"][-1]["role"] == "user"
-    assert "BrainBIntent schema validation" in retry_kwargs["messages"][-1]["content"]
+    assert "validation_error" in retry_kwargs["messages"][-1]["content"]
     assert "tools" not in retry_kwargs
     assert "tool_choice" not in retry_kwargs
 
