@@ -91,6 +91,15 @@ def test_litellm_aliases_do_not_cross_fallback_between_brains() -> None:
     assert router_settings.get("fallbacks") in (None, [])
 
 
+def test_scientist_route_has_no_openrouter_fallback() -> None:
+    config = _load_litellm_config()
+    scientist_entries = [
+        entry for entry in config["model_list"] if entry["model_name"] == "mira-scientist"
+    ]
+    assert len(scientist_entries) == 1
+    assert not scientist_entries[0].get("_openrouter_fallback")
+
+
 class _BrainAStreamRouter:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []

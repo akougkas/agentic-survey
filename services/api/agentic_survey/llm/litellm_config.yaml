@@ -15,14 +15,6 @@ model_list:
       api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}
     model_info:
       supports_response_schema: true
-  - model_name: mira-scientist
-    _openrouter_fallback: true
-    litellm_params:
-      model: openrouter/${SURVEY_OPENROUTER_DYNAMO_MODEL}
-      api_key: ${SURVEY_OPENROUTER_API_KEY}
-      api_base: ${SURVEY_OPENROUTER_BASE_URL}
-    model_info:
-      supports_response_schema: true
   - model_name: validator
     litellm_params:
       model: openai/${SURVEY_DYNAMO_MODEL}

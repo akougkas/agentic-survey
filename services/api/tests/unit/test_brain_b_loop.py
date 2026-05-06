@@ -286,7 +286,10 @@ def test_parse_retry_uses_tool_route_then_user_repair_without_thinking() -> None
     retry_kwargs = router.calls[1]
     assert first_kwargs["model"] == "mira-scientist"
     assert first_kwargs["tools"]
-    assert "tool_choice" not in first_kwargs
+    assert first_kwargs["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "emit_brain_b_intent"},
+    }
     assert first_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
     assert retry_kwargs["model"] == "mira-scientist"
     assert retry_kwargs["max_tokens"] == repair_completion_tokens()
@@ -297,7 +300,10 @@ def test_parse_retry_uses_tool_route_then_user_repair_without_thinking() -> None
     assert [tool["function"]["name"] for tool in retry_kwargs["tools"]] == [
         "emit_brain_b_intent"
     ]
-    assert "tool_choice" not in retry_kwargs
+    assert retry_kwargs["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "emit_brain_b_intent"},
+    }
 
 
 def test_parse_failure_beyond_retry_budget_raises() -> None:

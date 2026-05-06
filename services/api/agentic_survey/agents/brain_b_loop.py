@@ -246,6 +246,13 @@ def _brain_b_output_tool_schema() -> dict[str, Any]:
     }
 
 
+def _forced_output_tool_choice() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {"name": _EMIT_INTENT_TOOL_NAME},
+    }
+
+
 _OPTION_MAX_LEN = 120
 _OPTION_TOTAL_CAP = 4
 _OPTION_REJECT_SUBSTRINGS: tuple[str, ...] = (
@@ -1321,9 +1328,9 @@ async def run_brain_b_with_tools(
     last_exc: Exception | None = None
 
     # LM Studio handles OpenAI tool calls more reliably than response_format
-    # on the long Brain B prompt. Brain B's final handoff is a tool call, and
-    # the request exposes only that output tool so every configured route has
-    # a small, unambiguous schema to satisfy.
+    # on the long Brain B prompt. Brain B's final handoff is a forced tool call.
+    # The mira-scientist route is kept on the local tool-capable endpoint until
+    # a cloud endpoint can honor provider-level tool forcing.
     #
     # Gemma can spend the whole completion budget in hidden reasoning before
     # reaching a tool call on the long Brain B prompt. Tool mode is therefore
@@ -1381,6 +1388,7 @@ async def run_brain_b_with_tools(
         else:
             set_lmstudio_thinking(completion_kwargs, enabled=False)
         completion_kwargs["tools"] = [output_tool_schema]
+        completion_kwargs["tool_choice"] = _forced_output_tool_choice()
 
         start_time = time.monotonic()
         response = await router.acompletion(**completion_kwargs)
