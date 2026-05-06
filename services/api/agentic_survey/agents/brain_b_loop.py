@@ -253,6 +253,27 @@ def _forced_output_tool_choice() -> dict[str, Any]:
     }
 
 
+def _brain_b_tools_for_request(
+    registry: ToolRegistry,
+    output_tool_schema: dict[str, Any],
+    *,
+    terminal_only: bool,
+) -> list[dict[str, Any]]:
+    if terminal_only:
+        return [output_tool_schema]
+    return [*registry.openai_schema(), output_tool_schema]
+
+
+def _tool_choice_for_request(
+    registry: ToolRegistry,
+    *,
+    terminal_only: bool,
+) -> str | dict[str, Any]:
+    if terminal_only or registry.is_empty():
+        return _forced_output_tool_choice()
+    return "required"
+
+
 _OPTION_MAX_LEN = 120
 _OPTION_TOTAL_CAP = 4
 _OPTION_REJECT_SUBSTRINGS: tuple[str, ...] = (
@@ -1328,9 +1349,9 @@ async def run_brain_b_with_tools(
     last_exc: Exception | None = None
 
     # LM Studio handles OpenAI tool calls more reliably than response_format
-    # on the long Brain B prompt. Brain B's final handoff is a forced tool call.
-    # The mira-scientist route is kept on the local tool-capable endpoint until
-    # a cloud endpoint can honor provider-level tool forcing.
+    # on the long Brain B prompt. Planning calls expose the registry tools
+    # plus the final structured handoff tool. Repair calls expose only the
+    # handoff tool and force it.
     #
     # Gemma can spend the whole completion budget in hidden reasoning before
     # reaching a tool call on the long Brain B prompt. Tool mode is therefore
@@ -1387,8 +1408,15 @@ async def run_brain_b_with_tools(
             )
         else:
             set_lmstudio_thinking(completion_kwargs, enabled=False)
-        completion_kwargs["tools"] = [output_tool_schema]
-        completion_kwargs["tool_choice"] = _forced_output_tool_choice()
+        completion_kwargs["tools"] = _brain_b_tools_for_request(
+            registry,
+            output_tool_schema,
+            terminal_only=terminal_only,
+        )
+        completion_kwargs["tool_choice"] = _tool_choice_for_request(
+            registry,
+            terminal_only=terminal_only,
+        )
 
         start_time = time.monotonic()
         response = await router.acompletion(**completion_kwargs)
@@ -1408,14 +1436,28 @@ async def run_brain_b_with_tools(
             tool_calls=tool_calls,
         )
 
+        registry_tool_calls: list[dict[str, Any]] = []
+        unknown_tool_calls: list[dict[str, Any]] = []
         output_tool_call: dict[str, Any] | None = None
         if tool_calls:
             for call in tool_calls:
-                if _tool_call_name(call) == _EMIT_INTENT_TOOL_NAME:
+                name = _tool_call_name(call)
+                if name == _EMIT_INTENT_TOOL_NAME:
                     output_tool_call = call
-                    break
+                elif name in registry:
+                    registry_tool_calls.append(call)
+                else:
+                    unknown_tool_calls.append(call)
 
-        if output_tool_call is not None:
+        if registry_tool_calls:
+            if output_tool_call is not None:
+                logger.warning(
+                    "brain_b deferred output tool until registry tools complete surface=%s registry_tool_count=%s",
+                    surface,
+                    len(registry_tool_calls),
+                )
+            tool_calls = registry_tool_calls
+        elif output_tool_call is not None:
             raw_output = _tool_call_arguments(output_tool_call)
             normalized = _normalize_discuss_more(
                 raw_output,
@@ -1463,28 +1505,20 @@ async def run_brain_b_with_tools(
                 parse_retries=parse_retries,
             )
             return BrainBLoopResult(intent=intent, tool_calls=tool_calls_made, raw_output=raw_output)
-
-        if tool_calls:
+        elif unknown_tool_calls:
             # Local models occasionally emit tool_calls for output-contract
-            # fields like ``get_user_input``. Drop unknown names so the
-            # turn proceeds on whatever content is also present; if there
-            # is no content, the existing parse-retry path will force a
-            # terminal output tool call. The dropped call never reaches the assistant
-            # message we append below, which keeps the OpenAI tool_call_id
-            # ↔ tool message pairing consistent.
-            filtered_tool_calls: list[dict[str, Any]] = []
-            for call in tool_calls:
+            # fields like ``get_user_input``. Drop unknown names so the turn
+            # proceeds on whatever content is also present, with parse-retry
+            # covering a model that emits no content.
+            for call in unknown_tool_calls:
                 candidate_name = _tool_call_name(call)
-                if candidate_name and candidate_name in registry:
-                    filtered_tool_calls.append(call)
-                else:
-                    logger.warning(
-                        "brain_b dropped unknown tool_call surface=%s name=%s known=%s",
-                        surface,
-                        candidate_name or "<empty>",
-                        sorted(registry.names()),
-                    )
-            tool_calls = filtered_tool_calls
+                logger.warning(
+                    "brain_b dropped unknown tool_call surface=%s name=%s known=%s",
+                    surface,
+                    candidate_name or "<empty>",
+                    sorted([*registry.names(), _EMIT_INTENT_TOOL_NAME]),
+                )
+            tool_calls = []
 
         if tool_calls:
             if len(tool_calls_made) + len(tool_calls) > max_tool_calls:

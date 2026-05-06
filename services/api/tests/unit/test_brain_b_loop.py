@@ -93,6 +93,10 @@ def _tool_call(*, call_id: str, name: str, arguments: dict[str, Any] | str) -> d
     }
 
 
+def _tool_names(call_kwargs: dict[str, Any]) -> list[str]:
+    return [tool["function"]["name"] for tool in call_kwargs.get("tools", [])]
+
+
 def _noop_search():
     async def _handler(query: str, k: int) -> list[dict[str, Any]]:
         return []
@@ -179,6 +183,12 @@ def test_single_tool_call_then_terminal_intent() -> None:
     assert result.tool_calls[0].result == results
     assert result.intent.retrieval_used is True
     assert result.intent.retrieval_chunks == ["chunk_42"]
+    assert _tool_names(router.calls[0]) == [
+        "search_knowledge",
+        "get_outline_state",
+        "emit_brain_b_intent",
+    ]
+    assert router.calls[0]["tool_choice"] == "required"
 
 
 def test_output_tool_call_returns_intent_without_response_format() -> None:
@@ -208,6 +218,62 @@ def test_output_tool_call_returns_intent_without_response_format() -> None:
     assert result.intent.get_user_input.question == payload["get_user_input"]["question"]
     assert result.tool_calls == []
     assert "response_format" not in router.calls[0]
+    assert _tool_names(router.calls[0]) == [
+        "search_knowledge",
+        "get_outline_state",
+        "emit_brain_b_intent",
+    ]
+    assert router.calls[0]["tool_choice"] == "required"
+
+
+def test_registry_tools_run_before_same_message_output_tool() -> None:
+    results = [{"chunk_id": "chunk_99", "score": 0.8, "content": "staging friction"}]
+    registry = _registry_with_search(results)
+    early_payload = _intent_payload(question="This output should be deferred.")
+    final_payload = _intent_payload(question="What made staging fragile?")
+    router = _ScriptedRouter(
+        [
+            _completion(
+                tool_calls=[
+                    _tool_call(
+                        call_id="search",
+                        name="search_knowledge",
+                        arguments={"query": "staging friction", "k": 3},
+                    ),
+                    _tool_call(
+                        call_id="final-too-early",
+                        name="emit_brain_b_intent",
+                        arguments=early_payload,
+                    ),
+                ]
+            ),
+            _completion(
+                tool_calls=[
+                    _tool_call(
+                        call_id="final",
+                        name="emit_brain_b_intent",
+                        arguments=final_payload,
+                    )
+                ]
+            ),
+        ]
+    )
+
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[{"role": "user", "content": "staging was fragile"}],
+            registry=registry,
+            router=router,
+        )
+    )
+
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].name == "search_knowledge"
+    assert result.intent.get_user_input.question == "What made staging fragile?"
+    assert result.intent.retrieval_used is True
+    assert result.intent.retrieval_chunks == ["chunk_99"]
 
 
 def test_tool_call_budget_exceeded_raises() -> None:
@@ -286,10 +352,12 @@ def test_parse_retry_uses_tool_route_then_user_repair_without_thinking() -> None
     retry_kwargs = router.calls[1]
     assert first_kwargs["model"] == "mira-scientist"
     assert first_kwargs["tools"]
-    assert first_kwargs["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "emit_brain_b_intent"},
-    }
+    assert _tool_names(first_kwargs) == [
+        "search_knowledge",
+        "get_outline_state",
+        "emit_brain_b_intent",
+    ]
+    assert first_kwargs["tool_choice"] == "required"
     assert first_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
     assert retry_kwargs["model"] == "mira-scientist"
     assert retry_kwargs["max_tokens"] == repair_completion_tokens()
@@ -297,9 +365,7 @@ def test_parse_retry_uses_tool_route_then_user_repair_without_thinking() -> None
     assert len(retry_kwargs["messages"]) == 2
     assert retry_kwargs["messages"][-1]["role"] == "user"
     assert "validation_error" in retry_kwargs["messages"][-1]["content"]
-    assert [tool["function"]["name"] for tool in retry_kwargs["tools"]] == [
-        "emit_brain_b_intent"
-    ]
+    assert _tool_names(retry_kwargs) == ["emit_brain_b_intent"]
     assert retry_kwargs["tool_choice"] == {
         "type": "function",
         "function": {"name": "emit_brain_b_intent"},
