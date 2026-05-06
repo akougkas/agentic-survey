@@ -140,8 +140,12 @@ def test_single_turn_no_tool_calls_returns_intent() -> None:
     assert result.tool_calls == []
     assert result.intent.retrieval_used is False
     assert len(router.calls) == 1
-    # No tools registered: the completion must not have been asked for any.
-    assert "tools" not in router.calls[0] or not router.calls[0].get("tools")
+    # Brain B always exposes its final handoff as a structured output tool.
+    tool_names = [
+        tool["function"]["name"]
+        for tool in router.calls[0].get("tools", [])
+    ]
+    assert tool_names == ["emit_brain_b_intent"]
 
 
 def test_single_tool_call_then_terminal_intent() -> None:
@@ -175,6 +179,35 @@ def test_single_tool_call_then_terminal_intent() -> None:
     assert result.tool_calls[0].result == results
     assert result.intent.retrieval_used is True
     assert result.intent.retrieval_chunks == ["chunk_42"]
+
+
+def test_output_tool_call_returns_intent_without_response_format() -> None:
+    payload = _intent_payload()
+    router = _ScriptedRouter(
+        [
+            _completion(
+                tool_calls=[
+                    _tool_call(
+                        call_id="final",
+                        name="emit_brain_b_intent",
+                        arguments=payload,
+                    )
+                ]
+            )
+        ]
+    )
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[{"role": "user", "content": "What happened in staging?"}],
+            registry=_registry_with_search([]),
+            router=router,
+        )
+    )
+    assert result.intent.get_user_input.question == payload["get_user_input"]["question"]
+    assert result.tool_calls == []
+    assert "response_format" not in router.calls[0]
 
 
 def test_tool_call_budget_exceeded_raises() -> None:
@@ -261,8 +294,13 @@ def test_parse_retry_uses_tool_route_then_user_repair_without_thinking() -> None
     assert len(retry_kwargs["messages"]) == 2
     assert retry_kwargs["messages"][-1]["role"] == "user"
     assert "validation_error" in retry_kwargs["messages"][-1]["content"]
-    assert "tools" not in retry_kwargs
-    assert "tool_choice" not in retry_kwargs
+    assert [tool["function"]["name"] for tool in retry_kwargs["tools"]] == [
+        "emit_brain_b_intent"
+    ]
+    assert retry_kwargs["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "emit_brain_b_intent"},
+    }
 
 
 def test_parse_failure_beyond_retry_budget_raises() -> None:

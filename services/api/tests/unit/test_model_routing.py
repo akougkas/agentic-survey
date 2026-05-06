@@ -161,8 +161,11 @@ def test_brain_b_requests_mira_scientist_alias_and_parses_reasoning_json() -> No
     router, intent = asyncio.run(_run())
 
     assert router.calls[0]["model"] == "mira-scientist"
-    assert router.calls[0]["response_format"]["json_schema"]["name"] == "brain_b_intent"
-    schema = router.calls[0]["response_format"]["json_schema"]["schema"]
-    assert _forbidden_schema_annotations(schema) == []
+    assert "response_format" not in router.calls[0]
+    tool_names = [
+        tool["function"]["name"]
+        for tool in router.calls[0].get("tools", [])
+    ]
+    assert tool_names == ["emit_brain_b_intent"]
     assert router.calls[0]["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
     assert intent.active_axis == "R1"

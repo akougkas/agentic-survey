@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 Surface = Literal["designer", "interviewer"]
 _PROMPTS_DIR = Path(__file__).with_name("prompts")
 _DISCUSS_MORE = "Discuss this more."
+_EMIT_INTENT_TOOL_NAME = "emit_brain_b_intent"
 _RESULT_LOG_LIMIT = 240
 _REPAIR_CONTEXT_LIMIT = 6000
 _REPAIR_TRANSCRIPT_TURNS = 8
@@ -112,6 +113,144 @@ def _strip_json_schema_annotations(value: Any) -> Any:
     if isinstance(value, list):
         return [_strip_json_schema_annotations(item) for item in value]
     return value
+
+
+def _brain_b_output_tool_schema() -> dict[str, Any]:
+    """Function-call schema for Brain B's final structured handoff.
+
+    LM Studio handles flat OpenAI tool schemas more reliably than
+    response_format schemas with nested ``$defs``. The schema is intentionally
+    explicit and mostly required so the model sees the exact field names it
+    must emit. Pydantic remains the source of truth after the call.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": _EMIT_INTENT_TOOL_NAME,
+            "description": (
+                "Emit the final BrainBIntent object as function arguments. "
+                "Use score for axes_coverage entries. get_user_input must be "
+                "an object. The last get_user_input option must be exactly "
+                "Discuss this more."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "active_axis": {"type": "string"},
+                    "axes_coverage": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "axis": {"type": "string"},
+                                "score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                                "gap": {"type": "string"},
+                            },
+                            "required": ["axis", "score", "gap"],
+                        },
+                    },
+                    "question_coverage": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "question_id": {"type": "string"},
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "pending",
+                                        "targeting",
+                                        "partial",
+                                        "satisfied",
+                                        "skipped",
+                                    ],
+                                },
+                                "confidence": {
+                                    "type": "number",
+                                    "minimum": 0.0,
+                                    "maximum": 1.0,
+                                },
+                                "evidence_quote": {"type": "string"},
+                                "turn_id": {"type": "string"},
+                            },
+                            "required": [
+                                "question_id",
+                                "status",
+                                "confidence",
+                                "evidence_quote",
+                                "turn_id",
+                            ],
+                        },
+                    },
+                    "question_intent": {"type": "string"},
+                    "get_user_input": {
+                        "type": "object",
+                        "properties": {
+                            "question": {"type": "string"},
+                            "options": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "minItems": 2,
+                                "maxItems": 5,
+                            },
+                            "allow_free_text": {"type": "boolean"},
+                        },
+                        "required": ["question", "options", "allow_free_text"],
+                    },
+                    "outline_patch": {
+                        "type": "object",
+                        "properties": {
+                            "sections": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "section": {"type": "string"},
+                                        "op": {
+                                            "type": "string",
+                                            "enum": ["replace", "append", "remove"],
+                                        },
+                                        "value": {},
+                                    },
+                                    "required": ["section", "op"],
+                                },
+                            },
+                            "provenance": {"type": "string"},
+                            "summary": {"type": "string"},
+                        },
+                        "required": ["sections", "provenance", "summary"],
+                    },
+                    "ready_for_review": {"type": "boolean"},
+                    "should_close": {"type": "boolean"},
+                    "closing": {"type": "boolean"},
+                    "retrieval_used": {"type": "boolean"},
+                    "retrieval_chunks": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": [
+                    "active_axis",
+                    "axes_coverage",
+                    "question_coverage",
+                    "question_intent",
+                    "get_user_input",
+                    "ready_for_review",
+                    "should_close",
+                    "closing",
+                    "retrieval_used",
+                    "retrieval_chunks",
+                ],
+            },
+        },
+    }
+
+
+def _forced_output_tool_choice() -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {"name": _EMIT_INTENT_TOOL_NAME},
+    }
 
 
 _OPTION_MAX_LEN = 120
@@ -393,6 +532,24 @@ def _normalize_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return normalized
+
+
+def _tool_call_name(call: dict[str, Any]) -> str:
+    function = call.get("function") or {}
+    return str(function.get("name") or "")
+
+
+def _tool_call_arguments(call: dict[str, Any]) -> str:
+    function = call.get("function") or {}
+    arguments = function.get("arguments")
+    if isinstance(arguments, str):
+        return arguments
+    if arguments is None:
+        return "{}"
+    try:
+        return json.dumps(arguments, default=str)
+    except (TypeError, ValueError):
+        return str(arguments)
 
 
 def _summarize(value: Any) -> str:
@@ -919,6 +1076,71 @@ def _is_substantive_turn(intent: BrainBIntent) -> bool:
     return False
 
 
+def _finalize_valid_intent(
+    intent: BrainBIntent,
+    *,
+    surface: Surface,
+    tool_calls_made: list[ToolCallRecord],
+    rubric_axes: list[str] | None,
+    prior_axes_coverage: list[AxisCoverage] | None,
+    close_guard_axes: list[str] | None,
+    eligible_question_ids: list[str] | None,
+    prior_question_coverage: list[QuestionCoverage] | None,
+    prior_active_axis_prefix: str,
+    prior_consecutive_active_axis_count: int,
+) -> BrainBIntent:
+    observed_chunks = _observed_retrieval_chunks(tool_calls_made)
+    retrieval_used = any(call.name == "search_knowledge" for call in tool_calls_made)
+    intent = intent.model_copy(
+        update={
+            "retrieval_used": retrieval_used,
+            "retrieval_chunks": observed_chunks if retrieval_used else [],
+        }
+    )
+    if rubric_axes is not None:
+        intent = _normalize_axes_coverage(
+            intent,
+            rubric_axes=rubric_axes,
+            prior_axes=prior_axes_coverage,
+        )
+    if close_guard_axes:
+        intent = _enforce_close_guard(
+            intent,
+            close_guard_axes=close_guard_axes,
+            surface=surface,
+        )
+    if eligible_question_ids is not None:
+        eligible_ids = {
+            qid.strip() for qid in eligible_question_ids if qid and qid.strip()
+        }
+        emitted_count = len(intent.question_coverage)
+        merged_question_coverage, merge_stats = _merge_question_coverage_with_stats(
+            prior_question_coverage,
+            intent.question_coverage,
+            eligible_ids=eligible_ids,
+        )
+        intent = intent.model_copy(update={"question_coverage": merged_question_coverage})
+        logger.info(
+            "brain_b question_coverage merge surface=%s emitted=%s dropped_out_of_bank=%s regressions_overridden=%s final=%s",
+            surface,
+            emitted_count,
+            merge_stats.dropped_out_of_bank,
+            merge_stats.regressions_overridden,
+            merge_stats.final_count,
+        )
+    if rubric_axes is not None:
+        intent, rotation_forced = _force_axis_rotation(
+            intent,
+            rubric_axes=rubric_axes,
+            prior_active_axis_prefix=prior_active_axis_prefix,
+            prior_consecutive_count=prior_consecutive_active_axis_count,
+            surface=surface,
+        )
+        if not rotation_forced:
+            intent = _floor_active_axis(intent, rubric_axes=rubric_axes)
+    return intent
+
+
 def _enforce_close_guard(
     intent: BrainBIntent,
     *,
@@ -1099,21 +1321,18 @@ async def run_brain_b_with_tools(
             messages.append({"role": "system", "content": extra})
     messages.extend(transcript_tail)
 
-    tools_schema = registry.openai_schema() if not registry.is_empty() else None
+    registry_tools_schema = registry.openai_schema() if not registry.is_empty() else []
+    output_tool_schema = _brain_b_output_tool_schema()
     tool_calls_made: list[ToolCallRecord] = []
     parse_retries = 0
     raw_output = ""
     last_exc: Exception | None = None
 
-    # LM Studio (and some other OpenAI-compatible backends) silently drop
-    # ``tool_calls`` when ``response_format=json_schema`` is set on the same
-    # request. We therefore keep the two separate: during tool-capable
-    # iterations we send ``tools`` with no ``response_format``. When the model
-    # returns content without tool_calls, we try to parse it as BrainBIntent
-    # directly. If it is not valid JSON, we escalate to a dedicated terminal
-    # call with ``response_format=json_schema`` to force the structured output.
-    # ``tool_choice`` is intentionally omitted: tools default to auto when
-    # present, and terminal calls omit tools entirely.
+    # LM Studio handles OpenAI tool calls more reliably than response_format
+    # on the long Brain B prompt. Retrieval and graph lookups remain normal
+    # tools. Brain B's final handoff is also a tool call
+    # (emit_brain_b_intent), with forced tool_choice used only after a parse
+    # failure so repair cannot drift into prose.
     #
     # Gemma can spend the whole completion budget in hidden reasoning before
     # reaching a tool call on the long Brain B prompt. Tool mode is therefore
@@ -1121,7 +1340,7 @@ async def run_brain_b_with_tools(
     # tool_calls promptly with thinking disabled.
     max_iterations = max_tool_calls + max_parse_retries + 2
     for iteration in range(max_iterations):
-        terminal_only = not tools_schema or parse_retries > 0
+        terminal_only = parse_retries > 0
         thinking_enabled = False
         completion_token_budget = (
             reasoning_completion_tokens(reasoning_budget_tokens)
@@ -1171,9 +1390,10 @@ async def run_brain_b_with_tools(
         else:
             set_lmstudio_thinking(completion_kwargs, enabled=False)
         if terminal_only:
-            completion_kwargs["response_format"] = _brain_b_response_format()
+            completion_kwargs["tools"] = [output_tool_schema]
+            completion_kwargs["tool_choice"] = _forced_output_tool_choice()
         else:
-            completion_kwargs["tools"] = tools_schema
+            completion_kwargs["tools"] = [*registry_tools_schema, output_tool_schema]
 
         start_time = time.monotonic()
         response = await router.acompletion(**completion_kwargs)
@@ -1193,18 +1413,67 @@ async def run_brain_b_with_tools(
             tool_calls=tool_calls,
         )
 
+        output_tool_call: dict[str, Any] | None = None
+        if tool_calls:
+            for call in tool_calls:
+                if _tool_call_name(call) == _EMIT_INTENT_TOOL_NAME:
+                    output_tool_call = call
+                    break
+
+        if output_tool_call is not None:
+            raw_output = _tool_call_arguments(output_tool_call)
+            normalized = _normalize_discuss_more(
+                raw_output,
+                last_participant_message=last_participant_message,
+                participant_extracted_concepts=participant_extracted_concepts,
+            )
+            try:
+                intent = BrainBIntent.model_validate_json(normalized)
+            except (ValidationError, ValueError) as exc:
+                last_exc = exc
+                if parse_retries >= max_parse_retries:
+                    break
+                parse_retries += 1
+                messages = _compact_brain_b_repair_messages(
+                    system_context=system_context,
+                    transcript_tail=transcript_tail,
+                    tool_calls_made=tool_calls_made,
+                    validation_error=exc,
+                )
+                continue
+
+            intent = _finalize_valid_intent(
+                intent,
+                surface=surface,
+                tool_calls_made=tool_calls_made,
+                rubric_axes=rubric_axes,
+                prior_axes_coverage=prior_axes_coverage,
+                close_guard_axes=close_guard_axes,
+                eligible_question_ids=eligible_question_ids,
+                prior_question_coverage=prior_question_coverage,
+                prior_active_axis_prefix=prior_active_axis_prefix,
+                prior_consecutive_active_axis_count=prior_consecutive_active_axis_count,
+            )
+            _log_brain_b_summary(
+                surface=surface,
+                iterations=iteration + 1,
+                tool_calls=tool_calls_made,
+                intent=intent,
+                parse_retries=parse_retries,
+            )
+            return BrainBLoopResult(intent=intent, tool_calls=tool_calls_made, raw_output=raw_output)
+
         if tool_calls:
             # Local models occasionally emit tool_calls for output-contract
             # fields like ``get_user_input``. Drop unknown names so the
             # turn proceeds on whatever content is also present; if there
             # is no content, the existing parse-retry path will force a
-            # terminal call. The dropped call never reaches the assistant
+            # terminal output tool call. The dropped call never reaches the assistant
             # message we append below, which keeps the OpenAI tool_call_id
             # ↔ tool message pairing consistent.
             filtered_tool_calls: list[dict[str, Any]] = []
             for call in tool_calls:
-                function = call.get("function") or {}
-                candidate_name = str(function.get("name") or "")
+                candidate_name = _tool_call_name(call)
                 if candidate_name and candidate_name in registry:
                     filtered_tool_calls.append(call)
                 else:
@@ -1231,9 +1500,8 @@ async def run_brain_b_with_tools(
                 }
             )
             for call in tool_calls:
-                function = call.get("function") or {}
-                name = str(function.get("name") or "")
-                arguments_raw = function.get("arguments") or "{}"
+                name = _tool_call_name(call)
+                arguments_raw = _tool_call_arguments(call)
                 tool_call_id = str(call.get("id") or "")
                 try:
                     result = await registry.dispatch(name, arguments_raw)
@@ -1296,58 +1564,18 @@ async def run_brain_b_with_tools(
             )
             continue
 
-        observed_chunks = _observed_retrieval_chunks(tool_calls_made)
-        retrieval_used = any(call.name == "search_knowledge" for call in tool_calls_made)
-        # Override model self-report with observed tool-call history. If no
-        # search_knowledge call actually fired, retrieval_chunks must be empty;
-        # the model sometimes invents placeholders otherwise.
-        intent = intent.model_copy(
-            update={
-                "retrieval_used": retrieval_used,
-                "retrieval_chunks": observed_chunks if retrieval_used else [],
-            }
+        intent = _finalize_valid_intent(
+            intent,
+            surface=surface,
+            tool_calls_made=tool_calls_made,
+            rubric_axes=rubric_axes,
+            prior_axes_coverage=prior_axes_coverage,
+            close_guard_axes=close_guard_axes,
+            eligible_question_ids=eligible_question_ids,
+            prior_question_coverage=prior_question_coverage,
+            prior_active_axis_prefix=prior_active_axis_prefix,
+            prior_consecutive_active_axis_count=prior_consecutive_active_axis_count,
         )
-        if rubric_axes is not None:
-            intent = _normalize_axes_coverage(
-                intent,
-                rubric_axes=rubric_axes,
-                prior_axes=prior_axes_coverage,
-            )
-        if close_guard_axes:
-            intent = _enforce_close_guard(
-                intent,
-                close_guard_axes=close_guard_axes,
-                surface=surface,
-            )
-        if eligible_question_ids is not None:
-            eligible_ids = {qid.strip() for qid in eligible_question_ids if qid and qid.strip()}
-            emitted_count = len(intent.question_coverage)
-            merged_question_coverage, merge_stats = _merge_question_coverage_with_stats(
-                prior_question_coverage,
-                intent.question_coverage,
-                eligible_ids=eligible_ids,
-            )
-            intent = intent.model_copy(
-                update={"question_coverage": merged_question_coverage}
-            )
-            logger.info(
-                "brain_b question_coverage merge surface=%s emitted=%s dropped_out_of_bank=%s regressions_overridden=%s final=%s",
-                surface,
-                emitted_count,
-                merge_stats.dropped_out_of_bank,
-                merge_stats.regressions_overridden,
-                merge_stats.final_count,
-            )
-        if rubric_axes is not None:
-            intent, rotation_forced = _force_axis_rotation(
-                intent,
-                rubric_axes=rubric_axes,
-                prior_active_axis_prefix=prior_active_axis_prefix,
-                prior_consecutive_count=prior_consecutive_active_axis_count,
-                surface=surface,
-            )
-            if not rotation_forced:
-                intent = _floor_active_axis(intent, rubric_axes=rubric_axes)
         _log_brain_b_summary(
             surface=surface,
             iterations=iteration + 1,
