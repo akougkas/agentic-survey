@@ -102,7 +102,40 @@ class Validator(BaseAgent):
             temperature=0.0,
             max_tokens=8192,
         )
-        return self._parse(raw.content)
+        try:
+            return self._parse(raw.content)
+        except LLMUnavailable as exc:
+            logger.warning(
+                "validator output parse failed; requesting JSON repair err=%s",
+                exc,
+            )
+            repair_messages = [
+                ChatMessage(
+                    role="system",
+                    content=(
+                        "Repair malformed Validator JSON. Return only one valid compact JSON "
+                        "object with exactly the Validator keys. Preserve any recoverable scores, "
+                        "concepts, and relations. If a field is corrupt, replace it with a safe "
+                        "empty value of the right type."
+                    ),
+                ),
+                ChatMessage(
+                    role="user",
+                    content=(
+                        f"Original participant answer:\n{content}\n\n"
+                        f"Malformed Validator output:\n{raw.content}\n"
+                    ),
+                ),
+            ]
+            repaired = await self._llm.chat(
+                AgentRole.VALIDATOR,
+                repair_messages,
+                campaign=campaign,
+                temperature=0.0,
+                max_tokens=1024,
+                disable_reasoning=True,
+            )
+            return self._parse(repaired.content)
 
     def _parse(self, raw: str) -> ValidationResult:
         try:

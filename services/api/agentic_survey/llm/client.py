@@ -153,6 +153,7 @@ class LLMClient:
         max_tokens: int = 2048,
         response_format: dict | None = None,
         extra_body: dict | None = None,
+        disable_reasoning: bool = False,
     ) -> ChatCompletion:
         if not self._enabled:
             raise LLMUnavailable("llm client disabled (SURVEY_LLM_ENABLED=false)")
@@ -207,7 +208,7 @@ class LLMClient:
             extra_body=extra_body,
             metadata_extra=metadata_extra,
             resolution=resolution,
-            disable_reasoning=False,
+            disable_reasoning=disable_reasoning,
         )
         if completion.content:
             return completion
