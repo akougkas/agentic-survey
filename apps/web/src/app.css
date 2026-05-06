@@ -99,7 +99,7 @@
   }
 
   .participant-attribution {
-    @apply inline-flex items-center font-mono text-[11px] uppercase tracking-[0.18em] text-[color:var(--muted)] no-underline transition;
+    @apply inline-flex items-center font-mono text-[11px] tracking-[0.18em] text-[color:var(--muted)] no-underline transition;
     min-height: 44px;
   }
 
