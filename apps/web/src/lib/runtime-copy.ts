@@ -115,7 +115,18 @@ export const runtimeCopy = {
     placeholder_with_chips: 'Tap a starter, or type your own answer.',
     submit_idle: 'Send',
     submit_pending: 'Working...',
-    submit_finished: 'Session complete'
+    submit_finished: 'Session complete',
+    thinking_messages: [
+      'Thinking...',
+      'Holding your last answer in working memory...',
+      'Tracing your last move through the rubric...',
+      'Reading between your lines...',
+      'Searching the knowledge corpus...',
+      'Cross-checking what other researchers have said about this...',
+      'Synthesizing the next question...',
+      'Choosing the path that learns most from your next answer...',
+      'Still here. Local-first means slow but methodical...'
+    ]
   },
   footer: {
     hosted_by: '',

@@ -186,6 +186,19 @@ class BundleChatCopy(BaseModel):
     submit_idle: str = "Send"
     submit_pending: str = "Working..."
     submit_finished: str = "Session complete"
+    thinking_messages: list[str] = Field(
+        default_factory=lambda: [
+            "Thinking...",
+            "Holding your last answer in working memory...",
+            "Tracing your last move through the rubric...",
+            "Reading between your lines...",
+            "Searching the knowledge corpus...",
+            "Cross-checking what other researchers have said about this...",
+            "Synthesizing the next question...",
+            "Choosing the path that learns most from your next answer...",
+            "Still here. Local-first means slow but methodical...",
+        ]
+    )
 
 
 class BundleFooterCopy(BaseModel):

@@ -245,6 +245,7 @@ export interface BundleChatCopy {
   submit_idle: string;
   submit_pending: string;
   submit_finished: string;
+  thinking_messages: string[];
 }
 
 export interface BundleFooterCopy {

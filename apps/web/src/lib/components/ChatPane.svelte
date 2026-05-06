@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { afterUpdate, createEventDispatcher, onMount, tick } from 'svelte';
+  import { afterUpdate, createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
   import type { GetUserInputOptions } from '$lib/types';
 
   export let title: string;
@@ -16,6 +16,58 @@
   export let paused = false;
   export let resumePending = false;
   export let connected = true;
+  export let thinkingMessages: string[] = ['Thinking...'];
+
+  const PENDING_ROTATION_MS = 2500;
+
+  let pendingStatus = '';
+  let pendingIndex = 0;
+  let pendingTimer: ReturnType<typeof setInterval> | null = null;
+  let lastPendingForRotation = false;
+
+  function clearPendingTimer(): void {
+    if (pendingTimer !== null) {
+      clearInterval(pendingTimer);
+      pendingTimer = null;
+    }
+  }
+
+  function prefersReducedMotion(): boolean {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function startPendingRotation(): void {
+    clearPendingTimer();
+    const bank = thinkingMessages.length > 0 ? thinkingMessages : ['Thinking...'];
+    pendingIndex = 0;
+    pendingStatus = bank[0];
+    if (prefersReducedMotion()) return;
+    pendingTimer = setInterval(() => {
+      const live = thinkingMessages.length > 0 ? thinkingMessages : ['Thinking...'];
+      pendingIndex = (pendingIndex + 1) % live.length;
+      pendingStatus = live[pendingIndex];
+    }, PENDING_ROTATION_MS);
+  }
+
+  function stopPendingRotation(): void {
+    clearPendingTimer();
+    pendingStatus = '';
+    pendingIndex = 0;
+  }
+
+  $: {
+    if (pending && !lastPendingForRotation) {
+      startPendingRotation();
+    } else if (!pending && lastPendingForRotation) {
+      stopPendingRotation();
+    }
+    lastPendingForRotation = pending;
+  }
+
+  onDestroy(() => {
+    clearPendingTimer();
+  });
 
   const dispatch = createEventDispatcher<{
     submit: { content: string };
@@ -228,7 +280,7 @@
       <p class="transcript-counter">
         {#if pending}
           <span class="dot-pulse" aria-hidden="true"><span></span><span></span><span></span></span>
-          <span>{agentName} is thinking</span>
+          <span class="transcript-counter-status">{pendingStatus}</span>
         {:else if disabled}
           <span>Transcript locked</span>
         {:else}
@@ -275,7 +327,7 @@
           <p class="turn-role">{agentName}</p>
           <p class="turn-body turn-body--muted">
             <span class="dot-pulse"><span></span><span></span><span></span></span>
-            <span>is composing</span>
+            <span class="turn-pending-status">{pendingStatus}</span>
           </p>
         </article>
       {/if}

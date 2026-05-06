@@ -60,7 +60,11 @@
       bundleChat?.placeholder_with_chips ?? runtimeCopy.chat.placeholder_with_chips,
     submit_idle: bundleChat?.submit_idle ?? runtimeCopy.chat.submit_idle,
     submit_pending: bundleChat?.submit_pending ?? runtimeCopy.chat.submit_pending,
-    submit_finished: bundleChat?.submit_finished ?? runtimeCopy.chat.submit_finished
+    submit_finished: bundleChat?.submit_finished ?? runtimeCopy.chat.submit_finished,
+    thinking_messages:
+      bundleChat?.thinking_messages && bundleChat.thinking_messages.length > 0
+        ? bundleChat.thinking_messages
+        : runtimeCopy.chat.thinking_messages
   };
   $: isFinished = bundle?.session.status === 'finished';
   $: isPaused = bundle?.session.status === 'paused';
@@ -576,6 +580,7 @@
       emptyState={chatCopy.empty_state}
       footerNote={footerNote}
       connected={connected}
+      thinkingMessages={chatCopy.thinking_messages}
       on:submit={submitTurn}
       on:resume={resumeSession}
       on:end={openEndModal}

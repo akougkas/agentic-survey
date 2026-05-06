@@ -131,6 +131,17 @@ ui:
     submit_idle: Send
     submit_pending: Working...
     submit_finished: Session complete
+    thinking_messages:
+      - Thinking...
+      - Re-reading what you just said.
+      - Holding your last answer in working memory.
+      - Tracing your last move through the eight-axis rubric.
+      - Searching the CITADL grounding corpus for adjacent evidence.
+      - Cross-checking what other respondents have said about this.
+      - Weighing follow-up questions against what is already covered.
+      - Synthesizing the next question.
+      - Choosing the path that learns most from your next answer.
+      - Still here. Local-first inference is methodical by design.
   footer:
     hosted_by: Hosted by OSU and IIT.
     developed_by: Developed by GRC.
