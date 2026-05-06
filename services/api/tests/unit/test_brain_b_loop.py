@@ -186,9 +186,13 @@ def test_single_tool_call_then_terminal_intent() -> None:
     assert _tool_names(router.calls[0]) == [
         "search_knowledge",
         "get_outline_state",
-        "emit_brain_b_intent",
     ]
-    assert router.calls[0]["tool_choice"] == "required"
+    assert "tool_choice" not in router.calls[0]
+    assert _tool_names(router.calls[1]) == ["emit_brain_b_intent"]
+    assert router.calls[1]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "emit_brain_b_intent"},
+    }
 
 
 def test_output_tool_call_returns_intent_without_response_format() -> None:
@@ -211,19 +215,18 @@ def test_output_tool_call_returns_intent_without_response_format() -> None:
             surface="interviewer",
             system_context=[],
             transcript_tail=[{"role": "user", "content": "What happened in staging?"}],
-            registry=_registry_with_search([]),
+            registry=ToolRegistry(),
             router=router,
         )
     )
     assert result.intent.get_user_input.question == payload["get_user_input"]["question"]
     assert result.tool_calls == []
     assert "response_format" not in router.calls[0]
-    assert _tool_names(router.calls[0]) == [
-        "search_knowledge",
-        "get_outline_state",
-        "emit_brain_b_intent",
-    ]
-    assert router.calls[0]["tool_choice"] == "required"
+    assert _tool_names(router.calls[0]) == ["emit_brain_b_intent"]
+    assert router.calls[0]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "emit_brain_b_intent"},
+    }
 
 
 def test_registry_tools_run_before_same_message_output_tool() -> None:
@@ -327,9 +330,15 @@ def test_parse_retry_recovers_on_second_attempt() -> None:
     )
     assert result.intent.get_user_input.options[-1] == "Discuss this more."
     assert len(router.calls) == 2
+    assert _tool_names(router.calls[0]) == ["emit_brain_b_intent"]
+    assert router.calls[0]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "emit_brain_b_intent"},
+    }
+    assert "validation_error" in router.calls[1]["messages"][-1]["content"]
 
 
-def test_parse_retry_uses_tool_route_then_user_repair_without_thinking() -> None:
+def test_planning_miss_switches_to_forced_output_without_thinking() -> None:
     router = _ScriptedRouter(
         [
             _completion(content=""),
@@ -352,19 +361,16 @@ def test_parse_retry_uses_tool_route_then_user_repair_without_thinking() -> None
     retry_kwargs = router.calls[1]
     assert first_kwargs["model"] == "mira-scientist"
     assert first_kwargs["tools"]
+    assert first_kwargs["max_tokens"] == 384
     assert _tool_names(first_kwargs) == [
         "search_knowledge",
         "get_outline_state",
-        "emit_brain_b_intent",
     ]
-    assert first_kwargs["tool_choice"] == "required"
+    assert "tool_choice" not in first_kwargs
     assert first_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
     assert retry_kwargs["model"] == "mira-scientist"
     assert retry_kwargs["max_tokens"] == repair_completion_tokens()
     assert retry_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
-    assert len(retry_kwargs["messages"]) == 2
-    assert retry_kwargs["messages"][-1]["role"] == "user"
-    assert "validation_error" in retry_kwargs["messages"][-1]["content"]
     assert _tool_names(retry_kwargs) == ["emit_brain_b_intent"]
     assert retry_kwargs["tool_choice"] == {
         "type": "function",

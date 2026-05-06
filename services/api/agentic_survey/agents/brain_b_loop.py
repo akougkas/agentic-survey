@@ -41,6 +41,7 @@ _EMIT_INTENT_TOOL_NAME = "emit_brain_b_intent"
 _RESULT_LOG_LIMIT = 240
 _REPAIR_CONTEXT_LIMIT = 6000
 _REPAIR_TRANSCRIPT_TURNS = 8
+_PLANNING_TOOL_MAX_TOKENS = 384
 
 
 class BrainBLoopError(RuntimeError):
@@ -261,17 +262,13 @@ def _brain_b_tools_for_request(
 ) -> list[dict[str, Any]]:
     if terminal_only:
         return [output_tool_schema]
-    return [*registry.openai_schema(), output_tool_schema]
+    return registry.openai_schema()
 
 
-def _tool_choice_for_request(
-    registry: ToolRegistry,
-    *,
-    terminal_only: bool,
-) -> str | dict[str, Any]:
-    if terminal_only or registry.is_empty():
+def _tool_choice_for_request(*, terminal_only: bool) -> dict[str, Any] | None:
+    if terminal_only:
         return _forced_output_tool_choice()
-    return "required"
+    return None
 
 
 _OPTION_MAX_LEN = 120
@@ -1347,11 +1344,12 @@ async def run_brain_b_with_tools(
     parse_retries = 0
     raw_output = ""
     last_exc: Exception | None = None
+    planning_complete = registry.is_empty()
 
     # LM Studio handles OpenAI tool calls more reliably than response_format
-    # on the long Brain B prompt. Planning calls expose the registry tools
-    # plus the final structured handoff tool. Repair calls expose only the
-    # handoff tool and force it.
+    # on the long Brain B prompt. The loop is split into a bounded registry
+    # tool phase and a forced structured handoff phase so a missed tool call
+    # cannot burn the full final-output budget.
     #
     # Gemma can spend the whole completion budget in hidden reasoning before
     # reaching a tool call on the long Brain B prompt. Tool mode is therefore
@@ -1359,12 +1357,16 @@ async def run_brain_b_with_tools(
     # tool_calls promptly with thinking disabled.
     max_iterations = max_tool_calls + max_parse_retries + 2
     for iteration in range(max_iterations):
-        terminal_only = parse_retries > 0
+        terminal_only = planning_complete or parse_retries > 0
         thinking_enabled = False
         completion_token_budget = (
             reasoning_completion_tokens(reasoning_budget_tokens)
             if thinking_enabled
-            else repair_completion_tokens()
+            else (
+                repair_completion_tokens()
+                if terminal_only
+                else _PLANNING_TOOL_MAX_TOKENS
+            )
         )
         # Gemma's llama-server chat template treats a trailing assistant
         # message as a partial-response prefill and rejects the request when
@@ -1413,10 +1415,9 @@ async def run_brain_b_with_tools(
             output_tool_schema,
             terminal_only=terminal_only,
         )
-        completion_kwargs["tool_choice"] = _tool_choice_for_request(
-            registry,
-            terminal_only=terminal_only,
-        )
+        tool_choice = _tool_choice_for_request(terminal_only=terminal_only)
+        if tool_choice is not None:
+            completion_kwargs["tool_choice"] = tool_choice
 
         start_time = time.monotonic()
         response = await router.acompletion(**completion_kwargs)
@@ -1457,6 +1458,7 @@ async def run_brain_b_with_tools(
                     len(registry_tool_calls),
                 )
             tool_calls = registry_tool_calls
+            planning_complete = True
         elif output_tool_call is not None:
             raw_output = _tool_call_arguments(output_tool_call)
             normalized = _normalize_discuss_more(
@@ -1519,6 +1521,45 @@ async def run_brain_b_with_tools(
                     sorted([*registry.names(), _EMIT_INTENT_TOOL_NAME]),
                 )
             tool_calls = []
+
+        if not terminal_only and not tool_calls:
+            raw_output = _message_content(message)
+            normalized = _normalize_discuss_more(
+                raw_output,
+                last_participant_message=last_participant_message,
+                participant_extracted_concepts=participant_extracted_concepts,
+            )
+            try:
+                intent = BrainBIntent.model_validate_json(normalized)
+            except (ValidationError, ValueError) as exc:
+                last_exc = exc
+            else:
+                intent = _finalize_valid_intent(
+                    intent,
+                    surface=surface,
+                    tool_calls_made=tool_calls_made,
+                    rubric_axes=rubric_axes,
+                    prior_axes_coverage=prior_axes_coverage,
+                    close_guard_axes=close_guard_axes,
+                    eligible_question_ids=eligible_question_ids,
+                    prior_question_coverage=prior_question_coverage,
+                    prior_active_axis_prefix=prior_active_axis_prefix,
+                    prior_consecutive_active_axis_count=prior_consecutive_active_axis_count,
+                )
+                _log_brain_b_summary(
+                    surface=surface,
+                    iterations=iteration + 1,
+                    tool_calls=tool_calls_made,
+                    intent=intent,
+                    parse_retries=parse_retries,
+                )
+                return BrainBLoopResult(
+                    intent=intent,
+                    tool_calls=tool_calls_made,
+                    raw_output=raw_output,
+                )
+            planning_complete = True
+            continue
 
         if tool_calls:
             if len(tool_calls_made) + len(tool_calls) > max_tool_calls:
