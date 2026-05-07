@@ -91,13 +91,50 @@ def test_litellm_aliases_do_not_cross_fallback_between_brains() -> None:
     assert router_settings.get("fallbacks") in (None, [])
 
 
-def test_scientist_route_has_no_openrouter_fallback() -> None:
+def test_scientist_route_has_openrouter_fallback_row() -> None:
+    """Closes B2: mira-scientist must carry an OpenRouter fallback row.
+
+    Without it, configs 2 and 5 cannot route Brain B because the loader has
+    no row to keep when the local DYNAMO endpoint is empty. The row is gated
+    by ``_openrouter_fallback`` so phase 1 (no OR enabled) drops it cleanly.
+    """
     config = _load_litellm_config()
     scientist_entries = [
-        entry for entry in config["model_list"] if entry["model_name"] == "mira-scientist"
+        entry
+        for entry in config["model_list"]
+        if entry["model_name"] == "mira-scientist"
     ]
-    assert len(scientist_entries) == 1
-    assert not scientist_entries[0].get("_openrouter_fallback")
+    or_rows = [
+        entry for entry in scientist_entries if entry.get("_openrouter_fallback")
+    ]
+    assert or_rows, "mira-scientist is missing its OpenRouter fallback row"
+    assert (
+        or_rows[0]["litellm_params"]["api_base"]
+        == "${SURVEY_OPENROUTER_BASE_URL}"
+    )
+    assert (
+        or_rows[0]["litellm_params"]["model"]
+        == "openrouter/${SURVEY_OPENROUTER_DYNAMO_MODEL}"
+    )
+
+
+def test_chatter_route_has_openrouter_fallback_row() -> None:
+    """Closes B1: mira-chatter gains an OpenRouter fallback row for configs 5
+    (only OpenRouter) so Brain A can run without any local endpoint."""
+    config = _load_litellm_config()
+    chatter_entries = [
+        entry
+        for entry in config["model_list"]
+        if entry["model_name"] == "mira-chatter"
+    ]
+    or_rows = [
+        entry for entry in chatter_entries if entry.get("_openrouter_fallback")
+    ]
+    assert or_rows, "mira-chatter is missing its OpenRouter fallback row"
+    assert (
+        or_rows[0]["litellm_params"]["api_base"]
+        == "${SURVEY_OPENROUTER_BASE_URL}"
+    )
 
 
 class _BrainAStreamRouter:

@@ -12,8 +12,9 @@ from pydantic import ValidationError
 
 from agentic_survey.agents.tools.registry import ToolDispatchError, ToolRegistry
 from agentic_survey.domain.intent import AxisCoverage, BrainBIntent, QuestionCoverage
+from agentic_survey.llm.catalog import CatalogResolution
 from agentic_survey.llm.reasoning import (
-    repair_completion_tokens,
+    apply_reasoning_settings,
     reasoning_completion_tokens,
     sanitize_thinking_messages,
     set_lmstudio_thinking,
@@ -41,7 +42,42 @@ _EMIT_INTENT_TOOL_NAME = "emit_brain_b_intent"
 _RESULT_LOG_LIMIT = 240
 _REPAIR_CONTEXT_LIMIT = 6000
 _REPAIR_TRANSCRIPT_TURNS = 8
-_PLANNING_TOOL_MAX_TOKENS = 384
+_PLANNING_TOOL_MAX_TOKENS = 4096
+_TERMINAL_TOOL_MAX_TOKENS = 4096
+
+
+def _maybe_override_reasoning_budget(
+    resolution: CatalogResolution | None,
+    reasoning_budget_tokens: int | None,
+) -> CatalogResolution | None:
+    """Return a copy of ``resolution`` with the per-call reasoning budget applied.
+
+    The pre-plan warmup wants a tighter reasoning budget than the post-turn
+    path so its first plan lands sooner. The catalog default carries None;
+    the per-call override has to win when supplied without mutating the
+    shared catalog row that other turns may use simultaneously.
+    """
+    if resolution is None:
+        return None
+    if reasoning_budget_tokens is None or reasoning_budget_tokens <= 0:
+        return resolution
+    # An explicit per-call budget switches the mode to "budget" so the budget
+    # actually shapes the request: ``reasoning_completion_tokens`` consumes the
+    # value, and the OpenRouter ``reasoning_effort`` mirror lands on "medium"
+    # rather than "high" so hosted backends see a matching ceiling. Resolutions
+    # already at "off" stay "off"; the budget would be meaningless there.
+    new_mode = "budget" if resolution.reasoning_mode != "off" else resolution.reasoning_mode
+    return CatalogResolution(
+        role=resolution.role,
+        source=resolution.source,
+        catalog_id=resolution.catalog_id,
+        endpoint=resolution.endpoint,
+        model_id=resolution.model_id,
+        api_base=resolution.api_base,
+        reasoning_mode=new_mode,
+        reasoning_budget_tokens=reasoning_budget_tokens,
+        reasoning_kwarg=resolution.reasoning_kwarg,
+    )
 
 
 class BrainBLoopError(RuntimeError):
@@ -247,13 +283,6 @@ def _brain_b_output_tool_schema() -> dict[str, Any]:
     }
 
 
-def _forced_output_tool_choice() -> dict[str, Any]:
-    return {
-        "type": "function",
-        "function": {"name": _EMIT_INTENT_TOOL_NAME},
-    }
-
-
 def _brain_b_tools_for_request(
     registry: ToolRegistry,
     output_tool_schema: dict[str, Any],
@@ -262,12 +291,24 @@ def _brain_b_tools_for_request(
 ) -> list[dict[str, Any]]:
     if terminal_only:
         return [output_tool_schema]
-    return registry.openai_schema()
+    # The output tool stays on the wire alongside registry tools so the model
+    # can short-circuit to the terminal handoff in one round-trip when it has
+    # enough context, avoiding a second slow LM Studio round-trip per turn.
+    return [*registry.openai_schema(), output_tool_schema]
 
 
-def _tool_choice_for_request(*, terminal_only: bool) -> dict[str, Any] | None:
-    if terminal_only:
-        return _forced_output_tool_choice()
+def _tool_choice_for_request(*, terminal_only: bool) -> str | None:
+    """Tool-choice value to send to the router.
+
+    Always omitted (default ``auto``). The OpenAI object form
+    ``{"type":"function","function":{"name":...}}`` works on llama.cpp and
+    OpenRouter but LM Studio rejects it with HTTP 400. The string ``required``
+    works on llama.cpp/OpenRouter but is also broken on LM Studio for
+    Nemotron OMNI: the model emits a ``<tool_call>`` XML in
+    ``reasoning_content`` and zero real tool_calls. Default ``auto`` plus a
+    single-tool list elicits the right call on every backend we support.
+    """
+    del terminal_only
     return None
 
 
@@ -1304,6 +1345,7 @@ async def run_brain_b_with_tools(
     prior_consecutive_active_axis_count: int = 0,
     last_participant_message: str = "",
     participant_extracted_concepts: list[str] | None = None,
+    catalog_resolution: CatalogResolution | None = None,
 ) -> BrainBLoopResult:
     """Single tool-calling loop shared by Designer and Interviewer Brain B.
 
@@ -1351,22 +1393,34 @@ async def run_brain_b_with_tools(
     # tool phase and a forced structured handoff phase so a missed tool call
     # cannot burn the full final-output budget.
     #
-    # Gemma can spend the whole completion budget in hidden reasoning before
-    # reaching a tool call on the long Brain B prompt. Tool mode is therefore
-    # run without thinking; direct probes show the same model emits OpenAI
-    # tool_calls promptly with thinking disabled.
+    # Reasoning_mode arrives via the catalog resolution. The default scientist
+    # entry is reasoning_mode='on', so apply_reasoning_settings flips
+    # enable_thinking=True and bumps max_tokens to reasoning_completion_tokens
+    # so the model has room for the full BrainBIntent JSON plus its reasoning
+    # preamble. When no resolution is supplied (older callers, unit tests),
+    # the loop falls back to the historical reasoning-off shape so existing
+    # contracts hold.
+    effective_resolution = _maybe_override_reasoning_budget(
+        catalog_resolution,
+        reasoning_budget_tokens,
+    )
+    thinking_enabled_default = bool(
+        effective_resolution is not None
+        and effective_resolution.reasoning_mode != "off"
+    )
     max_iterations = max_tool_calls + max_parse_retries + 2
     for iteration in range(max_iterations):
         terminal_only = planning_complete or parse_retries > 0
-        thinking_enabled = False
+        thinking_enabled = thinking_enabled_default
+        # LM Studio's Nemotron OMNI emits ~470-500 reasoning tokens before a
+        # tool call regardless of ``enable_thinking``; the planning budget has
+        # to absorb that overhead. The terminal budget has to fit the full
+        # BrainBIntent JSON (8 axis_coverage entries plus question_coverage)
+        # plus the same reasoning preamble, so it doubles the planning size.
+        # llama.cpp respects the chat-template flag and uses far fewer tokens
+        # on the same model, so the budget is generous there.
         completion_token_budget = (
-            reasoning_completion_tokens(reasoning_budget_tokens)
-            if thinking_enabled
-            else (
-                repair_completion_tokens()
-                if terminal_only
-                else _PLANNING_TOOL_MAX_TOKENS
-            )
+            _TERMINAL_TOOL_MAX_TOKENS if terminal_only else _PLANNING_TOOL_MAX_TOKENS
         )
         # Gemma's llama-server chat template treats a trailing assistant
         # message as a partial-response prefill and rejects the request when
@@ -1402,12 +1456,14 @@ async def run_brain_b_with_tools(
                 "thinking_enabled": thinking_enabled,
             },
         }
-        if thinking_enabled:
-            set_lmstudio_thinking(
-                completion_kwargs,
-                enabled=True,
-                min_tokens=completion_token_budget,
+        if effective_resolution is not None:
+            apply_reasoning_settings(effective_resolution, completion_kwargs)
+            thinking_enabled = bool(
+                completion_kwargs.get("extra_body", {})
+                .get("chat_template_kwargs", {})
+                .get("enable_thinking")
             )
+            completion_kwargs["metadata"]["thinking_enabled"] = thinking_enabled
         else:
             set_lmstudio_thinking(completion_kwargs, enabled=False)
         completion_kwargs["tools"] = _brain_b_tools_for_request(

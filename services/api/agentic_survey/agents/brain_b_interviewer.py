@@ -20,6 +20,7 @@ from agentic_survey.agents.tools.registry import ToolRegistry
 from agentic_survey.domain.intent import AxisCoverage, BrainBIntent, QuestionCoverage
 from agentic_survey.domain.outline import OutlineArtifact, SurveyQuestion
 from agentic_survey.engine.session_policy import SessionSignals
+from agentic_survey.llm.catalog import CatalogResolution
 
 __all__ = [
     "BrainBToolBudgetExceeded",
@@ -58,6 +59,7 @@ async def run_brain_b_interviewer(
     prior_consecutive_active_axis_count: int = 0,
     last_participant_message: str = "",
     participant_extracted_concepts: list[str] | None = None,
+    catalog_resolution: CatalogResolution | None = None,
 ) -> BrainBIntent:
     """Run Interviewer Brain B as a tool-calling agent.
 
@@ -159,6 +161,7 @@ async def run_brain_b_interviewer(
         prior_consecutive_active_axis_count=prior_consecutive_active_axis_count,
         last_participant_message=last_participant_message,
         participant_extracted_concepts=participant_extracted_concepts,
+        catalog_resolution=catalog_resolution,
     )
     return result.intent
 

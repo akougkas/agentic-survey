@@ -347,6 +347,33 @@ def get_endpoint_pool() -> EndpointPool:
     return EndpointPool(registry, variables=variables)
 
 
+def resolve_catalog_route(
+    role: CatalogRole,
+    *,
+    repository: InMemoryRepository,
+    campaign: Campaign | None = None,
+    pool: EndpointPool | None = None,
+):
+    """Resolve a catalog route for a given role without going through ``LLMClient``.
+
+    Brain A (streaming) and Brain B (tool-calling) call ``router.acompletion``
+    directly because ``LLMClient.chat`` is a one-shot non-streaming, no-tools
+    helper. Both surfaces still need ``apply_reasoning_settings`` to honor the
+    catalog's ``reasoning_mode`` at request build time, so they import this
+    helper to obtain the resolution and hand it to ``stream_brain_a`` /
+    ``run_brain_b_with_tools``. The helper reuses the ``EndpointPool`` and
+    catalog stored on the repository so flipping endpoints is purely an
+    env-var change. Returns the same ``CatalogResolution`` shape ``LLMClient``
+    uses internally.
+    """
+    return resolve_catalog(
+        role,
+        campaign_models=None if campaign is None else campaign.agent_models,
+        catalog=repository.list_catalog(),
+        pool=pool or get_endpoint_pool(),
+    )
+
+
 @lru_cache(maxsize=1)
 def get_llm_client() -> LLMClient:
     from agentic_survey.config import get_settings

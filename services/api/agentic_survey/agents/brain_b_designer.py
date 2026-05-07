@@ -19,6 +19,7 @@ from agentic_survey.agents.tools.definitions import (
 from agentic_survey.agents.tools.registry import ToolRegistry
 from agentic_survey.domain.intent import BrainBIntent
 from agentic_survey.domain.outline import OutlineArtifact
+from agentic_survey.llm.catalog import CatalogResolution
 
 __all__ = [
     "BrainBToolBudgetExceeded",
@@ -49,6 +50,7 @@ async def run_brain_b_designer(
     propose_search_queries: ProposeSearchQueries | None = None,
     graph_neighborhood: GraphNeighborhood | None = None,
     max_tool_calls: int = 4,
+    catalog_resolution: CatalogResolution | None = None,
 ) -> BrainBIntent:
     """Run Designer Brain B as a tool-calling agent.
 
@@ -84,5 +86,6 @@ async def run_brain_b_designer(
         registry=registry,
         router=router,
         max_tool_calls=max_tool_calls,
+        catalog_resolution=catalog_resolution,
     )
     return result.intent

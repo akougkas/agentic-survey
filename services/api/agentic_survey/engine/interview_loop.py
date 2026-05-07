@@ -25,8 +25,10 @@ from agentic_survey.engine.session_policy import (
     compute_signals,
     derive_objective_tags,
 )
+from agentic_survey.llm.client import resolve_catalog_route
 from agentic_survey.llm.router import LiteLLMRouter
 from agentic_survey.llm.reasoning import (
+    apply_reasoning_settings,
     preplan_reasoning_budget_tokens,
     set_lmstudio_thinking,
     visible_reply_max_tokens,
@@ -414,6 +416,7 @@ async def run_interview_turn(
             campaign=campaign,
             close_reason=close_reason,
             events=events,
+            repository=repository,
         )
         agent_turn = repository.append_interview_turn(
             refreshed.id,
@@ -466,6 +469,9 @@ async def run_interview_turn(
         )
 
     persona = _compose_persona(campaign.outline.persona_hints)
+    chatter_resolution = resolve_catalog_route(
+        "chatter", repository=repository, campaign=campaign
+    )
     chunks: list[str] = []
     async for token in stream_brain_a(
         role="mira-chatter",
@@ -475,6 +481,7 @@ async def run_interview_turn(
         persona=persona,
         router=router,
         participant_context=dict(refreshed.micro_form_answers or {}),
+        catalog_resolution=chatter_resolution,
     ):
         chunks.append(token)
         events.append(InterviewEvent(name="token", data={"text": token}))
@@ -723,6 +730,9 @@ async def _post_turn_background_inner(
     participant_context = dict(refreshed.micro_form_answers or {})
     planning_outline = _role_filtered_outline(campaign.outline, participant_context)
     eligible_question_ids = [question.id for question in planning_outline.question_bank]
+    scientist_resolution = resolve_catalog_route(
+        "scientist", repository=repository, campaign=campaign
+    )
     intent = await run_brain_b_interviewer(
         outline=planning_outline,
         transcript_tail=transcript_tail,
@@ -739,6 +749,7 @@ async def _post_turn_background_inner(
         prior_consecutive_active_axis_count=prior_consecutive_active_axis_count,
         last_participant_message=last_participant_message,
         participant_extracted_concepts=participant_extracted_concepts,
+        catalog_resolution=scientist_resolution,
     )
     intent = _attach_question_coverage_turn_ids(
         intent,
@@ -944,6 +955,9 @@ async def run_pre_plan_background(
         participant_context = dict(session.micro_form_answers or {})
         planning_outline = _role_filtered_outline(campaign.outline, participant_context)
         eligible_question_ids = [question.id for question in planning_outline.question_bank]
+        scientist_resolution = resolve_catalog_route(
+            "scientist", repository=repository, campaign=campaign
+        )
         intent = await run_brain_b_interviewer(
             outline=planning_outline,
             transcript_tail=transcript_tail,
@@ -959,6 +973,7 @@ async def run_pre_plan_background(
             enable_tools=True,
             reasoning_budget_tokens=preplan_reasoning_budget_tokens(),
             compact_context=True,
+            catalog_resolution=scientist_resolution,
         )
         latest = repository.get_interview_session(session_id)
         if latest is None:
@@ -1028,6 +1043,7 @@ async def _stream_closing(
     campaign: Campaign,
     close_reason: str,
     events: list[InterviewEvent],
+    repository: InMemoryRepository | None = None,
 ) -> str:
     """Invoke Brain A in closing mode: no chips, short reflective prose.
 
@@ -1035,9 +1051,11 @@ async def _stream_closing(
     ``BrainBIntent`` with chips to render. Closing turns have neither, so
     we issue a dedicated streaming call with a closing-specific system
     message. The text is token-streamed into the event log as ``token``
-    events, matching the regular flow.
+    events, matching the regular flow. ``repository`` is optional so
+    legacy callers without one can still close cleanly via
+    ``set_lmstudio_thinking(enabled=False)``; production paths plumb the
+    repository so the chatter catalog resolution shapes the request.
     """
-    del campaign  # only session + close_reason matter here.
     system_prompt = (
         "You are Mira, closing a research conversation. Write 2 to 4 short "
         "sentences grounded in the participant's own signal. No question, "
@@ -1057,7 +1075,13 @@ async def _stream_closing(
         "max_tokens": visible_reply_max_tokens(),
         "metadata": {"surface": "interviewer", "brain": "A", "mode": "closing"},
     }
-    set_lmstudio_thinking(request_payload, enabled=False)
+    if repository is not None:
+        chatter_resolution = resolve_catalog_route(
+            "chatter", repository=repository, campaign=campaign
+        )
+        apply_reasoning_settings(chatter_resolution, request_payload)
+    else:
+        set_lmstudio_thinking(request_payload, enabled=False)
     stream = await router.acompletion(**request_payload)
     chunks: list[str] = []
     async for chunk in stream:

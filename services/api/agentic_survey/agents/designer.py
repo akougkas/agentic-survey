@@ -11,6 +11,7 @@ from agentic_survey.agents.brain_b_designer import (
 from agentic_survey.agents.readiness import unmet_minimums
 from agentic_survey.domain.intent import BrainBIntent, OutlinePatch
 from agentic_survey.domain.outline import OutlineArtifact
+from agentic_survey.llm.client import resolve_catalog_route
 from agentic_survey.llm.router import LiteLLMRouter
 from agentic_survey.repository import Campaign, DesignerSession
 from agentic_survey.services.graph import build_neighborhood_provider
@@ -215,6 +216,16 @@ async def run_designer_turn(
         if repository is not None
         else None
     )
+    chatter_resolution = (
+        resolve_catalog_route("chatter", repository=repository, campaign=campaign)
+        if repository is not None
+        else None
+    )
+    scientist_resolution = (
+        resolve_catalog_route("scientist", repository=repository, campaign=campaign)
+        if repository is not None
+        else None
+    )
     intent = await run_brain_b_designer(
         outline=outline,
         transcript_tail=transcript_tail,
@@ -224,6 +235,7 @@ async def run_designer_turn(
         propose_outline_patch=_propose,
         propose_search_queries=propose_queries_fn,
         graph_neighborhood=neighborhood_fn,
+        catalog_resolution=scientist_resolution,
     )
 
     working = (
@@ -240,6 +252,7 @@ async def run_designer_turn(
         brain_b_intent=intent,
         persona=persona,
         router=router,
+        catalog_resolution=chatter_resolution,
     ):
         chunks.append(token)
     reply_text = "".join(chunks).strip()

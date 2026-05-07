@@ -7,7 +7,12 @@ from typing import Any, AsyncIterator
 from agentic_survey.domain.intent import BrainBIntent
 from agentic_survey.domain.outline import OutlineArtifact
 from agentic_survey.domain.tools import GetUserInputOptions
-from agentic_survey.llm.reasoning import set_lmstudio_thinking, visible_reply_max_tokens
+from agentic_survey.llm.catalog import CatalogResolution
+from agentic_survey.llm.reasoning import (
+    apply_reasoning_settings,
+    set_lmstudio_thinking,
+    visible_reply_max_tokens,
+)
 
 __all__ = ["build_scaffold_intent", "stream_brain_a"]
 
@@ -153,6 +158,7 @@ async def stream_brain_a(
     persona: str,
     router,
     participant_context: dict[str, str] | None = None,
+    catalog_resolution: CatalogResolution | None = None,
 ) -> AsyncIterator[str]:
     """Stream Brain A's conversational reply token-by-token.
 
@@ -163,7 +169,12 @@ async def stream_brain_a(
     not echo them inside the prose body. ``participant_context`` carries
     pre-interview micro-form answers; when present, a calibration system
     message is inserted before persona hints so tone and vocabulary align
-    from the first token.
+    from the first token. ``catalog_resolution`` carries the chatter route
+    resolved by the caller so ``apply_reasoning_settings`` runs at request
+    build time. When omitted the call still produces a chatter-shaped
+    request via ``set_lmstudio_thinking(enabled=False)``; production wires
+    the resolution from ``LLMClient`` so flipping endpoints (mini, dynamo,
+    OpenRouter) is an env-var change rather than a source edit.
     """
     system_prompt = _load_chatter_prompt(prompt_md_path)
     persona_blob = persona.strip()
@@ -195,7 +206,10 @@ async def stream_brain_a(
         "max_tokens": visible_reply_max_tokens(),
         "metadata": {"surface": "designer", "brain": "A"},
     }
-    set_lmstudio_thinking(request, enabled=False)
+    if catalog_resolution is not None:
+        apply_reasoning_settings(catalog_resolution, request)
+    else:
+        set_lmstudio_thinking(request, enabled=False)
     stream = await router.acompletion(**request)
     async for chunk in stream:
         text = _extract_chunk_text(chunk)

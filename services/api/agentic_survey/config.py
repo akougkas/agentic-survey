@@ -79,7 +79,11 @@ class Settings(BaseSettings):
     embedding_endpoint_url: str = ""
     llm_enabled: bool = False
     llm_timeout_seconds: float = 60.0
-    llm_visible_reply_max_tokens: int = Field(default=512, ge=1)
+    # Brain A's per-stream cap. Default 4096 absorbs LM Studio's reasoning
+    # leakage on Nemotron OMNI when ``enable_thinking=false`` is ignored by
+    # the chat-template; the model still emits EOS after the natural visible
+    # reply so the cap is a safety bound, not a target length.
+    llm_visible_reply_max_tokens: int = Field(default=4096, ge=1)
     llm_repair_completion_tokens: int = Field(default=1024, ge=1)
     llm_reasoning_budget_tokens: int = Field(default=8192, ge=1)
     llm_reasoning_final_response_tokens: int = Field(default=4096, ge=1)

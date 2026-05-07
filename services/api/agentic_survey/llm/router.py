@@ -8,7 +8,7 @@ import os
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import yaml
 
@@ -27,16 +27,96 @@ class LiteLLMRouterError(RuntimeError):
     """Raised when LiteLLM router initialization or invocation fails."""
 
 
-def _openrouter_fallback_enabled() -> bool:
+def _openrouter_fallback_enabled(environ: Mapping[str, str] | None = None) -> bool:
     """OpenRouter fallback is on iff the flag is true AND the api key is set.
 
     Reads from the live process env so YAML interpolation and this gate read the
     same source. Settings sync env vars in `get_litellm_router` before construction.
     """
-    flag = os.environ.get("SURVEY_OPENROUTER_FALLBACK_ENABLED", "false").strip().lower()
+    source: Mapping[str, str] = environ if environ is not None else os.environ
+    flag = source.get("SURVEY_OPENROUTER_FALLBACK_ENABLED", "false").strip().lower()
     if flag not in {"1", "true", "yes", "on"}:
         return False
-    return bool(os.environ.get("SURVEY_OPENROUTER_API_KEY", "").strip())
+    return bool(source.get("SURVEY_OPENROUTER_API_KEY", "").strip())
+
+
+def _requires_env_satisfied(
+    requires_env: Any,
+    environ: Mapping[str, str],
+) -> bool:
+    """True when every var in ``requires_env`` resolves to a non-empty string."""
+    if requires_env is None:
+        return True
+    if not isinstance(requires_env, list):
+        raise LiteLLMRouterError(
+            f"_requires_env must be a list of env-var names, got {type(requires_env).__name__}"
+        )
+    for var in requires_env:
+        if not isinstance(var, str) or not var:
+            raise LiteLLMRouterError(
+                f"_requires_env entries must be non-empty strings, got {var!r}"
+            )
+        if not environ.get(var, "").strip():
+            return False
+    return True
+
+
+def load_filtered_model_list(
+    config_path: Path | str,
+    environ: Mapping[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Load a litellm model_list with env-presence gating and per-alias dedup.
+
+    Each row may carry two metadata keys consumed only by this loader:
+
+    * ``_requires_env``: list of SURVEY_* var names that must all resolve to
+      non-empty strings for the row to survive. Phase 1 (mini+dynamo) keeps the
+      mini and dynamo rows; phase 5 (only OpenRouter) drops both because both
+      URL vars are empty.
+    * ``_openrouter_fallback``: row stays only when ``_openrouter_fallback_enabled``
+      reports True (flag truthy AND api key present). Existing rows for
+      validator/analyst/ingest already use this gate; mira-chatter and
+      mira-scientist gain matching rows.
+
+    Surviving rows are deduplicated by ``model_name``, keeping the first match —
+    which is the highest priority since YAML order is preserved. The metadata
+    keys are stripped before return so the result is ready for ``litellm.Router``.
+    """
+    source: Mapping[str, str] = environ if environ is not None else os.environ
+    raw_path = Path(config_path).expanduser()
+    if not raw_path.is_absolute():
+        raw_path = _resolve_path(str(raw_path))
+    if not raw_path.exists():
+        raise LiteLLMRouterError(f"LiteLLM config not found: {raw_path}")
+    raw = yaml.safe_load(raw_path.read_text()) or {}
+
+    openrouter_enabled = _openrouter_fallback_enabled(source)
+    survivors: list[dict[str, Any]] = []
+    for entry in raw.get("model_list", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("_openrouter_fallback") and not openrouter_enabled:
+            continue
+        if not _requires_env_satisfied(entry.get("_requires_env"), source):
+            continue
+        survivors.append(entry)
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in survivors:
+        name = entry.get("model_name")
+        if not isinstance(name, str) or not name:
+            continue
+        if name in seen:
+            continue
+        seen.add(name)
+        cleaned = {k: v for k, v in entry.items() if k not in {"_requires_env", "_openrouter_fallback"}}
+        # Allow missing for OpenRouter rows so a half-configured fallback fails
+        # at call time, not at boot. Local rows fail strictly because their
+        # _requires_env gate already proved every var is set.
+        allow_missing = bool(entry.get("_openrouter_fallback"))
+        deduped.append(_interpolate(cleaned, allow_missing=allow_missing, environ=source))
+    return deduped
 
 
 def _resolve_path(raw_path: str) -> Path:
@@ -55,21 +135,30 @@ def _resolve_path(raw_path: str) -> Path:
     return candidates[0]
 
 
-def _interpolate(value: Any, *, allow_missing: bool = False) -> Any:
+def _interpolate(
+    value: Any,
+    *,
+    allow_missing: bool = False,
+    environ: Mapping[str, str] | None = None,
+) -> Any:
+    source: Mapping[str, str] = environ if environ is not None else os.environ
     if isinstance(value, str):
         def replace(match: re.Match[str]) -> str:
             key = match.group(1)
-            if key not in os.environ:
+            if key not in source:
                 if allow_missing:
                     return ""
                 raise LiteLLMRouterError(f"Missing interpolation variable: {key}")
-            return os.environ[key]
+            return source[key]
 
         return _ENV_PATTERN.sub(replace, value)
     if isinstance(value, list):
-        return [_interpolate(item, allow_missing=allow_missing) for item in value]
+        return [_interpolate(item, allow_missing=allow_missing, environ=source) for item in value]
     if isinstance(value, dict):
-        return {key: _interpolate(item, allow_missing=allow_missing) for key, item in value.items()}
+        return {
+            key: _interpolate(item, allow_missing=allow_missing, environ=source)
+            for key, item in value.items()
+        }
     return value
 
 
@@ -99,23 +188,7 @@ class LiteLLMRouter:
         if not self._config_path.exists():
             raise LiteLLMRouterError(f"LiteLLM config not found: {self._config_path}")
         raw = yaml.safe_load(self._config_path.read_text()) or {}
-
-        openrouter_enabled = _openrouter_fallback_enabled()
-        # Pre-filter OpenRouter entries before interpolation so the missing-var
-        # check in _interpolate stays strict for the always-on entries.
-        filtered_model_list: list[Any] = []
-        for entry in raw.get("model_list", []) or []:
-            if isinstance(entry, dict) and entry.get("_openrouter_fallback"):
-                if not openrouter_enabled:
-                    continue
-                # Allow missing OpenRouter env vars to surface as empty strings
-                # so a half-configured fallback fails on the call, not at boot.
-                interpolated = _interpolate(entry, allow_missing=True)
-                interpolated.pop("_openrouter_fallback", None)
-                filtered_model_list.append(interpolated)
-            else:
-                filtered_model_list.append(_interpolate(entry))
-        raw["model_list"] = filtered_model_list
+        raw["model_list"] = load_filtered_model_list(self._config_path)
         if "router_settings" in raw:
             raw["router_settings"] = _interpolate(raw["router_settings"])
         return raw

@@ -15,8 +15,11 @@ from agentic_survey.agents.brain_b_loop import (
     _question_intent_is_axis_label,
     run_brain_b_with_tools,
 )
+from agentic_survey.agents.brain_b_loop import (
+    _PLANNING_TOOL_MAX_TOKENS,
+    _TERMINAL_TOOL_MAX_TOKENS,
+)
 from agentic_survey.llm.reasoning import TrailingAssistantRoleError
-from agentic_survey.llm.reasoning import repair_completion_tokens
 from agentic_survey.domain.intent import (
     AxisCoverage,
     BrainBIntent,
@@ -183,16 +186,18 @@ def test_single_tool_call_then_terminal_intent() -> None:
     assert result.tool_calls[0].result == results
     assert result.intent.retrieval_used is True
     assert result.intent.retrieval_chunks == ["chunk_42"]
+    # Planning phase exposes registry tools alongside the terminal handoff so
+    # the model can short-circuit when it already has enough context.
     assert _tool_names(router.calls[0]) == [
         "search_knowledge",
         "get_outline_state",
+        "emit_brain_b_intent",
     ]
     assert "tool_choice" not in router.calls[0]
     assert _tool_names(router.calls[1]) == ["emit_brain_b_intent"]
-    assert router.calls[1]["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "emit_brain_b_intent"},
-    }
+    # tool_choice stays unset (default ``auto``) on every iteration; LM Studio
+    # rejects the OpenAI object form and is broken on ``required``.
+    assert "tool_choice" not in router.calls[1]
 
 
 def test_output_tool_call_returns_intent_without_response_format() -> None:
@@ -222,11 +227,10 @@ def test_output_tool_call_returns_intent_without_response_format() -> None:
     assert result.intent.get_user_input.question == payload["get_user_input"]["question"]
     assert result.tool_calls == []
     assert "response_format" not in router.calls[0]
+    # Empty registry → only the terminal handoff is on the wire and tool_choice
+    # stays unset (``auto`` selects the only available tool everywhere).
     assert _tool_names(router.calls[0]) == ["emit_brain_b_intent"]
-    assert router.calls[0]["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "emit_brain_b_intent"},
-    }
+    assert "tool_choice" not in router.calls[0]
 
 
 def test_registry_tools_run_before_same_message_output_tool() -> None:
@@ -331,10 +335,7 @@ def test_parse_retry_recovers_on_second_attempt() -> None:
     assert result.intent.get_user_input.options[-1] == "Discuss this more."
     assert len(router.calls) == 2
     assert _tool_names(router.calls[0]) == ["emit_brain_b_intent"]
-    assert router.calls[0]["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "emit_brain_b_intent"},
-    }
+    assert "tool_choice" not in router.calls[0]
     assert "validation_error" in router.calls[1]["messages"][-1]["content"]
 
 
@@ -361,21 +362,22 @@ def test_planning_miss_switches_to_forced_output_without_thinking() -> None:
     retry_kwargs = router.calls[1]
     assert first_kwargs["model"] == "mira-scientist"
     assert first_kwargs["tools"]
-    assert first_kwargs["max_tokens"] == 384
+    # Planning iteration uses the bumped budget so OMNI's reasoning preamble
+    # on LM Studio fits before the tool call.
+    assert first_kwargs["max_tokens"] == _PLANNING_TOOL_MAX_TOKENS
     assert _tool_names(first_kwargs) == [
         "search_knowledge",
         "get_outline_state",
+        "emit_brain_b_intent",
     ]
     assert "tool_choice" not in first_kwargs
     assert first_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
     assert retry_kwargs["model"] == "mira-scientist"
-    assert retry_kwargs["max_tokens"] == repair_completion_tokens()
+    # Terminal iteration headroom for the full BrainBIntent JSON plus reasoning.
+    assert retry_kwargs["max_tokens"] == _TERMINAL_TOOL_MAX_TOKENS
     assert retry_kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
     assert _tool_names(retry_kwargs) == ["emit_brain_b_intent"]
-    assert retry_kwargs["tool_choice"] == {
-        "type": "function",
-        "function": {"name": "emit_brain_b_intent"},
-    }
+    assert "tool_choice" not in retry_kwargs
 
 
 def test_parse_failure_beyond_retry_budget_raises() -> None:
