@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -17,6 +18,7 @@ from agentic_survey.auth import (
 from agentic_survey.api.background_tasks import (
     cancel_pre_plan_bg,
     spawn_post_turn_bg,
+    spawn_pre_plan_bg,
 )
 from agentic_survey.config import Settings, get_settings
 from agentic_survey.engine.event_bus import (
@@ -57,6 +59,7 @@ from agentic_survey.repository import (
 )
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+logger = logging.getLogger(__name__)
 
 
 _llm_client = get_llm_client()
@@ -145,6 +148,12 @@ async def start_participant_loop(
     )
     session = repository.get_interview_session(session.id)  # type: ignore[assignment]
     assert session is not None
+    if session.next_plan is None:
+        _schedule_pre_plan(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            repository=repository,
+        )
     return SessionBundleResponse(session=session, campaign=campaign)
 
 
@@ -260,6 +269,29 @@ def _sse_frame(envelope: EventEnvelope) -> bytes:
     """Format one EventEnvelope as a single SSE frame."""
     payload = json.dumps(envelope.data, default=str, sort_keys=True)
     return f"id: {envelope.seq}\nevent: {envelope.name}\ndata: {payload}\n\n".encode("utf-8")
+
+
+def _schedule_pre_plan(
+    *,
+    session_id: str,
+    campaign_id: str,
+    repository: InMemoryRepository,
+) -> None:
+    try:
+        spawn_pre_plan_bg(
+            session_id=session_id,
+            campaign_id=campaign_id,
+            repository=repository,
+            router=get_litellm_router(),
+            cache=_retrieval_cache,
+            bus=get_event_bus(),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "session start could not schedule pre-plan warmup: session=%s campaign=%s",
+            session_id,
+            campaign_id,
+        )
 
 
 def _event_matches_session(envelope: EventEnvelope, session_id: str) -> bool:

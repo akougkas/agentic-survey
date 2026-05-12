@@ -13,16 +13,21 @@ import asyncio
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
+from agentic_survey.api import sessions as sessions_module
 from agentic_survey.api import background_tasks as background_tasks_module
 from agentic_survey.api.background_tasks import spawn_post_turn_bg, spawn_pre_plan_bg
+from agentic_survey.api.sessions import router as sessions_router
+from agentic_survey.config import get_settings
 from agentic_survey.domain.intent import BrainBIntent
 from agentic_survey.domain.tools import GetUserInputOptions
 from agentic_survey.engine import interview_loop as interview_loop_module
 from agentic_survey.engine.event_bus import CampaignEventBus
 from agentic_survey.engine.interview_loop import run_pre_plan_background
 from agentic_survey.engine.retrieval_cache import RetrievalCache
-from agentic_survey.repository import InMemoryRepository
+from agentic_survey.repository import InMemoryRepository, get_repository
 
 
 class _StubRouter:
@@ -237,6 +242,39 @@ def test_single_flight_back_to_back_dispatch_runs_brain_b_only_once(
     assert final is not None
     assert final.preplan_status == "ready"
     assert final.preplan_inflight is False
+
+
+def test_session_start_schedules_preplan_once_for_empty_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = InMemoryRepository()
+    campaign, session = _seed_session(repo)
+    calls: list[dict[str, Any]] = []
+
+    def fake_spawn_pre_plan_bg(**kwargs: Any) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr(sessions_module, "spawn_pre_plan_bg", fake_spawn_pre_plan_bg)
+    monkeypatch.setattr(sessions_module, "get_litellm_router", lambda: object())
+
+    app = FastAPI()
+    app.dependency_overrides[get_repository] = lambda: repo
+    app.include_router(sessions_router, prefix="/api")
+
+    client = TestClient(app)
+    settings = get_settings()
+    client.cookies.set(settings.participant_session_cookie_name, session.participant_token)
+
+    first = client.post(f"/api/sessions/{session.id}/start")
+    assert first.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["session_id"] == session.id
+    assert calls[0]["campaign_id"] == campaign.id
+    assert calls[0]["repository"] is repo
+
+    second = client.post(f"/api/sessions/{session.id}/start")
+    assert second.status_code == 200
+    assert len(calls) == 1
 
 
 def test_single_flight_can_re_dispatch_after_terminal_release(

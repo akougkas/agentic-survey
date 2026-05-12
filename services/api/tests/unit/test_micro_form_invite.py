@@ -1,23 +1,53 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from typing import Any
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from agentic_survey.api import invites as invites_module
+from agentic_survey.api import sessions as sessions_module
 from agentic_survey.api.invites import router as invites_router
+from agentic_survey.api.sessions import router as sessions_router
 from agentic_survey.auth import require_admin_session
 from agentic_survey.config import get_settings
 from agentic_survey.domain.intent import BrainBIntent
 from agentic_survey.domain.outline import MicroFormField, OutlineArtifact
 from agentic_survey.domain.tools import GetUserInputOptions
+from agentic_survey.engine import interview_loop as interview_loop_module
 from agentic_survey.engine.interview_loop import opening_turn_message
 from agentic_survey.engine.state_machine import CampaignState
 from agentic_survey.repository import Campaign, InMemoryRepository, get_repository
 
 
 @pytest.fixture(autouse=True)
-def pre_plan_spawns() -> list[dict]:
-    return []
+def pre_plan_spawns(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+
+    def fake_spawn_pre_plan_bg(**kwargs: Any) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr(invites_module, "spawn_pre_plan_bg", fake_spawn_pre_plan_bg)
+    monkeypatch.setattr(invites_module, "get_litellm_router", lambda: object())
+    return calls
+
+
+def _planned_intent() -> BrainBIntent:
+    return BrainBIntent(
+        active_axis="planned_axis",
+        question_intent="Ask the ready pre-plan probe.",
+        get_user_input=GetUserInputOptions(
+            question="What happened next?",
+            options=["The queue failed", "The handoff failed", "Discuss this more."],
+            allow_free_text=True,
+        ),
+        axes_coverage=[],
+        retrieval_used=False,
+        retrieval_chunks=[],
+        should_close=False,
+    )
 
 
 def test_micro_form_field_round_trips_options() -> None:
@@ -128,7 +158,7 @@ def test_redeem_persists_micro_form_answers_on_session() -> None:
     assert stored.campaign_id == campaign.id
 
 
-def test_redeem_does_not_schedule_cold_start_pre_plan(pre_plan_spawns: list[dict]) -> None:
+def test_redeem_schedules_cold_start_pre_plan(pre_plan_spawns: list[dict[str, Any]]) -> None:
     app, repo, campaign, token = _build_invite_app()
     client = TestClient(app)
     response = client.post(
@@ -142,8 +172,69 @@ def test_redeem_does_not_schedule_cold_start_pre_plan(pre_plan_spawns: list[dict
         },
     )
     assert response.status_code == 200
+    session_id = response.json()["session"]["id"]
     assert response.json()["session"]["campaign_id"] == campaign.id
-    assert pre_plan_spawns == []
+    assert len(pre_plan_spawns) == 1
+    assert pre_plan_spawns[0]["session_id"] == session_id
+    assert pre_plan_spawns[0]["campaign_id"] == campaign.id
+    assert pre_plan_spawns[0]["repository"] is repo
+
+
+def test_ready_redeem_preplan_drives_first_substantive_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, repo, campaign, token = _build_invite_app()
+    app.include_router(sessions_router, prefix="/api")
+
+    def warm_spawn_pre_plan_bg(**kwargs: Any) -> None:
+        repository = kwargs["repository"]
+        session_id = kwargs["session_id"]
+        if repository.try_acquire_preplan_lock(session_id):
+            repository.update_next_plan(session_id, _planned_intent())
+            repository.update_preplan_status(session_id, status="ready")
+
+    async def fake_stream_brain_a(**_kwargs: Any) -> AsyncIterator[str]:
+        yield "ready "
+        yield "plan"
+
+    def fake_stream_factory(**kwargs: Any) -> AsyncIterator[str]:
+        return fake_stream_brain_a(**kwargs)
+
+    post_turn_spawns: list[dict[str, Any]] = []
+    monkeypatch.setattr(invites_module, "spawn_pre_plan_bg", warm_spawn_pre_plan_bg)
+    monkeypatch.setattr(sessions_module, "get_litellm_router", lambda: object())
+    monkeypatch.setattr(sessions_module, "spawn_post_turn_bg", lambda **kwargs: post_turn_spawns.append(kwargs))
+    monkeypatch.setattr(interview_loop_module, "stream_brain_a", fake_stream_factory)
+
+    client = TestClient(app)
+    redeem = client.post(
+        f"/api/invites/{token}/redeem",
+        json={
+            "consent_mode": "anonymous",
+            "micro_form_answers": {
+                "evidence_of_belonging": "I run storage at a university HPC facility.",
+                "role_self_description": "Operator",
+            },
+        },
+    )
+    assert redeem.status_code == 200
+    session_id = redeem.json()["session"]["id"]
+
+    start = client.post(f"/api/sessions/{session_id}/start")
+    assert start.status_code == 200
+
+    turn = client.post(
+        f"/api/sessions/{session_id}/turns",
+        json={"content": "The archive queue failed during a beamline run."},
+    )
+    assert turn.status_code == 200
+    turns = turn.json()["session"]["turns"]
+    agent_turn = turns[-1]
+    assert agent_turn["role"] == "agent"
+    assert agent_turn["content"] == "ready plan"
+    assert agent_turn["validation"] == {"planner_source": "brain_b"}
+    assert agent_turn["brain_b_intent"]["active_axis"] == "planned_axis"
+    assert post_turn_spawns
 
 
 def _campaign_with_answers(answers: dict[str, str]) -> tuple[Campaign, InMemoryRepository, str]:
