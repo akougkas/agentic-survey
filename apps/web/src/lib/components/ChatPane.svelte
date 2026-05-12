@@ -284,7 +284,7 @@
         {:else if disabled}
           <span>Transcript locked</span>
         {:else}
-          <span>{visibleMessages.length} turns</span>
+          <span>Conversation open</span>
         {/if}
       </p>
       {#if !connected && !disabled}

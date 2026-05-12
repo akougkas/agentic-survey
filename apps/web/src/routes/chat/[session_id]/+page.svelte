@@ -10,7 +10,6 @@
     InterviewSessionRecord,
     InterviewTurnRecord,
     SessionBundleResponse,
-    SurveyQuestion,
     ValidationSnapshot
   } from '$lib/types';
 
@@ -20,7 +19,6 @@
   let sendPending = false;
   let resumePending = false;
   let error = '';
-  let workingNotesOpen = true;
   let endModalOpen = false;
   let endPending = false;
   let connected = true;
@@ -36,17 +34,8 @@
     page_title: bundleChat?.page_title ?? runtimeCopy.chat.page_title,
     transcript_locked_label:
       bundleChat?.transcript_locked_label ?? runtimeCopy.chat.transcript_locked_label,
-    agent_composing_label: bundleChat?.agent_composing_label ?? runtimeCopy.chat.agent_composing_label,
-    working_notes_eyebrow: bundleChat?.working_notes_eyebrow ?? runtimeCopy.chat.working_notes_eyebrow,
-    working_notes_heading: bundleChat?.working_notes_heading ?? runtimeCopy.chat.working_notes_heading,
-    retrieved_heading: bundleChat?.retrieved_heading ?? runtimeCopy.chat.retrieved_heading,
-    retrieved_description_singular:
-      bundleChat?.retrieved_description_singular ?? runtimeCopy.chat.retrieved_description_singular,
-    retrieved_description_plural:
-      bundleChat?.retrieved_description_plural ?? runtimeCopy.chat.retrieved_description_plural,
     concepts_heading: bundleChat?.concepts_heading ?? runtimeCopy.chat.concepts_heading,
     concepts_empty: bundleChat?.concepts_empty ?? runtimeCopy.chat.concepts_empty,
-    coverage_empty: runtimeCopy.chat.coverage_empty,
     turn_counter_template: bundleChat?.turn_counter_template ?? runtimeCopy.chat.turn_counter_template,
     active_footer: bundleChat?.active_footer ?? runtimeCopy.chat.active_footer,
     paused_footer: bundleChat?.paused_footer ?? runtimeCopy.chat.paused_footer,
@@ -78,24 +67,6 @@
       [...bundle.session.turns].reverse().find((turn) => turn.role === 'agent') ??
       null
     : null;
-  $: latestAgentIntent = bundle
-    ? [...bundle.session.turns]
-        .reverse()
-        .find((turn) => turn.role === 'agent' && turn.brain_b_intent)?.brain_b_intent ?? null
-    : null;
-  $: participantTurnCount = bundle
-    ? bundle.session.turns.filter((t) => t.role === 'participant').length
-    : 0;
-  $: rubricRows = bundle
-    ? coverageByAxis(
-        bundle.session.turns,
-        bundle.campaign.outline.axes ?? [],
-        bundle.session.next_plan ?? null
-      )
-    : coverageByAxis([], [], null);
-  $: satisfiedQuestionPrompts = bundle
-    ? satisfiedQuestions(latestAgentIntent, bundle.campaign.outline.question_bank ?? [])
-    : [];
   $: statusTone = bundle
     ? bundle.session.status === 'active'
       ? 'moss'
@@ -108,21 +79,6 @@
       ? 'Anonymous'
       : `Attributed as ${bundle.session.identity_label || 'participant'}`
     : '';
-  $: retrievalChunkCount = latestAgentIntent?.retrieval_chunks?.length ?? 0;
-  $: retrievalMessage =
-    retrievalChunkCount === 1
-      ? chatCopy.retrieved_description_singular
-      : chatCopy.retrieved_description_plural.replace('{count}', String(retrievalChunkCount));
-  $: turnCounterText = chatCopy.turn_counter_template.replace(
-    '{count}',
-    String(participantTurnCount)
-  );
-  $: satisfiedQuestionCountText =
-    satisfiedQuestionPrompts.length === 0
-      ? chatCopy.coverage_empty
-      : satisfiedQuestionPrompts.length === 1
-        ? '1 question covered'
-        : `${satisfiedQuestionPrompts.length} questions covered`;
   $: footerNote = isFinished
     ? chatCopy.finished_footer
     : isPaused
@@ -140,83 +96,6 @@
     : sendPending
       ? chatCopy.submit_pending
       : chatCopy.submit_idle;
-
-  function truncate(text: string, max: number): string {
-    if (!text) return '';
-    return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
-  }
-
-  function axisPrefix(raw: string): string {
-    const trimmed = (raw ?? '').trim();
-    const match = trimmed.match(/^R\d+/i);
-    return match ? match[0].toUpperCase() : trimmed.slice(0, 2).toUpperCase();
-  }
-
-  function shortAxisLabel(raw: string): string {
-    const trimmed = (raw ?? '').trim();
-    const stripped = trimmed.replace(/^R\d+\s*[—:.\-]?\s*/i, '').trim();
-    return truncate(stripped || trimmed, 64);
-  }
-
-  function coverageByAxis(
-    turns: InterviewTurnRecord[],
-    outlineAxes: string[],
-    nextPlan: BrainBIntent | null
-  ): Array<{ key: string; score: number; fullLabel: string; shortLabel: string }> {
-    const plannedCoverage = nextPlan?.axes_coverage;
-    const latestTurn = [...turns]
-      .reverse()
-      .find((t) => t.role === 'agent' && t.brain_b_intent?.axes_coverage);
-    const coverageList =
-      plannedCoverage && plannedCoverage.length > 0
-        ? plannedCoverage
-        : latestTurn?.brain_b_intent?.axes_coverage ?? [];
-
-    const scoreByPrefix = new Map<string, number>();
-    for (const entry of coverageList) {
-      const prefix = axisPrefix(entry.axis);
-      if (!scoreByPrefix.has(prefix)) {
-        scoreByPrefix.set(prefix, entry.score ?? 0);
-      }
-    }
-
-    const labelByPrefix = new Map<string, string>();
-    for (const axis of outlineAxes ?? []) {
-      const prefix = axisPrefix(axis);
-      if (!labelByPrefix.has(prefix)) {
-        labelByPrefix.set(prefix, axis);
-      }
-    }
-
-    const rows: Array<{ key: string; score: number; fullLabel: string; shortLabel: string }> = [];
-    for (let i = 1; i <= 8; i += 1) {
-      const key = `R${i}`;
-      const score = scoreByPrefix.get(key) ?? 0;
-      let fullLabel = labelByPrefix.get(key);
-      if (!fullLabel) {
-        const match = coverageList.find((c) => axisPrefix(c.axis) === key);
-        fullLabel = match?.axis ?? key;
-      }
-      rows.push({ key, score, fullLabel, shortLabel: shortAxisLabel(fullLabel) });
-    }
-    return rows;
-  }
-
-  function satisfiedQuestions(
-    intent: BrainBIntent | null,
-    questionBank: SurveyQuestion[]
-  ): string[] {
-    if (!intent?.question_coverage?.length) return [];
-    const promptById = new Map(questionBank.map((question) => [question.id, question.prompt]));
-    const prompts: string[] = [];
-    for (const entry of intent.question_coverage) {
-      if (entry.status !== 'satisfied') continue;
-      const prompt = promptById.get(entry.question_id);
-      if (!prompt) continue;
-      prompts.push(truncate(prompt, 120));
-    }
-    return prompts;
-  }
 
   let eventSource: EventSource | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -371,9 +250,6 @@
   }
 
   onMount(async () => {
-    if (typeof window !== 'undefined') {
-      workingNotesOpen = window.matchMedia('(min-width: 1024px)').matches;
-    }
     try {
       bundle = await getJson<SessionBundleResponse>(`/sessions/${encodeURIComponent(sessionId)}`);
       if (bundle.session.turns.length === 0) {
@@ -587,61 +463,10 @@
     />
 
     <aside class="chat-aside">
-      <details class="working-notes" bind:open={workingNotesOpen}>
-        <summary class="working-notes-summary">
-          <span class="eyebrow working-notes-summary-label">{chatCopy.working_notes_eyebrow}</span>
-          <span class="working-notes-toggle" aria-hidden="true">▾</span>
-        </summary>
-        <div class="working-notes-body">
-          <ul class="rubric-grid">
-            {#each rubricRows as row (row.key)}
-              <li class="rubric-row" title={row.fullLabel}>
-                <span class="rubric-key">{row.key}</span>
-                <span class="rubric-bar">
-                  {#if row.score > 0}
-                    <span
-                      class="rubric-bar-fill"
-                      style={`width:${Math.min(100, Math.max(0, row.score * 100))}%`}
-                    ></span>
-                  {/if}
-                </span>
-                <span class="rubric-pct">
-                  {row.score > 0 ? `${Math.round(row.score * 100)}%` : '—'}
-                </span>
-                {#if workingNotesOpen && row.shortLabel && row.shortLabel !== row.key}
-                  <p class="rubric-axis-label">{row.shortLabel}</p>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-
-          {#if sendPending}
-            <p class="working-notes-status">
-              <span class="dot-pulse"><span></span><span></span><span></span></span>
-              <span>{chatCopy.agent_composing_label}</span>
-            </p>
-          {:else if latestAgentIntent?.retrieval_used}
-            <p class="working-notes-retrieved">
-              <span class="label">{chatCopy.retrieved_heading}</span>
-              <span class="working-notes-retrieved-row">
-                {#if retrievalChunkCount > 0}
-                  <span class="badge-count" aria-hidden="true">{retrievalChunkCount}</span>
-                {/if}
-                <span>{retrievalMessage}</span>
-              </span>
-            </p>
-          {/if}
-
-          <p class="working-notes-meta">
-            <span>{satisfiedQuestionCountText}</span>
-            <span aria-hidden="true">·</span>
-            <span>{turnCounterText}</span>
-          </p>
-        </div>
-      </details>
-
       <p class="session-meta">
-        <span class="status-badge" data-tone={statusTone}>{bundle.session.status}</span>
+        {#if bundle.session.status !== 'active'}
+          <span class="status-badge" data-tone={statusTone}>{bundle.session.status}</span>
+        {/if}
         <span>{attributionLabel}</span>
       </p>
 
@@ -680,7 +505,7 @@
         <p class="eyebrow">End conversation</p>
         <h2 id="end-modal-title" class="modal-title">Close this session?</h2>
         <p id="end-modal-body" class="modal-body">
-          Mira will mark the transcript complete and stop asking follow-up questions.
+          This will close the conversation and stop follow-up questions.
           You can still revisit this URL to read what was recorded.
         </p>
         <div class="modal-actions">

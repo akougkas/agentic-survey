@@ -70,7 +70,7 @@ export const runtimeCopy = {
     next_eyebrow: 'How the conversation runs',
     next_steps: [
       'Mira opens with one precise question grounded in what you shared above.',
-      'Each answer is graded silently for coverage and follow-up signal.',
+      'She will adapt the next question to what you actually say.',
       'You can skip, pause, come back later, or stop at any point.'
     ],
     closed_title: 'This invitation is no longer active.',
@@ -88,7 +88,7 @@ export const runtimeCopy = {
     page_title: 'Research conversation with Mira',
     conversation_heading: 'Conversation',
     transcript_locked_label: 'Transcript locked',
-    agent_composing_label: 'Mira is thinking...',
+    agent_composing_label: 'One moment...',
     working_notes_eyebrow: "Mira's working notes",
     working_notes_heading: 'What I am tracking this session',
     retrieved_heading: 'Retrieved this turn',
@@ -117,15 +117,10 @@ export const runtimeCopy = {
     submit_pending: 'Working...',
     submit_finished: 'Session complete',
     thinking_messages: [
-      'Thinking...',
-      'Holding your last answer in working memory...',
-      'Tracing your last move through the rubric...',
-      'Reading between your lines...',
-      'Searching the knowledge corpus...',
-      'Cross-checking what other researchers have said about this...',
-      'Synthesizing the next question...',
-      'Choosing the path that learns most from your next answer...',
-      'Still here. Local-first means slow but methodical...'
+      'One moment...',
+      'Reading your answer...',
+      'Finding the next thread...',
+      'Writing the next question...'
     ]
   },
   footer: {

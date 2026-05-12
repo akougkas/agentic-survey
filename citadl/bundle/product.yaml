@@ -85,9 +85,8 @@ ui:
     next_eyebrow: How the conversation runs
     next_steps:
       - Mira opens with one precise question grounded in what you shared above.
-      - The conversation covers an eight-axis rubric at whatever depth your time allows.
+      - She adapts the next question to what you actually say.
       - You can skip, pause, come back later, or stop at any point. The controls stay available throughout.
-      - You will see Mira's working notes update as she tracks coverage and emerging concepts.
     closed_title: This invitation is no longer active.
     closed_status_eyebrow: Status
     closed_status_template: This invite is marked "{status}" in the study.
@@ -104,7 +103,7 @@ ui:
     page_title: CITADL Community Pulse — Conversation
     conversation_heading: Conversation
     transcript_locked_label: Transcript locked
-    agent_composing_label: Mira is thinking...
+    agent_composing_label: One moment...
     working_notes_eyebrow: Mira's working notes
     working_notes_heading: What I am tracking this session
     retrieved_heading: Retrieved this turn
@@ -132,16 +131,10 @@ ui:
     submit_pending: Working...
     submit_finished: Session complete
     thinking_messages:
-      - Thinking...
-      - Re-reading what you just said.
-      - Holding your last answer in working memory.
-      - Tracing your last move through the eight-axis rubric.
-      - Searching the CITADL grounding corpus for adjacent evidence.
-      - Cross-checking what other respondents have said about this.
-      - Weighing follow-up questions against what is already covered.
-      - Synthesizing the next question.
-      - Choosing the path that learns most from your next answer.
-      - Still here. Local-first inference is methodical by design.
+      - One moment...
+      - Reading your answer.
+      - Finding the next thread.
+      - Writing the next question.
   footer:
     hosted_by: Hosted by OSU and IIT.
     developed_by: Developed by GRC.
