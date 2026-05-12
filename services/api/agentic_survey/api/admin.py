@@ -7,7 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from starlette.responses import StreamingResponse
 
 from agentic_survey.agents.brain_b_interviewer import filter_question_bank_for_role
@@ -35,9 +35,11 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 class TurnRetrievalAudit(BaseModel):
     retrieval_audit_id: str | None = None
+    retrieval_audit_ids: list[str] = Field(default_factory=list)
     query: str = ""
-    chunks: list[dict[str, Any]] = []
-    scores: list[float] = []
+    chunks: list[dict[str, Any]] = Field(default_factory=list)
+    scores: list[float] = Field(default_factory=list)
+    audits: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SessionPreplanAudit(BaseModel):
@@ -391,46 +393,32 @@ async def get_turn_audit(
     retrieval_rows: list[dict[str, Any]] = []
     retrieval_scores: list[float] = []
     retrieval_query = ""
-    if turn.retrieval_audit_id is not None:
-        audit = repository.get_retrieval_audit(turn.retrieval_audit_id)
+    retrieval_audits: list[dict[str, Any]] = []
+    retrieval_audit_ids = _turn_retrieval_audit_ids(turn)
+    for audit_id in retrieval_audit_ids:
+        audit = repository.get_retrieval_audit(audit_id)
         if audit is not None:
-            retrieval_query = audit.query
-            retrieval_scores = list(audit.scores)
-            for chunk_id in audit.chunk_ids:
-                chunk = repository.get_knowledge_chunk(chunk_id)
-                if chunk is None:
-                    retrieval_rows.append({"id": chunk_id, "content": "", "source": {"title": "", "url": None}})
-                    continue
-                source = repository.get_knowledge_source(chunk.source_id)
-                retrieval_rows.append(
-                    {
-                        "id": chunk.id,
-                        "content": chunk.content,
-                        "source": {
-                            "id": chunk.source_id,
-                            "title": source.title if source else "",
-                            "url": source.url if source else None,
-                        },
-                    }
-                )
-    elif turn.brain_b_intent is not None:
-        for chunk_id in turn.brain_b_intent.retrieval_chunks or []:
-            chunk = repository.get_knowledge_chunk(chunk_id) if hasattr(repository, "get_knowledge_chunk") else None
-            if chunk is None:
-                retrieval_rows.append({"id": chunk_id, "content": "", "source": {"title": "", "url": None}})
-                continue
-            source = repository.get_knowledge_source(chunk.source_id)
-            retrieval_rows.append(
+            if not retrieval_query:
+                retrieval_query = audit.query
+            retrieval_scores.extend(audit.scores)
+            audit_chunks = [
+                _retrieval_chunk_payload(repository, chunk_id)
+                for chunk_id in audit.chunk_ids
+            ]
+            retrieval_rows.extend(audit_chunks)
+            retrieval_audits.append(
                 {
-                    "id": chunk.id,
-                    "content": chunk.content,
-                    "source": {
-                        "id": chunk.source_id,
-                        "title": source.title if source else "",
-                        "url": source.url if source else None,
-                    },
+                    "retrieval_audit_id": audit.id,
+                    "query": audit.query,
+                    "mode": audit.mode,
+                    "cache_hit": audit.cache_hit,
+                    "chunks": audit_chunks,
+                    "scores": list(audit.scores),
                 }
             )
+    if not retrieval_rows and turn.brain_b_intent is not None:
+        for chunk_id in turn.brain_b_intent.retrieval_chunks or []:
+            retrieval_rows.append(_retrieval_chunk_payload(repository, chunk_id))
 
     return TurnAuditResponse(
         turn_id=turn.id,
@@ -441,10 +429,12 @@ async def get_turn_audit(
         brain_b_intent=brain_b_intent_payload,
         validation=turn.validation,
         retrieval=TurnRetrievalAudit(
-            retrieval_audit_id=turn.retrieval_audit_id,
+            retrieval_audit_id=turn.retrieval_audit_id or (retrieval_audit_ids[-1] if retrieval_audit_ids else None),
+            retrieval_audit_ids=retrieval_audit_ids,
             query=retrieval_query,
             chunks=retrieval_rows,
             scores=retrieval_scores,
+            audits=retrieval_audits,
         ),
         preplan=SessionPreplanAudit(
             status=session.preplan_status,
@@ -452,6 +442,32 @@ async def get_turn_audit(
             inflight=session.preplan_inflight,
         ),
     )
+
+
+def _turn_retrieval_audit_ids(turn: Any) -> list[str]:
+    ids: list[str] = []
+    if turn.retrieval_audit_id:
+        ids.append(turn.retrieval_audit_id)
+    intent = getattr(turn, "brain_b_intent", None)
+    if intent is not None:
+        ids.extend(getattr(intent, "retrieval_audit_ids", []) or [])
+    return list(dict.fromkeys(ids))
+
+
+def _retrieval_chunk_payload(repository: InMemoryRepository, chunk_id: str) -> dict[str, Any]:
+    chunk = repository.get_knowledge_chunk(chunk_id) if hasattr(repository, "get_knowledge_chunk") else None
+    if chunk is None:
+        return {"id": chunk_id, "content": "", "source": {"title": "", "url": None}}
+    source = repository.get_knowledge_source(chunk.source_id)
+    return {
+        "id": chunk.id,
+        "content": chunk.content,
+        "source": {
+            "id": chunk.source_id,
+            "title": source.title if source else "",
+            "url": source.url if source else None,
+        },
+    }
 
 
 class SessionPreplanSummaryResponse(BaseModel):

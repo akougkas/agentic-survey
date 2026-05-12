@@ -242,3 +242,23 @@ def test_audit_row_written_exactly_once_per_call() -> None:
         )
     )
     assert len(repo._retrieval_audits_by_campaign[campaign_id]) == 1
+
+
+def test_audit_sink_receives_written_audit_row() -> None:
+    repo = InMemoryRepository()
+    campaign_id = _seed(repo)
+    seen_ids: list[str] = []
+    asyncio.run(
+        search_knowledge(
+            campaign_id=campaign_id,
+            query="saturation",
+            k=3,
+            mode="bm25",
+            repository=repo,
+            surface="interviewer",
+            router=_Router(),
+            audit_sink=lambda audit: seen_ids.append(audit.id),
+        )
+    )
+    audit = _latest_audit(repo, campaign_id)
+    assert seen_ids == [audit.id]

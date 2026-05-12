@@ -19,7 +19,7 @@ import hashlib
 from typing import Any, Callable, Literal
 
 from agentic_survey.engine.retrieval_cache import RetrievalCache, RetrievalCacheEntry
-from agentic_survey.repository import ChunkHit
+from agentic_survey.repository import ChunkHit, RetrievalAuditRow
 from agentic_survey.services.retrieval_embed import RetrievalError, embed_query
 from agentic_survey.services.retrieval_fusion import rrf_fuse
 
@@ -46,6 +46,7 @@ async def search_knowledge(
     router=None,
     session_id: str | None = None,
     cache: RetrievalCache | None = None,
+    audit_sink: Callable[[RetrievalAuditRow], None] | None = None,
 ) -> list[ChunkHit]:
     """Run retrieval in the requested ``mode`` and audit the call.
 
@@ -65,7 +66,7 @@ async def search_knowledge(
     # ---- 1. cache lookup (only if session-scoped) --------------------
     cached_hits = _cache_lookup(cache, session_id, cleaned, mode, repository=repository)
     if cached_hits is not None:
-        _write_audit(
+        audit = _write_audit(
             repository,
             campaign_id=campaign_id,
             surface=surface,
@@ -75,6 +76,8 @@ async def search_knowledge(
             mode=mode,
             cache_hit=True,
         )
+        if audit_sink is not None:
+            audit_sink(audit)
         return cached_hits
 
     # ---- 2. cold path: run the requested mode ------------------------
@@ -112,7 +115,7 @@ async def search_knowledge(
             mode=mode,
             query_vec_hash=vec_hash,
         )
-    _write_audit(
+    audit = _write_audit(
         repository,
         campaign_id=campaign_id,
         surface=surface,
@@ -122,6 +125,8 @@ async def search_knowledge(
         mode=mode,
         cache_hit=False,
     )
+    if audit_sink is not None:
+        audit_sink(audit)
     return fused
 
 
@@ -134,6 +139,7 @@ def build_search_knowledge(
     session_id: str | None = None,
     cache: RetrievalCache | None = None,
     default_mode: Mode = "hybrid",
+    audit_sink: Callable[[RetrievalAuditRow], None] | None = None,
 ) -> SearchKnowledgeFn:
     """Bind a ``search_knowledge(query, k, mode=None)`` callable Brain B can call.
 
@@ -170,6 +176,7 @@ def build_search_knowledge(
             router=router,
             session_id=session_id,
             cache=cache,
+            audit_sink=audit_sink,
         )
         return [hit.model_dump() for hit in hits]
 
@@ -247,7 +254,7 @@ def _write_audit(
     hits: list[ChunkHit],
     mode: str,
     cache_hit: bool,
-) -> None:
+) -> RetrievalAuditRow:
     """Write the per-call audit row.
 
     Invariant: exactly one audit row per ``search_knowledge`` call. We do
@@ -255,7 +262,7 @@ def _write_audit(
     admin drawer shows no record of what Mira saw, with no visible
     signal that anything is wrong. The route propagates the error.
     """
-    repository.record_retrieval_audit(
+    return repository.record_retrieval_audit(
         campaign_id=campaign_id,
         surface=surface,
         query=query,

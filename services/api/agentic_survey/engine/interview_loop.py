@@ -496,6 +496,7 @@ async def run_interview_turn(
         brain_b_intent=intent,
         get_user_input=intent.get_user_input,
         validation={"planner_source": planner_source},
+        retrieval_audit_id=_primary_retrieval_audit_id(intent),
     )
     events.append(
         InterviewEvent(
@@ -714,6 +715,7 @@ async def _post_turn_background_inner(
         _last_participant_grounding(refreshed)
     )
     transcript_tail = _transcript_tail(refreshed)
+    retrieval_audit_ids: list[str] = []
     search_fn = build_search_knowledge(
         repository=repository,
         campaign_id=campaign_id,
@@ -721,6 +723,7 @@ async def _post_turn_background_inner(
         router=router,
         session_id=session_id,
         cache=cache,
+        audit_sink=lambda audit: retrieval_audit_ids.append(audit.id),
     )
     neighborhood_fn = build_neighborhood_provider(
         repository=repository,
@@ -751,6 +754,7 @@ async def _post_turn_background_inner(
         participant_extracted_concepts=participant_extracted_concepts,
         catalog_resolution=scientist_resolution,
     )
+    intent = _attach_retrieval_audit_ids(intent, retrieval_audit_ids)
     intent = _attach_question_coverage_turn_ids(
         intent,
         prior_question_coverage=prior_question_coverage,
@@ -795,6 +799,22 @@ async def _post_turn_background_inner(
 
 _AXIS_PREFIX_RE = re.compile(r"^(R\d+)", re.IGNORECASE)
 _ANSWERED_AXIS_FLOOR = 0.20
+
+
+def _attach_retrieval_audit_ids(
+    intent: BrainBIntent,
+    retrieval_audit_ids: list[str],
+) -> BrainBIntent:
+    if not retrieval_audit_ids:
+        return intent
+    merged = list(dict.fromkeys([*intent.retrieval_audit_ids, *retrieval_audit_ids]))
+    return intent.model_copy(update={"retrieval_audit_ids": merged})
+
+
+def _primary_retrieval_audit_id(intent: BrainBIntent) -> str | None:
+    if not intent.retrieval_audit_ids:
+        return None
+    return intent.retrieval_audit_ids[-1]
 
 
 def _axis_prefix(value: str) -> str:
@@ -937,6 +957,7 @@ async def run_pre_plan_background(
             )
             return
         transcript_tail = _transcript_tail(session)
+        retrieval_audit_ids: list[str] = []
         signals = compute_signals(session, campaign.outline, [])
         prior_question_coverage = _last_question_coverage(session)
         search_fn = build_search_knowledge(
@@ -946,6 +967,7 @@ async def run_pre_plan_background(
             router=router,
             session_id=session_id,
             cache=cache,
+            audit_sink=lambda audit: retrieval_audit_ids.append(audit.id),
         )
         neighborhood_fn = build_neighborhood_provider(
             repository=repository,
@@ -975,6 +997,7 @@ async def run_pre_plan_background(
             compact_context=True,
             catalog_resolution=scientist_resolution,
         )
+        intent = _attach_retrieval_audit_ids(intent, retrieval_audit_ids)
         latest = repository.get_interview_session(session_id)
         if latest is None:
             repository.update_preplan_status(

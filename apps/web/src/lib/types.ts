@@ -168,6 +168,7 @@ export interface BrainBIntent {
   closing: boolean;
   retrieval_used: boolean;
   retrieval_chunks: string[];
+  retrieval_audit_ids: string[];
 }
 
 export interface BundleBranding {

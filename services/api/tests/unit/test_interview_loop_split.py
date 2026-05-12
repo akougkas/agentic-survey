@@ -121,6 +121,26 @@ def _seed_live_session(repo: InMemoryRepository, *, axes: list[str] | None = Non
     return campaign, session
 
 
+def _seed_retrieval_corpus(repo: InMemoryRepository, campaign_id: str) -> str:
+    source = repo.create_knowledge_source(
+        campaign_id=campaign_id,
+        kind="raw_text",
+        title="Operations notes",
+        hash_value="ops-notes",
+        status="approved",
+    )
+    chunk = repo.create_knowledge_chunk(
+        campaign_id=campaign_id,
+        source_id=source.id,
+        content="The archive queue failed during beamline handoff.",
+        position=0,
+        char_start=0,
+        char_end=50,
+        approved=True,
+    )
+    return chunk.id
+
+
 # ---------- Test 1: foreground returns before background completes ----------
 
 
@@ -178,6 +198,81 @@ def test_foreground_returns_before_slow_background_completes(
     assert refreshed is not None
     assert refreshed.next_plan is not None
     assert refreshed.next_plan.active_axis == "planned_axis"
+
+
+def test_brain_b_retrieval_audit_links_to_rendered_agent_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fast_brain_a(monkeypatch)
+
+    async def brain_b_with_retrieval(**kwargs: Any) -> BrainBIntent:
+        hits = await kwargs["search_knowledge"]("archive queue", 2, mode="bm25")
+        intent = _planned_intent()
+        return intent.model_copy(
+            update={
+                "retrieval_chunks": [hit["chunk_id"] for hit in hits],
+                "retrieval_used": bool(hits),
+            }
+        )
+
+    monkeypatch.setattr(interview_loop_module, "run_brain_b_interviewer", brain_b_with_retrieval)
+
+    repo = InMemoryRepository()
+    campaign, session = _seed_live_session(repo, axes=["workflow"])
+    expected_chunk_id = _seed_retrieval_corpus(repo, campaign.id)
+    bus = CampaignEventBus()
+
+    async def main() -> None:
+        first = await run_interview_turn(
+            session_id=session.id,
+            participant_content="The queue failed before transfer completed.",
+            chip_selected=None,
+            repository=repo,
+            validator=_PassValidator(),
+            router=_StubRouter(),
+            cache=RetrievalCache(),
+        )
+        assert first.agent_turn is not None
+        assert first.participant_turn is not None
+
+        await run_post_turn_background(
+            session_id=session.id,
+            campaign_id=campaign.id,
+            participant_turn_id=first.participant_turn.id,
+            agent_turn_id=first.agent_turn.id,
+            repository=repo,
+            router=_StubRouter(),
+            validator=_PassValidator(),
+            cache=RetrievalCache(),
+            bus=bus,
+        )
+
+        planned = repo.get_interview_session(session.id)
+        assert planned is not None
+        assert planned.next_plan is not None
+        assert planned.next_plan.retrieval_chunks == [expected_chunk_id]
+        assert len(planned.next_plan.retrieval_audit_ids) == 1
+        audit_id = planned.next_plan.retrieval_audit_ids[0]
+        audit = repo.get_retrieval_audit(audit_id)
+        assert audit is not None
+        assert audit.query == "archive queue"
+        assert audit.chunk_ids == [expected_chunk_id]
+
+        second = await run_interview_turn(
+            session_id=session.id,
+            participant_content="That handoff delayed users for hours.",
+            chip_selected=None,
+            repository=repo,
+            validator=_PassValidator(),
+            router=_StubRouter(),
+            cache=RetrievalCache(),
+        )
+        assert second.agent_turn is not None
+        assert second.agent_turn.retrieval_audit_id == audit_id
+        assert second.agent_turn.brain_b_intent is not None
+        assert second.agent_turn.brain_b_intent.retrieval_audit_ids == [audit_id]
+
+    asyncio.run(main())
     planned_envelopes = [
         env for env in bus.replay(campaign.id, since=-1) if env.name == "brain_b_planned"
     ]

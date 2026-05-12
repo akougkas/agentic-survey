@@ -159,6 +159,7 @@ def test_brain_b_intent_round_trips_through_json() -> None:
         ready_for_review=False,
         retrieval_used=True,
         retrieval_chunks=["chunk:42", "chunk:91"],
+        retrieval_audit_ids=["retaudit:1"],
     )
     serialized = intent.model_dump_json()
     restored = BrainBIntent.model_validate_json(serialized)
@@ -166,6 +167,7 @@ def test_brain_b_intent_round_trips_through_json() -> None:
     assert restored.get_user_input.options[-1] == DISCUSS_MORE_OPTION
     assert restored.outline_patch is not None
     assert restored.outline_patch.sections[0].op == "replace"
+    assert restored.retrieval_audit_ids == ["retaudit:1"]
 
 
 def test_decision_gate_and_risk_entry_shapes() -> None:

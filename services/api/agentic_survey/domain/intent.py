@@ -80,3 +80,4 @@ class BrainBIntent(BaseModel):
     closing: bool = False
     retrieval_used: bool = False
     retrieval_chunks: list[str] = Field(default_factory=list)
+    retrieval_audit_ids: list[str] = Field(default_factory=list)
