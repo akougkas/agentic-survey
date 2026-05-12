@@ -81,13 +81,16 @@ Coolify must inject:
 | `SURVEY_PRODUCT_BUNDLE_DIR` | `/app/citadl/bundle` | Mounted read-only from the repo. |
 | `SURVEY_ADMIN_PASSWORD` | *(set a real one)* | Cookie-auth secret. |
 | `SURVEY_LLM_ENABLED` | `true` | Flip off only for non-LLM route checks. |
-| `SURVEY_MINI_ENDPOINT_URL` | `http://192.168.86.141:8080/v1` | llama-server on mini (LAN). |
-| `SURVEY_MINI_MODEL` | `gemma-4-26B-A4B-it-Q4_K_M` | Brain A alias `mira-chatter`. |
-| `SURVEY_DYNAMO_ENDPOINT_URL` | `http://192.168.86.143:1234/v1` | LMStudio on dynamo (LAN). |
-| `SURVEY_DYNAMO_MODEL` | `nvidia-nemotron-3-nano-omni-30b-a3b-reasoning` | Brain B alias `mira-scientist`, plus Validator, Analyst, and Ingest. |
-| `SURVEY_DYNAMO_CONTEXT_WINDOW_TOKENS` | `600000` | Informational context-window setting used by the catalog. |
+| `SURVEY_CHATTER_ENDPOINT_URL` | `http://192.168.86.141:8080/v1` | URL serving Brain A (Mira's voice). |
+| `SURVEY_CHATTER_MODEL` | `Nemotron-3-Nano-Omni-30B-A3B-Reasoning-UD-Q4_K_M` | Model alias `mira-chatter` resolves to on mini. |
+| `SURVEY_CHATTER_TEMPERATURE` | `0.7` | Per-call temperature for Brain A (warm conversational). |
+| `SURVEY_SCIENTIST_ENDPOINT_URL` | `http://192.168.86.143:1234/v1` | URL serving Brain B + Validator + Analyst + Ingest on dynamo. |
+| `SURVEY_SCIENTIST_MODEL` | `nvidia-nemotron-3-nano-omni-30b-a3b-reasoning` | Model alias `mira-scientist` and friends resolve to on dynamo. |
+| `SURVEY_SCIENTIST_TEMPERATURE` | `0.3` | Per-call temperature for Brain B (focused tool selection). |
+| `SURVEY_SCIENTIST_SUPPORTS_REASONING` | `true` | Nemotron OMNI supports the scientist-family thinking mode. |
+| `SURVEY_SCIENTIST_CONTEXT_WINDOW_TOKENS` | `600000` | Informational context-window setting used by the catalog. |
 | `SURVEY_EMBEDDING_MODEL` | `text-embedding-nomic-embed-text-v2-moe` | Embeddings alias `embeddings` on dynamo. |
-| `SURVEY_DEFAULT_INTERVIEWER_ENDPOINT` | `mini` | Session pin for Brain A foreground chatter. |
+| `SURVEY_DEFAULT_INTERVIEWER_ENDPOINT` | `chatter` | Session pin for Brain A foreground chatter. |
 | `SURVEY_LLM_TIMEOUT_SECONDS` | `60` | Per-call ceiling. |
 | `SURVEY_LLM_PREPLAN_REASONING_BUDGET_TOKENS` | `1024` | Cold-start Brain B pre-plan hidden reasoning budget. |
 | `SURVEY_REPOSITORY` | `surreal` | Do not run memory repo in production. |
@@ -102,7 +105,7 @@ image tags, `SURVEY_ADMIN_PASSWORD`, and the two LLM endpoint URLs.
 
 ### LLM endpoints (LAN, blade is on the same subnet)
 
-- **mini** serves Brain A through `gemma-4-26B-A4B-it-Q4_K_M`: `http://192.168.86.141:8080/v1`
+- **mini** serves Brain A through `Nemotron-3-Nano-Omni-30B-A3B-Reasoning-UD-Q4_K_M`: `http://192.168.86.141:8080/v1`
 - **dynamo** serves Brain B through `nvidia-nemotron-3-nano-omni-30b-a3b-reasoning`: `http://192.168.86.143:1234/v1`
 
 Both hosts are reachable from blade on the `192.168.86.0/24` LAN.
