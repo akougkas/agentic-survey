@@ -170,6 +170,9 @@ def test_brain_b_planning_request_applies_scientist_reasoning_on() -> None:
     assert chat_template_kwargs.get("enable_thinking") is True
     assert request.get("reasoning_effort") == "high"
     assert request["max_tokens"] >= reasoning_completion_tokens()
+    assert "response_format" in request
+    assert "tools" not in request
+    assert "tool_choice" not in request
 
 
 def test_brain_b_request_honors_per_call_reasoning_budget() -> None:
@@ -202,6 +205,7 @@ def test_brain_b_request_honors_per_call_reasoning_budget() -> None:
     extra_body = request.get("extra_body") or {}
     chat_template_kwargs = extra_body.get("chat_template_kwargs") or {}
     assert chat_template_kwargs.get("enable_thinking") is True
+    assert "response_format" in request
 
 
 def test_brain_a_default_resolution_falls_back_to_mini_chatter_off() -> None:

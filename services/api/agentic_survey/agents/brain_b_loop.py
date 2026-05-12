@@ -131,14 +131,18 @@ class _QuestionCoverageMergeStats:
     final_count: int = 0
 
 
-def _brain_b_response_format() -> dict[str, Any]:
+def _brain_b_response_format(
+    output_tool_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if output_tool_schema is not None:
+        schema = output_tool_schema["function"]["parameters"]
+    else:
+        schema = _strip_json_schema_annotations(BrainBIntent.model_json_schema())
     return {
         "type": "json_schema",
         "json_schema": {
             "name": "brain_b_intent",
-            "schema": _strip_json_schema_annotations(
-                BrainBIntent.model_json_schema()
-            ),
+            "schema": schema,
         },
     }
 
@@ -1515,21 +1519,33 @@ async def run_brain_b_with_tools(
                 completion_kwargs["temperature"] = effective_resolution.temperature
         else:
             set_lmstudio_thinking(completion_kwargs, enabled=False)
-        completion_kwargs["tools"] = _brain_b_tools_for_request(
-            registry,
-            output_tool_schema,
-            terminal_only=terminal_only,
-        )
-        completion_kwargs["tool_choice"] = _tool_choice_for_request(
-            terminal_only=terminal_only
-        )
-        # parallel_tool_calls=False forces one tool call per response. With
-        # tool_choice="required" some models (observed on AgenticQwen) interpret
-        # "required" as "call as many tools as you can in parallel" and emit
-        # 100+ tool_calls in a single message until the token budget runs out.
-        # Sequential dispatch is what the orchestrator expects, so disable
-        # parallelism explicitly.
-        completion_kwargs["parallel_tool_calls"] = False
+        if terminal_only and thinking_enabled:
+            # Reasoning-capable LM Studio models can stall when the final
+            # answer is expressed only as a function call: they emit
+            # reasoning_content, stop, and never populate content/tool_calls.
+            # Keep reasoning enabled, but switch the terminal handoff to the
+            # model's normal final-answer channel under a JSON schema. Planning
+            # iterations still use tools so retrieval/outline actions remain
+            # explicit and auditable.
+            completion_kwargs["response_format"] = _brain_b_response_format(
+                output_tool_schema
+            )
+        else:
+            completion_kwargs["tools"] = _brain_b_tools_for_request(
+                registry,
+                output_tool_schema,
+                terminal_only=terminal_only,
+            )
+            completion_kwargs["tool_choice"] = _tool_choice_for_request(
+                terminal_only=terminal_only
+            )
+            # parallel_tool_calls=False forces one tool call per response. With
+            # tool_choice="required" some models (observed on AgenticQwen) interpret
+            # "required" as "call as many tools as you can in parallel" and emit
+            # 100+ tool_calls in a single message until the token budget runs out.
+            # Sequential dispatch is what the orchestrator expects, so disable
+            # parallelism explicitly.
+            completion_kwargs["parallel_tool_calls"] = False
 
         start_time = time.monotonic()
         audit_start = datetime.now(tz=UTC)
