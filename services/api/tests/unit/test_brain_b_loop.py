@@ -82,8 +82,15 @@ def _intent_payload(
     }
 
 
-def _completion(*, content: str | None = None, tool_calls: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _completion(
+    *,
+    content: str | None = None,
+    reasoning_content: str | None = None,
+    tool_calls: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     message: dict[str, Any] = {"content": content, "tool_calls": tool_calls}
+    if reasoning_content is not None:
+        message["reasoning_content"] = reasoning_content
     return {"choices": [{"message": message}]}
 
 
@@ -153,6 +160,37 @@ def test_single_turn_no_tool_calls_returns_intent() -> None:
         for tool in router.calls[0].get("tools", [])
     ]
     assert tool_names == ["emit_brain_b_intent"]
+
+
+def test_reasoning_content_embedded_json_returns_intent() -> None:
+    payload = _intent_payload(question="Which part needs the sharpest definition?")
+    payload_json = json.dumps(payload)
+    router = _ScriptedRouter(
+        [
+            _completion(
+                content="",
+                reasoning_content=(
+                    "I should produce the structured handoff now.\n"
+                    f"{payload_json}\n"
+                    "No further tool use is needed."
+                ),
+            )
+        ]
+    )
+
+    result = asyncio.run(
+        run_brain_b_with_tools(
+            surface="designer",
+            system_context=[],
+            transcript_tail=[{"role": "user", "content": "tighten this"}],
+            registry=ToolRegistry(),
+            router=router,
+        )
+    )
+
+    assert result.intent.get_user_input.question == payload["get_user_input"]["question"]
+    assert result.raw_output == payload_json
+    assert len(router.calls) == 1
 
 
 def test_single_tool_call_then_terminal_intent() -> None:

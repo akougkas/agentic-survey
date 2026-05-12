@@ -20,6 +20,7 @@ from agentic_survey.llm.catalog import (
 from agentic_survey.llm.pool import AgentRole, EndpointConfig, EndpointPool
 from agentic_survey.llm.reasoning import (
     apply_reasoning_settings,
+    extract_json_object_text,
     repair_completion_tokens,
     sanitize_thinking_messages,
     set_lmstudio_thinking,
@@ -67,6 +68,8 @@ def _extract_message_content(response: object) -> ChatCompletion:
             arguments = str(_extract_value(fn, "arguments") or "").strip()
             if arguments:
                 content = arguments
+        if not content:
+            content = extract_json_object_text(reasoning_content)
     return ChatCompletion(content=content, reasoning_content=reasoning_content)
 
 

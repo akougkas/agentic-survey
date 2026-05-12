@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from typing import Any
+from typing import Iterable
 
 from agentic_survey.llm.catalog import CatalogResolution
 
@@ -57,6 +59,41 @@ def reasoning_completion_tokens(reasoning_budget: int | None = None) -> int:
         else reasoning_budget_tokens()
     )
     return budget + reasoning_final_response_tokens()
+
+
+def extract_json_object_text(
+    raw: str,
+    *,
+    required_keys: Iterable[str] = (),
+) -> str:
+    """Return the last JSON object embedded in ``raw``.
+
+    Reasoning-capable local models can put the final structured answer in
+    ``reasoning_content`` and leave visible ``content`` empty. Some emit the
+    JSON object directly, while others wrap it in prose or scratchpad text.
+    Use Python's JSON decoder to recover complete objects without treating
+    arbitrary reasoning text as user-visible output.
+    """
+    text = raw.strip()
+    if not text:
+        return ""
+    required = set(required_keys)
+    decoder = json.JSONDecoder()
+    candidates: list[str] = []
+    index = 0
+    while index < len(text):
+        start = text.find("{", index)
+        if start < 0:
+            break
+        try:
+            value, end = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            index = start + 1
+            continue
+        if isinstance(value, dict) and (not required or required.intersection(value)):
+            candidates.append(text[start : start + end])
+        index = start + max(end, 1)
+    return candidates[-1] if candidates else ""
 
 
 def _ensure_min_max_tokens(request: dict[str, Any], minimum: int) -> None:

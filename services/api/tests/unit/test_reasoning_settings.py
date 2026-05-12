@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from agentic_survey.llm.catalog import CatalogResolution, seed_entries
 from agentic_survey.llm.client import ChatMessage, LLMClient
@@ -9,6 +10,7 @@ from agentic_survey.llm.reasoning import (
     REPAIR_COMPLETION_TOKENS,
     VISIBLE_REPLY_MAX_TOKENS,
     apply_reasoning_settings,
+    extract_json_object_text,
     reasoning_completion_tokens,
     reasoning_final_response_tokens,
     set_lmstudio_thinking,
@@ -52,6 +54,29 @@ class _RepairRouter:
         return {"choices": [{"message": {"content": "final answer"}}]}
 
 
+class _ReasoningJsonRouter:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+        self.calls: list[dict] = []
+
+    async def acompletion(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "reasoning_content": (
+                            "Work through the constraints.\n"
+                            f"{json.dumps(self.payload)}\n"
+                            "The object above is the final answer."
+                        ),
+                    }
+                }
+            ]
+        }
+
+
 def _resolution(
     *,
     mode: str,
@@ -87,6 +112,25 @@ def test_reasoning_budget_preserves_final_answer_room() -> None:
 
     assert request["max_tokens"] == hidden_budget + reasoning_final_response_tokens()
     assert request["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
+
+
+def test_extract_json_object_text_recovers_embedded_final_object() -> None:
+    raw = (
+        "Scratchpad: first consider {\"draft\": true}.\n"
+        "Final answer:\n"
+        "{\"active_axis\":\"R1\",\"question_intent\":\"clarify\","
+        "\"get_user_input\":{\"question\":\"Q?\",\"options\":[\"A\",\"B\",\"Discuss this more.\"],"
+        "\"allow_free_text\":true}}\n"
+        "Done."
+    )
+
+    extracted = extract_json_object_text(
+        raw,
+        required_keys=("active_axis", "question_intent", "get_user_input"),
+    )
+
+    assert extracted.startswith('{"active_axis"')
+    assert '"get_user_input"' in extracted
 
 
 def test_visible_reply_requests_disable_thinking() -> None:
@@ -164,5 +208,35 @@ def test_empty_content_repair_disables_reasoning(monkeypatch) -> None:
     assert router.calls[0]["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
     assert router.calls[1]["max_tokens"] == REPAIR_COMPLETION_TOKENS
     assert router.calls[1]["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+
+    get_settings.cache_clear()
+
+
+def test_llm_client_recovers_json_from_reasoning_content(monkeypatch) -> None:
+    from agentic_survey.config import get_settings
+
+    monkeypatch.setenv("SURVEY_SCIENTIST_SUPPORTS_REASONING", "true")
+    get_settings.cache_clear()
+
+    payload = {"coverage_score": 0.75, "follow_up_needed": False}
+    router = _ReasoningJsonRouter(payload)
+    client = LLMClient(
+        _Pool(),  # type: ignore[arg-type]
+        router,  # type: ignore[arg-type]
+        InMemoryRepository(),
+        enabled=True,
+    )
+
+    result = asyncio.run(
+        client.chat(
+            AgentRole.VALIDATOR,
+            [ChatMessage(role="user", content="Return validator JSON.")],
+            catalog_role="validator",
+            max_tokens=1024,
+        )
+    )
+
+    assert json.loads(result.content) == payload
+    assert len(router.calls) == 1
 
     get_settings.cache_clear()

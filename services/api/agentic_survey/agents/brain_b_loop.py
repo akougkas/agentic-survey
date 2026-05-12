@@ -17,6 +17,7 @@ from agentic_survey.llm.callbacks import failure_callback, success_callback
 from agentic_survey.llm.catalog import CatalogResolution
 from agentic_survey.llm.reasoning import (
     apply_reasoning_settings,
+    extract_json_object_text,
     reasoning_completion_tokens,
     sanitize_thinking_messages,
     set_lmstudio_thinking,
@@ -565,14 +566,13 @@ def _message_content(message: dict[str, Any]) -> str:
     if content:
         return content
     reasoning_content = str(message.get("reasoning_content") or "").strip()
-    if _looks_like_json_object(reasoning_content):
-        return reasoning_content
+    extracted = extract_json_object_text(
+        reasoning_content,
+        required_keys=("active_axis", "question_intent", "get_user_input"),
+    )
+    if extracted:
+        return extracted
     return ""
-
-
-def _looks_like_json_object(raw: str) -> bool:
-    stripped = raw.strip()
-    return stripped.startswith("{") and stripped.endswith("}")
 
 
 def _normalize_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:
