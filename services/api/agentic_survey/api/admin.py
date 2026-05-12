@@ -56,6 +56,7 @@ class TurnAuditResponse(BaseModel):
     created_at: str
     brain_b_intent: dict[str, Any] | None = None
     validation: dict[str, Any] | None = None
+    validator_result: dict[str, Any] | None = None
     retrieval: TurnRetrievalAudit
     preplan: SessionPreplanAudit
 
@@ -390,6 +391,7 @@ async def get_turn_audit(
     brain_b_intent_payload = (
         turn.brain_b_intent.model_dump() if turn.brain_b_intent is not None else None
     )
+    validator_result = repository.get_validator_result(turn.id)
     retrieval_rows: list[dict[str, Any]] = []
     retrieval_scores: list[float] = []
     retrieval_query = ""
@@ -428,6 +430,9 @@ async def get_turn_audit(
         created_at=turn.created_at,
         brain_b_intent=brain_b_intent_payload,
         validation=turn.validation,
+        validator_result=(
+            validator_result.model_dump() if validator_result is not None else None
+        ),
         retrieval=TurnRetrievalAudit(
             retrieval_audit_id=turn.retrieval_audit_id or (retrieval_audit_ids[-1] if retrieval_audit_ids else None),
             retrieval_audit_ids=retrieval_audit_ids,

@@ -130,6 +130,20 @@ class RetrievalAuditRow(BaseModel):
     created_at: str
 
 
+class ValidatorResultRecord(BaseModel):
+    id: str
+    turn_id: str
+    coverage_score: float
+    quality_score: float
+    follow_up_needed: bool
+    follow_up_reason: str = ""
+    is_spam: bool
+    extracted_concepts: list[dict] = Field(default_factory=list)
+    extracted_relations: list[dict] = Field(default_factory=list)
+    objective_tags: list[str] = Field(default_factory=list)
+    created_at: str
+
+
 class QuestionAnswerRecord(BaseModel):
     id: str
     campaign_id: str
@@ -367,6 +381,7 @@ class InMemoryRepository:
         self._knowledge_chunks_by_source: dict[str, list[str]] = {}
         self._retrieval_audits: dict[str, RetrievalAuditRow] = {}
         self._retrieval_audits_by_campaign: dict[str, list[str]] = {}
+        self._validator_results_by_turn: dict[str, ValidatorResultRecord] = {}
         self._chunk_embeddings: dict[str, list[float]] = {}
         self._concepts: dict[str, Concept] = {}
         self._concept_by_label: dict[tuple[str, str], str] = {}
@@ -902,6 +917,48 @@ class InMemoryRepository:
                 session.updated_at = _timestamp()
                 return turn.model_copy(deep=True)
         raise KeyError(f"Interview turn not found: session={session_id!r} turn={turn_id!r}")
+
+    def upsert_validator_result(
+        self,
+        *,
+        turn_id: str,
+        validation: dict,
+    ) -> ValidatorResultRecord:
+        with self._lock:
+            existing = self._validator_results_by_turn.get(turn_id)
+            created_at = existing.created_at if existing is not None else _timestamp()
+            row = ValidatorResultRecord(
+                id=existing.id if existing is not None else f"vresult-{uuid4().hex[:12]}",
+                turn_id=turn_id,
+                coverage_score=float(validation.get("coverage_score") or 0.0),
+                quality_score=float(validation.get("quality_score") or 0.0),
+                follow_up_needed=bool(validation.get("follow_up_needed")),
+                follow_up_reason=str(validation.get("follow_up_reason") or ""),
+                is_spam=bool(validation.get("is_spam")),
+                extracted_concepts=[
+                    dict(item)
+                    for item in validation.get("extracted_concepts") or []
+                    if isinstance(item, dict)
+                ],
+                extracted_relations=[
+                    dict(item)
+                    for item in validation.get("extracted_relations") or []
+                    if isinstance(item, dict)
+                ],
+                objective_tags=[
+                    str(item)
+                    for item in validation.get("objective_tags") or []
+                    if isinstance(item, str)
+                ],
+                created_at=created_at,
+            )
+            self._validator_results_by_turn[turn_id] = row
+            return row.model_copy(deep=True)
+
+    def get_validator_result(self, turn_id: str) -> ValidatorResultRecord | None:
+        with self._lock:
+            row = self._validator_results_by_turn.get(turn_id)
+            return None if row is None else row.model_copy(deep=True)
 
     def upsert_question_answer(
         self,

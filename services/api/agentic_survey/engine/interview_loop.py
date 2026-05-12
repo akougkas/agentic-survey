@@ -651,6 +651,10 @@ async def _post_turn_background_inner(
             participant_turn_id,
             validation_payload,
         )
+        repository.upsert_validator_result(
+            turn_id=participant_turn_id,
+            validation=validation_payload,
+        )
         bus.publish_many(
             campaign_id,
             [

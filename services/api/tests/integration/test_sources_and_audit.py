@@ -200,6 +200,62 @@ def test_append_interview_turn_links_retrieval_audit(
     assert stored_turn.retrieval_audit_id == audit.id
 
 
+def test_validator_result_round_trips_by_turn(
+    surreal_repository: SurrealRepository,
+) -> None:
+    campaign = surreal_repository.create_campaign(
+        title="ValidatorResultRoundTrip", min_n=1, max_n=3
+    )
+    session = surreal_repository.start_interview_session(
+        campaign_id=campaign.id,
+        invite_id=None,
+        consent_mode="anonymous",
+        identity_label="anon",
+        persona_snapshot={"role": "tester"},
+        pinned_endpoint="mini",
+    )
+    turn = surreal_repository.append_interview_turn(
+        session.id,
+        role="participant",
+        content="The archive queue failed during staging.",
+    )
+
+    created = surreal_repository.upsert_validator_result(
+        turn_id=turn.id,
+        validation={
+            "coverage_score": 0.4,
+            "quality_score": 0.5,
+            "follow_up_needed": True,
+            "follow_up_reason": "needs a specific handoff",
+            "is_spam": False,
+            "extracted_concepts": [{"label": "archive queue", "type": "tool"}],
+            "extracted_relations": [{"source": "archive queue", "target": "staging"}],
+            "objective_tags": ["R1"],
+        },
+    )
+    updated = surreal_repository.upsert_validator_result(
+        turn_id=turn.id,
+        validation={
+            "coverage_score": 0.8,
+            "quality_score": 0.7,
+            "follow_up_needed": False,
+            "follow_up_reason": "",
+            "is_spam": False,
+            "extracted_concepts": [],
+            "extracted_relations": [],
+            "objective_tags": ["R1", "R3"],
+        },
+    )
+    loaded = surreal_repository.get_validator_result(turn.id)
+
+    assert loaded is not None
+    assert updated.id == created.id
+    assert loaded.id == created.id
+    assert loaded.turn_id == turn.id
+    assert loaded.coverage_score == 0.8
+    assert loaded.objective_tags == ["R1", "R3"]
+
+
 def test_list_knowledge_sources_by_status_filters_correctly(
     surreal_repository: SurrealRepository,
 ) -> None:

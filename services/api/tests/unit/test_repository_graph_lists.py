@@ -77,6 +77,43 @@ def test_list_retrieval_audits_scoped_to_campaign() -> None:
     assert [x.query for x in b_audits] == ["in-b"]
 
 
+def test_validator_result_upsert_round_trips_by_turn() -> None:
+    repo = InMemoryRepository()
+    first = repo.upsert_validator_result(
+        turn_id="turn-1",
+        validation={
+            "coverage_score": 0.4,
+            "quality_score": 0.6,
+            "follow_up_needed": True,
+            "follow_up_reason": "thin concrete detail",
+            "is_spam": False,
+            "extracted_concepts": [{"label": "archive queue", "type": "tool"}],
+            "extracted_relations": [{"source": "archive queue", "target": "beamline"}],
+            "objective_tags": ["R1"],
+        },
+    )
+    second = repo.upsert_validator_result(
+        turn_id="turn-1",
+        validation={
+            "coverage_score": 0.8,
+            "quality_score": 0.7,
+            "follow_up_needed": False,
+            "follow_up_reason": "",
+            "is_spam": False,
+            "extracted_concepts": [],
+            "extracted_relations": [],
+            "objective_tags": ["R1", "R3"],
+        },
+    )
+
+    loaded = repo.get_validator_result("turn-1")
+    assert loaded is not None
+    assert second.id == first.id
+    assert loaded.id == first.id
+    assert loaded.coverage_score == 0.8
+    assert loaded.objective_tags == ["R1", "R3"]
+
+
 def test_list_concepts_returns_first_seen_ascending() -> None:
     repo = InMemoryRepository()
     campaign = repo.create_campaign(title="Concepts", min_n=3, max_n=6)

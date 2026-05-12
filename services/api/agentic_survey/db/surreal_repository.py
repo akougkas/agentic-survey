@@ -34,6 +34,7 @@ from agentic_survey.repository import (
     OutlineRevision,
     QuestionAnswerRecord,
     RetrievalAuditRow,
+    ValidatorResultRecord,
     _default_participant_faq,
     _default_study_context,
     _normalize_concept_label,
@@ -973,6 +974,79 @@ class SurrealRepository:
                 return turn
         raise KeyError(f"Interview turn not found: session={session_id!r} turn={turn_id!r}")
 
+    def upsert_validator_result(
+        self,
+        *,
+        turn_id: str,
+        validation: dict,
+    ) -> ValidatorResultRecord:
+        now_dt = _utcnow()
+        existing = self._query(
+            """
+            SELECT id, created_at
+            FROM validator_result
+            WHERE turn = type::thing('interview_turn', $tid)
+            LIMIT 1;
+            """,
+            {"tid": turn_id},
+        )
+        payload = {
+            "coverage_score": float(validation.get("coverage_score") or 0.0),
+            "quality_score": float(validation.get("quality_score") or 0.0),
+            "follow_up_needed": bool(validation.get("follow_up_needed")),
+            "follow_up_reason": str(validation.get("follow_up_reason") or ""),
+            "is_spam": bool(validation.get("is_spam")),
+            "extracted_concepts": [
+                dict(item)
+                for item in validation.get("extracted_concepts") or []
+                if isinstance(item, dict)
+            ],
+            "extracted_relations": [
+                dict(item)
+                for item in validation.get("extracted_relations") or []
+                if isinstance(item, dict)
+            ],
+            "objective_tags": [
+                str(item)
+                for item in validation.get("objective_tags") or []
+                if isinstance(item, str)
+            ],
+        }
+        if existing:
+            result_id = _record_id("validator_result", existing[0]["id"])
+            self._query(
+                "UPDATE type::thing('validator_result', $id) MERGE $payload;",
+                {"id": result_id, "payload": payload},
+            )
+        else:
+            result_id = f"vresult-{uuid4().hex[:12]}"
+            self._db().create(
+                RecordID("validator_result", result_id),
+                {
+                    "turn": RecordID("interview_turn", turn_id),
+                    **payload,
+                    "created_at": now_dt,
+                },
+            )
+        loaded = self.get_validator_result(turn_id)
+        if loaded is None:
+            raise RuntimeError(f"validator_result write failed for turn {turn_id!r}")
+        return loaded
+
+    def get_validator_result(self, turn_id: str) -> ValidatorResultRecord | None:
+        rows = self._query(
+            """
+            SELECT *
+            FROM validator_result
+            WHERE turn = type::thing('interview_turn', $tid)
+            LIMIT 1;
+            """,
+            {"tid": turn_id},
+        )
+        if not rows:
+            return None
+        return self._row_to_validator_result(rows[0])
+
     def upsert_question_answer(
         self,
         *,
@@ -1221,6 +1295,33 @@ class SurrealRepository:
             turn_id=_record_id("interview_turn", turn_ref) if turn_ref else None,
             created_at=_ensure_iso(row.get("created_at")),
             updated_at=_ensure_iso(row.get("updated_at")),
+        )
+
+    def _row_to_validator_result(self, row: dict) -> ValidatorResultRecord:
+        return ValidatorResultRecord(
+            id=_record_id("validator_result", row.get("id")),
+            turn_id=_record_id("interview_turn", row.get("turn")),
+            coverage_score=float(row.get("coverage_score") or 0.0),
+            quality_score=float(row.get("quality_score") or 0.0),
+            follow_up_needed=bool(row.get("follow_up_needed")),
+            follow_up_reason=str(row.get("follow_up_reason") or ""),
+            is_spam=bool(row.get("is_spam")),
+            extracted_concepts=[
+                dict(item)
+                for item in row.get("extracted_concepts") or []
+                if isinstance(item, dict)
+            ],
+            extracted_relations=[
+                dict(item)
+                for item in row.get("extracted_relations") or []
+                if isinstance(item, dict)
+            ],
+            objective_tags=[
+                str(item)
+                for item in row.get("objective_tags") or []
+                if isinstance(item, str)
+            ],
+            created_at=_ensure_iso(row.get("created_at")),
         )
 
     def _row_to_method_observation(self, row: dict) -> MethodObservation:

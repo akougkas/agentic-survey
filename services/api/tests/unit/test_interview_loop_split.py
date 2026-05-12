@@ -484,6 +484,10 @@ def test_stale_post_turn_background_skips_brain_b_planning(
     first_participant = next(turn for turn in refreshed.turns if turn.id == first_participant_id)
     assert first_participant.validation is not None
     assert first_participant.validation["coverage_score"] == 0.4
+    validator_result = repo.get_validator_result(first_participant_id)
+    assert validator_result is not None
+    assert validator_result.coverage_score == pytest.approx(0.4)
+    assert validator_result.quality_score == pytest.approx(0.4)
     planned_envelopes = [
         env for env in bus.replay(campaign.id, since=-1) if env.name == "brain_b_planned"
     ]

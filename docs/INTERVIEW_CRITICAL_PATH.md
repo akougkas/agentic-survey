@@ -322,7 +322,8 @@ Important write points:
 - `/sessions/{id}/start` writes the deterministic opening `interview_turn`.
 - Each participant message writes a participant `interview_turn`.
 - Each Mira response writes an agent `interview_turn`.
-- Validator output is currently merged into `interview_turn.validation`.
+- Validator output is merged into `interview_turn.validation` and upserted to
+  the queryable `validator_result` row keyed by participant turn.
 - Graph extraction writes or updates `concept`, `mentioned_with`, and
   `contradicts`.
 - Brain B question coverage changes write `question_answer`.
@@ -334,8 +335,6 @@ Important write points:
 
 Schema tables currently defined but not the primary write path in this loop:
 
-- `validator_result`: current code stores validator output on
-  `interview_turn.validation`.
 - `interview_event`: current live updates use the in-memory `CampaignEventBus`
   ring buffer rather than persistent event rows.
 
