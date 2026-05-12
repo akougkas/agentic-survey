@@ -180,7 +180,7 @@ def test_redeem_schedules_cold_start_pre_plan(pre_plan_spawns: list[dict[str, An
     assert pre_plan_spawns[0]["repository"] is repo
 
 
-def test_ready_redeem_preplan_drives_first_substantive_turn(
+def test_ready_redeem_preplan_does_not_drive_first_substantive_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app, repo, campaign, token = _build_invite_app()
@@ -200,11 +200,15 @@ def test_ready_redeem_preplan_drives_first_substantive_turn(
     def fake_stream_factory(**kwargs: Any) -> AsyncIterator[str]:
         return fake_stream_brain_a(**kwargs)
 
+    async def fresh_brain_b(**kwargs: Any) -> BrainBIntent:
+        return _planned_intent().model_copy(update={"active_axis": "fresh_axis"})
+
     post_turn_spawns: list[dict[str, Any]] = []
     monkeypatch.setattr(invites_module, "spawn_pre_plan_bg", warm_spawn_pre_plan_bg)
     monkeypatch.setattr(sessions_module, "get_litellm_router", lambda: object())
     monkeypatch.setattr(sessions_module, "spawn_post_turn_bg", lambda **kwargs: post_turn_spawns.append(kwargs))
     monkeypatch.setattr(interview_loop_module, "stream_brain_a", fake_stream_factory)
+    monkeypatch.setattr(interview_loop_module, "run_brain_b_interviewer", fresh_brain_b)
 
     client = TestClient(app)
     redeem = client.post(
@@ -233,7 +237,7 @@ def test_ready_redeem_preplan_drives_first_substantive_turn(
     assert agent_turn["role"] == "agent"
     assert agent_turn["content"] == "ready plan"
     assert agent_turn["validation"] == {"planner_source": "brain_b"}
-    assert agent_turn["brain_b_intent"]["active_axis"] == "planned_axis"
+    assert agent_turn["brain_b_intent"]["active_axis"] == "fresh_axis"
     assert post_turn_spawns
 
 

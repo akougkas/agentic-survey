@@ -263,6 +263,20 @@ def normalize_control_signal(text: str) -> ParticipantControl | None:
     return None
 
 
+def _participant_turn_count(session: InterviewSessionRecord) -> int:
+    return sum(1 for turn in session.turns if turn.role == "participant")
+
+
+def _needs_fresh_first_turn_plan(
+    session: InterviewSessionRecord,
+    *,
+    control: ParticipantControl | None,
+) -> bool:
+    if control is not None:
+        return False
+    return _participant_turn_count(session) == 1
+
+
 @dataclass(slots=True)
 class InterviewEvent:
     """One entry in the ordered SSE event log produced by ``run_interview_turn``.
@@ -319,11 +333,11 @@ async def run_interview_turn(
     4. Stream Brain A's reply tokens.
     5. Persist the agent turn with the intent that drove it.
 
-    ``cache`` is passed through for signature symmetry with the
-    background runner; it is only consumed when real retrieval fires,
-    which is always a Brain B concern.
+    The first substantive participant answer is special: a cold pre-plan
+    only saw the deterministic opener and micro-form, not the participant's
+    answer. For that turn, the foreground runs Brain B against the fresh
+    transcript so Brain A does not render a stale warmup probe.
     """
-    del cache  # foreground does not touch retrieval today; kept for API parity.
     session = repository.get_interview_session(session_id)
     if session is None:
         raise ValueError(f"Interview session {session_id!r} not found")
@@ -430,10 +444,40 @@ async def run_interview_turn(
             events=events,
         )
 
-    # Substantive / skip / continue: render Brain A from the plan the
-    # previous background task wrote (or a scaffold when no plan exists).
+    # Substantive / skip / continue: render Brain A from a plan. Cold
+    # pre-plans are never used to answer the first real participant message:
+    # they are warmups only, because they were generated before that message
+    # existed. From the second participant turn onward, the previous
+    # post-turn background plan is safe to consume.
     planned = refreshed.next_plan
-    if planned is not None:
+    if _needs_fresh_first_turn_plan(refreshed, control=control):
+        if planned is not None:
+            repository.update_next_plan(refreshed.id, None)
+            refreshed = repository.get_interview_session(refreshed.id)
+            assert refreshed is not None
+        try:
+            intent = await _plan_current_turn_foreground(
+                session=refreshed,
+                campaign=campaign,
+                participant_turn_id=participant_turn.id,
+                repository=repository,
+                router=router,
+                cache=cache,
+            )
+            planner_source = "brain_b"
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "foreground first-turn Brain B planning failed; falling back to scaffold: session=%s participant_turn=%s",
+                refreshed.id,
+                participant_turn.id,
+            )
+            planner_source = "scaffold"
+            intent = build_scaffold_intent(
+                outline=campaign.outline,
+                participant_context=dict(refreshed.micro_form_answers or {}),
+                transcript_tail=_transcript_tail(refreshed),
+            )
+    elif planned is not None:
         planner_source = "brain_b"
         intent = planned.model_copy(deep=True)
         # Consume the plan so a subsequent failed background leaves the
@@ -817,6 +861,84 @@ def _attach_retrieval_audit_ids(
         return intent
     merged = list(dict.fromkeys([*intent.retrieval_audit_ids, *retrieval_audit_ids]))
     return intent.model_copy(update={"retrieval_audit_ids": merged})
+
+
+async def _plan_current_turn_foreground(
+    *,
+    session: InterviewSessionRecord,
+    campaign: Campaign,
+    participant_turn_id: str,
+    repository: InMemoryRepository,
+    router: LiteLLMRouter,
+    cache: RetrievalCache,
+) -> BrainBIntent:
+    """Plan the first substantive answer after seeing that answer.
+
+    This uses the same Brain B contract as the post-turn planner, but it
+    returns the plan for immediate Brain A rendering instead of persisting it
+    as ``session.next_plan``. It deliberately runs only on the first
+    substantive turn; subsequent turns use the previous post-turn plan.
+    """
+    participant_validations = [
+        turn.validation for turn in session.turns if turn.role == "participant"
+    ]
+    signals = compute_signals(session, campaign.outline, participant_validations)
+    prior_axes = _last_axes_coverage(session)
+    prior_question_coverage = _last_question_coverage(session)
+    prior_active_axis_prefix, prior_consecutive_active_axis_count = (
+        _consecutive_active_axis_history(session)
+    )
+    last_participant_message, participant_extracted_concepts = (
+        _last_participant_grounding(session)
+    )
+    retrieval_audit_ids: list[str] = []
+    search_fn = build_search_knowledge(
+        repository=repository,
+        campaign_id=campaign.id,
+        surface="interviewer",
+        router=router,
+        session_id=session.id,
+        cache=cache,
+        audit_sink=lambda audit: retrieval_audit_ids.append(audit.id),
+    )
+    neighborhood_fn = build_neighborhood_provider(
+        repository=repository,
+        campaign_id=campaign.id,
+    )
+    grounding_snapshot = _list_approved_grounding_sources(repository, campaign.id)
+    participant_context = dict(session.micro_form_answers or {})
+    planning_outline = _role_filtered_outline(campaign.outline, participant_context)
+    eligible_question_ids = [question.id for question in planning_outline.question_bank]
+    scientist_resolution = resolve_catalog_route(
+        "scientist", repository=repository, campaign=campaign
+    )
+    intent = await run_brain_b_interviewer(
+        outline=planning_outline,
+        transcript_tail=_transcript_tail(session),
+        session_signals=signals,
+        router=router,
+        search_knowledge=search_fn,
+        list_grounding_sources=lambda: grounding_snapshot,
+        graph_neighborhood=neighborhood_fn,
+        participant_context=participant_context,
+        prior_axes_coverage=prior_axes,
+        eligible_question_ids=eligible_question_ids,
+        prior_question_coverage=prior_question_coverage,
+        prior_active_axis_prefix=prior_active_axis_prefix,
+        prior_consecutive_active_axis_count=prior_consecutive_active_axis_count,
+        last_participant_message=last_participant_message,
+        participant_extracted_concepts=participant_extracted_concepts,
+        catalog_resolution=scientist_resolution,
+        campaign_id=campaign.id,
+        session_id=session.id,
+        turn_id=participant_turn_id,
+    )
+    intent = _attach_retrieval_audit_ids(intent, retrieval_audit_ids)
+    return _attach_question_coverage_turn_ids(
+        intent,
+        prior_question_coverage=prior_question_coverage,
+        participant_turn_id=participant_turn_id,
+    )
 
 
 def _primary_retrieval_audit_id(intent: BrainBIntent) -> str | None:

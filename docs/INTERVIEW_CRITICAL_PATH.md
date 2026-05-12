@@ -130,9 +130,13 @@ micro-form answers.
 
 Invite redemption schedules `spawn_pre_plan_bg(...)` for the fresh session.
 `POST /sessions/{id}/start` also schedules the same single-flight dispatcher if
-no ready plan exists yet. If the pre-plan is late or fails, the first
-substantive participant turn still degrades to the deterministic scaffold
-intent, and Brain B plans the following turn in the post-turn background task.
+no ready plan exists yet. The pre-plan is a warmup only: it can prime routing,
+tools, and observability, but it is not used to answer the first substantive
+participant message because it was generated before that message existed. On
+the first substantive turn, the foreground runs Brain B against the fresh
+transcript and only falls back to the deterministic scaffold if that live
+planning pass fails. From the second substantive turn onward, the previous
+post-turn background plan can be consumed normally.
 
 ## Participant Turn: Foreground Path
 
@@ -146,6 +150,8 @@ flowchart TD
     Control{Control signal?}
     Pause[Pause session]
     Stop[Stream closing Brain A reply and finish session]
+    First{First substantive turn?}
+    FreshPlan[Run Brain B on fresh answer]
     Plan{session.next_plan exists?}
     UsePlan[Use Brain B plan and clear next_plan]
     Scaffold[Build scaffold BrainBIntent]
@@ -157,7 +163,10 @@ flowchart TD
     Start --> Access --> Cancel --> Load --> PersistUser --> Control
     Control -- pause --> Pause --> Return
     Control -- stop --> Stop --> Return
-    Control -- skip or continue or substantive --> Plan
+    Control -- substantive --> First
+    Control -- skip or continue --> Plan
+    First -- yes --> FreshPlan --> BrainA
+    First -- no --> Plan
     Plan -- yes --> UsePlan --> BrainA
     Plan -- no --> Scaffold --> BrainA
     BrainA --> PersistAgent --> Return --> Spawn
@@ -173,7 +182,10 @@ Foreground behavior:
 - `stop` asks Brain A for short closing prose, persists an agent closing turn,
   then finishes the session.
 - `skip`, `continue`, and substantive answers continue into Brain A.
-- If `session.next_plan` exists, it is consumed and cleared before rendering.
+- The first substantive participant answer gets a fresh foreground Brain B
+  plan before Brain A renders, even when a cold pre-plan exists.
+- From later turns, if `session.next_plan` exists, it is consumed and cleared
+  before rendering.
 - If no plan exists, Brain A receives a deterministic scaffold intent.
 - Brain A is called through the `mira-chatter` alias, with chatter catalog
   reasoning settings and temperature applied.

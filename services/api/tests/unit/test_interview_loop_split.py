@@ -157,6 +157,20 @@ def test_foreground_returns_before_slow_background_completes(
 
     repo = InMemoryRepository()
     campaign, session = _seed_live_session(repo, axes=["concrete_moments"])
+    repo.append_interview_turn(
+        session.id,
+        role="participant",
+        content="Earlier answer.",
+        validation={"pending_validation": True, "objective_tags": []},
+    )
+    repo.append_interview_turn(
+        session.id,
+        role="agent",
+        content="Earlier reply.",
+        brain_b_intent=_planned_intent(),
+        get_user_input=_planned_intent().get_user_input,
+        validation={"planner_source": "brain_b"},
+    )
     bus = CampaignEventBus()
 
     async def main() -> None:
@@ -395,6 +409,20 @@ def test_populated_next_plan_is_rendered_not_scaffold(
 
     repo = InMemoryRepository()
     _, session = _seed_live_session(repo, axes=["concrete_moments"])
+    repo.append_interview_turn(
+        session.id,
+        role="participant",
+        content="Earlier substantive answer.",
+        validation={"pending_validation": True, "objective_tags": []},
+    )
+    repo.append_interview_turn(
+        session.id,
+        role="agent",
+        content="Earlier planned reply.",
+        brain_b_intent=_planned_intent(),
+        get_user_input=_planned_intent().get_user_input,
+        validation={"planner_source": "brain_b"},
+    )
     repo.update_next_plan(session.id, _planned_intent())
 
     async def main() -> None:
@@ -480,7 +508,7 @@ def test_stale_post_turn_background_skips_brain_b_planning(
     refreshed = repo.get_interview_session(session.id)
     assert refreshed is not None
     assert refreshed.next_plan is None
-    assert calls == 0
+    assert calls == 1
     first_participant = next(turn for turn in refreshed.turns if turn.id == first_participant_id)
     assert first_participant.validation is not None
     assert first_participant.validation["coverage_score"] == 0.4
@@ -552,10 +580,14 @@ def test_post_turn_background_floors_answered_axis_from_validator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fast_brain_a(monkeypatch)
+    calls = 0
 
     async def zero_scoring_brain_b(**kwargs: Any) -> BrainBIntent:
+        nonlocal calls
+        calls += 1
+        active_axis = "R1" if calls == 1 else "R2"
         return BrainBIntent(
-            active_axis="R2",
+            active_axis=active_axis,
             axes_coverage=[
                 {"axis": "R1", "score": 0.0},
                 {"axis": "R2", "score": 0.0},
@@ -641,19 +673,24 @@ def test_cold_start_pre_plan_populates_next_plan_before_first_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fast_brain_a(monkeypatch)
-    captured: dict[str, Any] = {}
+    calls: list[dict[str, Any]] = []
 
     async def fast_brain_b(**kwargs: Any) -> BrainBIntent:
-        captured["transcript_tail"] = kwargs["transcript_tail"]
-        captured["participant_context"] = kwargs["participant_context"]
-        captured["eligible_question_ids"] = kwargs["eligible_question_ids"]
-        captured["enable_tools"] = kwargs["enable_tools"]
-        captured["reasoning_budget_tokens"] = kwargs["reasoning_budget_tokens"]
-        captured["compact_context"] = kwargs["compact_context"]
-        captured["outline_question_ids"] = [
-            question.id for question in kwargs["outline"].question_bank
-        ]
-        return _planned_intent()
+        calls.append(
+            {
+                "transcript_tail": kwargs["transcript_tail"],
+                "participant_context": kwargs["participant_context"],
+                "eligible_question_ids": kwargs["eligible_question_ids"],
+                "enable_tools": kwargs.get("enable_tools"),
+                "reasoning_budget_tokens": kwargs.get("reasoning_budget_tokens"),
+                "compact_context": kwargs.get("compact_context"),
+                "outline_question_ids": [
+                    question.id for question in kwargs["outline"].question_bank
+                ],
+            }
+        )
+        axis = "preplanned_axis" if len(calls) == 1 else "fresh_first_turn_axis"
+        return _planned_intent().model_copy(update={"active_axis": axis})
 
     monkeypatch.setattr(interview_loop_module, "run_brain_b_interviewer", fast_brain_b)
 
@@ -702,7 +739,7 @@ def test_cold_start_pre_plan_populates_next_plan_before_first_turn(
         warmed = repo.get_interview_session(session.id)
         assert warmed is not None
         assert warmed.next_plan is not None
-        assert warmed.next_plan.active_axis == "planned_axis"
+        assert warmed.next_plan.active_axis == "preplanned_axis"
 
         result = await run_interview_turn(
             session_id=session.id,
@@ -715,31 +752,49 @@ def test_cold_start_pre_plan_populates_next_plan_before_first_turn(
         )
         assert result.agent_turn is not None
         assert result.agent_turn.brain_b_intent is not None
-        assert result.agent_turn.brain_b_intent.active_axis == "planned_axis"
+        assert result.agent_turn.brain_b_intent.active_axis == "fresh_first_turn_axis"
         assert result.agent_turn.validation == {"planner_source": "brain_b"}
+        after_turn = repo.get_interview_session(session.id)
+        assert after_turn is not None
+        assert after_turn.next_plan is None
 
     asyncio.run(main())
 
-    assert captured["transcript_tail"] == []
-    assert captured["participant_context"] == {
+    assert len(calls) == 2
+    assert calls[0]["transcript_tail"] == []
+    assert calls[0]["participant_context"] == {
         "role_self_description": "Operator",
         "evidence_of_belonging": "I run storage for an HPC facility.",
     }
-    assert captured["eligible_question_ids"] == ["operator-q"]
-    assert captured["outline_question_ids"] == ["operator-q"]
-    assert captured["enable_tools"] is True
-    assert captured["reasoning_budget_tokens"] == 1024
-    assert captured["compact_context"] is True
+    assert calls[0]["eligible_question_ids"] == ["operator-q"]
+    assert calls[0]["outline_question_ids"] == ["operator-q"]
+    assert calls[0]["enable_tools"] is True
+    assert calls[0]["reasoning_budget_tokens"] == 1024
+    assert calls[0]["compact_context"] is True
+    assert calls[1]["transcript_tail"][-1] == {
+        "role": "user",
+        "content": "The archive queue failed during a beamline run.",
+    }
+    assert calls[1]["participant_context"] == calls[0]["participant_context"]
+    assert calls[1]["eligible_question_ids"] == ["operator-q"]
+    assert calls[1]["outline_question_ids"] == ["operator-q"]
+    assert calls[1]["enable_tools"] is None
+    assert calls[1]["reasoning_budget_tokens"] is None
+    assert calls[1]["compact_context"] is None
 
 
 def test_late_cold_start_pre_plan_does_not_overwrite_after_first_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fast_brain_a(monkeypatch)
+    calls = 0
 
     async def slow_brain_b(**kwargs: Any) -> BrainBIntent:
+        nonlocal calls
+        calls += 1
         await asyncio.sleep(0.05)
-        return _planned_intent()
+        axis = "warmup_axis" if calls == 1 else "fresh_first_turn_axis"
+        return _planned_intent().model_copy(update={"active_axis": axis})
 
     monkeypatch.setattr(interview_loop_module, "run_brain_b_interviewer", slow_brain_b)
 
@@ -769,12 +824,13 @@ def test_late_cold_start_pre_plan_does_not_overwrite_after_first_turn(
         )
         assert result.agent_turn is not None
         assert result.agent_turn.brain_b_intent is not None
-        assert result.agent_turn.brain_b_intent.active_axis != "planned_axis"
-        assert result.agent_turn.validation == {"planner_source": "scaffold"}
+        assert result.agent_turn.brain_b_intent.active_axis == "fresh_first_turn_axis"
+        assert result.agent_turn.validation == {"planner_source": "brain_b"}
         await asyncio.wait_for(warmup, timeout=1)
 
     asyncio.run(main())
 
+    assert calls == 2
     refreshed = repo.get_interview_session(session.id)
     assert refreshed is not None
     assert refreshed.next_plan is None
