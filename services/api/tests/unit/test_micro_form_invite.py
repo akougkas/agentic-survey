@@ -456,6 +456,25 @@ def test_opening_turn_message_quotes_in_second_person_when_evidence_is_first_per
     assert "cryo-EM" in message
 
 
+def test_opening_turn_message_handles_i_am_evidence_without_broken_grammar() -> None:
+    campaign, repo, session_id = _campaign_with_answers(
+        {
+            "evidence_of_belonging": (
+                "I am a professor researching data management at scale. "
+                "HPC and AI are my main domains, especially storage and I/O."
+            ),
+            "role_self_description": "Research scientist or engineer generating or analyzing data",
+        }
+    )
+    session = repo.get_interview_session(session_id)
+    assert session is not None
+    message = opening_turn_message(campaign, session)
+
+    assert "you am" not in message.lower()
+    assert "you're a professor researching data management at scale" in message
+    assert message.count("?") == 1
+
+
 def test_update_next_plan_round_trips_brain_b_intent() -> None:
     _campaign, repo, session_id = _campaign_with_answers(
         {"evidence_of_belonging": "I run a Slurm cluster for a physics group."}

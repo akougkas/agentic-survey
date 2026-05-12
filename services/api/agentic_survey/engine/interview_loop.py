@@ -145,10 +145,12 @@ def _role_phrase_for_opener(role_self_description: str) -> str:
 # / "myself" / "ours" only fire on whole-word boundaries so proper nouns
 # like ``Slurm`` or domain terms like ``MIME`` survive untouched.
 _PRONOUN_PIVOTS: tuple[tuple[str, str], ...] = (
+    ("i am", "you're"),
     ("i'm", "you're"),
     ("i've", "you've"),
     ("i'd", "you'd"),
     ("i'll", "you'll"),
+    ("we are", "your team is"),
     ("we're", "your team is"),
     ("we've", "your team has"),
     ("we'd", "your team would"),
@@ -213,8 +215,8 @@ def _pivot_to_second_person(text: str) -> str:
 def _extract_noun_phrase(text: str, *, max_words: int = 12) -> str:
     """Pull a short head-of-sentence phrase from free text.
 
-    Naive slice: the first clause before a comma, or the first
-    ``max_words`` tokens. Trailing punctuation is stripped. The result is
+    Naive slice: the first sentence/clause before hard punctuation, or the
+    first ``max_words`` tokens. Trailing punctuation is stripped. The result is
     pivoted to second person so the opener can quote it inside "You
     mentioned …" without making Mira sound like she did the work herself.
     This runs deterministically on the respondent's own words; no LLM call.
@@ -227,7 +229,7 @@ def _extract_noun_phrase(text: str, *, max_words: int = 12) -> str:
     cleaned = text.strip()
     if not cleaned:
         return ""
-    head = cleaned.split(",", 1)[0].strip()
+    head = re.split(r"[,;:!?]|\.(?:\s|$)", cleaned, maxsplit=1)[0].strip()
     tokens = head.split()
     if len(tokens) > max_words:
         head = " ".join(tokens[:max_words])
