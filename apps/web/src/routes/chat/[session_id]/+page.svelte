@@ -28,6 +28,21 @@
   let modalKeepBtnEl: HTMLButtonElement | null = null;
   let modalEndBtnEl: HTMLButtonElement | null = null;
   let lastFocusedBeforeModal: HTMLElement | null = null;
+  let progressPanelOpen = false;
+  let progressMediaQuery: MediaQueryList | null = null;
+
+  interface InterviewAxisProgress {
+    code: string;
+    title: string;
+    score: number;
+    tone: 'moss' | 'brass' | 'neutral';
+    stateLabel: string;
+    isActive: boolean;
+  }
+
+  const axisOrder = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8'];
+  const axisMatch = /^\s*(R\d+)\b/i;
+  const axisLabelMatch = /^\s*(R\d+)\b\s*[—–:\-]\s*(.+)$/i;
 
   $: sessionId = $page.params.session_id ?? '';
   $: bundleChat = $page.data.runtimeContext?.ui.chat ?? null;
@@ -63,11 +78,35 @@
         .reverse()
         .find((turn) => turn.role === 'agent' && turn.get_user_input)?.get_user_input ?? null
     : null;
+  $: latestAgentTurn = bundle
+    ? [...bundle.session.turns].reverse().find((turn) => turn.role === 'agent') ?? null
+    : null;
   $: closingTurn = bundle
     ? [...bundle.session.turns].reverse().find((turn) => turn.role === 'agent' && turn.validation?.closing) ??
-      [...bundle.session.turns].reverse().find((turn) => turn.role === 'agent') ??
-      null
+      latestAgentTurn
     : null;
+  $: attributionLabel = bundle
+    ? bundle.session.consent_mode === 'anonymous'
+      ? 'Anonymous'
+      : `Attributed as ${bundle.session.identity_label || 'participant'}`
+    : '';
+  $: activePlan = bundle?.session.next_plan ?? null;
+  $: visiblePlan = activePlan ?? latestAgentTurn?.brain_b_intent ?? null;
+  $: activeAxisCode = extractAxisCode(visiblePlan?.active_axis ?? null);
+  $: interviewAxes = buildInterviewAxes(bundle, visiblePlan);
+  $: coveredAxisCount = interviewAxes.filter((axis) => axis.score >= 0.8).length;
+  $: openedAxisCount = interviewAxes.filter((axis) => axis.score > 0).length;
+  $: activeAxisTitle =
+    activeAxisCode
+      ? interviewAxes.find((axis) => axis.code === activeAxisCode)?.title ??
+        activeAxisCode
+      : null;
+  $: runningTurnCount = bundle?.session.turns.filter((turn) => turn.role === 'participant').length ?? 0;
+  $: progressSummary = isFinished
+    ? 'This session is complete. Mira has closed the interview.'
+    : runningTurnCount > 0
+      ? `Mira has opened ${openedAxisCount} of ${axisOrder.length} research threads and is grounding each turn.`
+      : 'Mira is ready to begin your guided interview.';
   $: statusTone = bundle
     ? bundle.session.status === 'active'
       ? 'moss'
@@ -75,11 +114,6 @@
         ? 'brass'
         : 'neutral'
     : 'neutral';
-  $: attributionLabel = bundle
-    ? bundle.session.consent_mode === 'anonymous'
-      ? 'Anonymous'
-      : `Attributed as ${bundle.session.identity_label || 'participant'}`
-    : '';
   $: footerNote = isFinished
     ? chatCopy.finished_footer
     : isPaused
@@ -136,6 +170,83 @@
         close_reason: closeReason ?? bundle.session.close_reason
       }
     };
+  }
+
+  function extractAxisCode(raw: string | null): string | null {
+    const match = raw?.match(axisMatch) ?? null;
+    return match ? match[1].toUpperCase() : null;
+  }
+
+  function extractAxisTitle(raw: string | null, fallback: string): string {
+    if (!raw) return fallback;
+    const match = raw.match(axisLabelMatch);
+    if (match && match[2]) {
+      return match[2].trim();
+    }
+    return raw.trim().replace(/^\s*R\d+\s*[—–:\-]?\s*/, '') || fallback;
+  }
+
+  function clampAxisScore(raw: number | undefined | null): number {
+    if (typeof raw !== 'number' || Number.isNaN(raw)) return 0;
+    return Math.max(0, Math.min(1, raw));
+  }
+
+  function axisToneForScore(score: number): 'moss' | 'brass' | 'neutral' {
+    if (score >= 0.9) return 'moss';
+    if (score >= 0.4) return 'brass';
+    return 'neutral';
+  }
+
+  function axisStateLabel(score: number): string {
+    if (score >= 0.9) return 'covered';
+    if (score >= 0.4) return 'developing';
+    if (score > 0) return 'started';
+    return 'not started';
+  }
+
+  function buildInterviewAxes(
+    sessionBundle: SessionBundleResponse | null,
+    intent: BrainBIntent | null
+  ): InterviewAxisProgress[] {
+    if (!sessionBundle) return [];
+
+    const coverageByCode = new Map<string, { score: number; rawAxis: string }>();
+    for (const entry of intent?.axes_coverage ?? []) {
+      const code = extractAxisCode(entry.axis);
+      if (!code) continue;
+      coverageByCode.set(code, {
+        score: clampAxisScore(entry.score),
+        rawAxis: entry.axis
+      });
+    }
+
+    const rubricTitles = new Map<string, string>();
+    for (const dimension of sessionBundle.campaign.outline.rubric.coverage_dimensions ?? []) {
+      const code = extractAxisCode(dimension);
+      if (!code || !/^R\d+$/.test(code) || !axisOrder.includes(code)) continue;
+      if (!rubricTitles.has(code)) {
+        rubricTitles.set(code, extractAxisTitle(dimension, code));
+      }
+    }
+
+    return axisOrder.map((code, index) => {
+      const coverage = coverageByCode.get(code);
+      const score = coverage?.score ?? 0;
+      const fallback = coverage?.rawAxis || `${code} — ${rubricTitles.get(code) ?? `Research thread ${index + 1}`}`;
+      return {
+        code,
+        title: rubricTitles.get(code) ?? extractAxisTitle(fallback, `Research thread ${index + 1}`),
+        score,
+        tone: axisToneForScore(score),
+        stateLabel: axisStateLabel(score),
+        isActive: code === activeAxisCode
+      };
+    });
+  }
+
+  function syncProgressPanelState(): void {
+    if (typeof window === 'undefined') return;
+    progressPanelOpen = window.matchMedia('(min-width: 768px)').matches;
   }
 
   function handleStreamEvent(name: string, raw: string): void {
@@ -259,6 +370,10 @@
   }
 
   onMount(async () => {
+    syncProgressPanelState();
+    progressMediaQuery = window.matchMedia('(min-width: 768px)');
+    progressMediaQuery.addEventListener('change', syncProgressPanelState);
+
     try {
       bundle = await getJson<SessionBundleResponse>(`/sessions/${encodeURIComponent(sessionId)}`);
       if (bundle.session.turns.length === 0) {
@@ -277,6 +392,9 @@
 
   onDestroy(() => {
     closeStream();
+    if (progressMediaQuery) {
+      progressMediaQuery.removeEventListener('change', syncProgressPanelState);
+    }
   });
 
   function rollbackOptimisticTurn(turnId: string): void {
@@ -295,7 +413,7 @@
       return;
     }
 
-    if (event.detail.content.trim() === 'End conversation') {
+    if (event.detail.content.trim() === 'End interview') {
       await finishSession();
       return;
     }
@@ -476,6 +594,76 @@
     />
 
     <aside class="chat-aside">
+      <section class="interview-progress">
+        <p class="eyebrow">Mira progress</p>
+        <p class="interview-progress-copy">{progressSummary}</p>
+
+        {#if activeAxisTitle}
+          <p class="interview-progress-current">
+            Mira is actively exploring
+            <span class="status-badge" data-tone="moss">{activeAxisTitle}</span>
+            .
+          </p>
+        {:else if runningTurnCount > 0}
+          <p class="interview-progress-current">
+            Mira is mapping this session thread by thread.
+          </p>
+        {:else}
+          <p class="interview-progress-current">Mira is ready to begin with your first grounded prompt.</p>
+        {/if}
+
+        <p class="interview-progress-meta">
+          <span class="status-badge" data-tone="neutral">Answer {runningTurnCount}</span>
+          <span>{openedAxisCount} / {axisOrder.length} threads opened</span>
+        </p>
+
+        <details
+          class="interview-progress-drawer"
+          bind:open={progressPanelOpen}
+        >
+          <summary class="interview-progress-summary">
+            R1–R8 coverage rail
+            <span class="interview-progress-summary-subtle">
+              {coveredAxisCount} at depth
+            </span>
+          </summary>
+          <div class="interview-progress-body">
+            {#if interviewAxes.length === 0}
+              <p class="interview-progress-empty">
+                Mira will surface this as grounded coverage updates arrive.
+              </p>
+            {:else}
+              {#each interviewAxes as axis}
+                <article class="interview-axis" class:interview-axis--active={axis.isActive}>
+                  <div class="interview-axis-head">
+                    <p class="interview-axis-label">
+                      <span class="interview-axis-code" data-tone={axis.tone}>{axis.code}</span>
+                      <span class="interview-axis-title">{axis.title}</span>
+                    </p>
+                    <p class="interview-axis-state">
+                      {axis.stateLabel}
+                    </p>
+                  </div>
+                  <div class="interview-axis-meter-wrap" aria-hidden="true">
+                    <span
+                      class="interview-axis-meter"
+                    >
+                      <span
+                        class="interview-axis-meter-fill"
+                        class:interview-axis-meter-fill--moss={axis.tone === 'moss'}
+                        class:interview-axis-meter-fill--brass={axis.tone === 'brass'}
+                        style={`--axis-score:${Math.round(axis.score * 100)}%`}
+                      ></span>
+                    </span>
+                    <span class="interview-axis-score">{Math.round(axis.score * 100)}%</span>
+                  </div>
+                </article>
+              {/each}
+            {/if}
+          </div>
+        </details>
+      </section>
+
       <p class="session-meta">
         {#if bundle.session.status !== 'active'}
           <span class="status-badge" data-tone={statusTone}>{bundle.session.status}</span>
@@ -515,10 +703,10 @@
         on:click|stopPropagation
         on:keydown={handleModalKeydown}
       >
-        <p class="eyebrow">End conversation</p>
+        <p class="eyebrow">End interview</p>
         <h2 id="end-modal-title" class="modal-title">Close this session?</h2>
         <p id="end-modal-body" class="modal-body">
-          This will close the conversation and stop follow-up questions.
+          This will close the interview and stop follow-up questions.
           You can still revisit this URL to read what was recorded.
         </p>
         <div class="modal-actions">
@@ -542,7 +730,7 @@
               <span class="dot-pulse" aria-hidden="true"><span></span><span></span><span></span></span>
               <span>Closing</span>
             {:else}
-              <span>End conversation</span>
+              <span>End interview</span>
             {/if}
           </button>
         </div>

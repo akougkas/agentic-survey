@@ -133,9 +133,48 @@
     return lines.slice(0, end).join('\n');
   }
 
+  function normalizeText(raw: string): string {
+    return raw
+      .toLowerCase()
+      .replace(/\r?\n/g, ' ')
+      .replace(/[’'`"“”]/g, '')
+      .replace(/[—–-]/g, '')
+      .replace(/[^\w\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function stripQuestionEcho(content: string, question: string): string {
+    if (!content || !question) return content;
+    const lines = content.split('\n');
+    const target = normalizeText(question);
+    if (!target) return content;
+
+    let first = 0;
+    while (first < lines.length && lines[first].trim() === '') {
+      first += 1;
+    }
+    let last = lines.length - 1;
+    while (last >= first && lines[last].trim() === '') {
+      last -= 1;
+    }
+    if (first > last) return '';
+
+    while (first <= last && normalizeText(lines[first]) === target) {
+      first += 1;
+    }
+    while (last >= first && normalizeText(lines[last]) === target) {
+      last -= 1;
+    }
+
+    const stripped = lines.slice(first, last + 1).join('\n').trim();
+    return stripped || content.trim();
+  }
+
   function renderAgentContent(content: string): string {
     if (!activePrompt) return content;
-    return stripTrailingChipEcho(content, activePrompt.options ?? []);
+    const withQuestionStripped = stripQuestionEcho(content, activePrompt.question);
+    return stripTrailingChipEcho(withQuestionStripped, activePrompt.options ?? []);
   }
 
   function isDiscussChip(option: string): boolean {
@@ -283,9 +322,9 @@
           <span class="dot-pulse" aria-hidden="true"><span></span><span></span><span></span></span>
           <span class="transcript-counter-status">{pendingStatus}</span>
         {:else if disabled}
-          <span>Transcript locked</span>
+          <span>Mira has this section saved</span>
         {:else}
-          <span>Conversation open</span>
+          <span>Mira is listening</span>
         {/if}
       </p>
       {#if !connected && !disabled}
@@ -301,7 +340,7 @@
       disabled={disabled || pending}
       on:click={handleEnd}
     >
-      End conversation
+      End interview
     </button>
   </header>
 
@@ -316,12 +355,15 @@
     {:else}
       {#each visibleMessages as message (message)}
         {@const agent = isAgent(message.role)}
-        <article class="turn" class:turn--agent={agent} class:turn--participant={!agent}>
-          <p class="turn-role">{agent ? agentName : participantName}</p>
-          <p class="turn-body">
-            {agent ? renderAgentContent(message.content) : message.content}
-          </p>
-        </article>
+        {@const renderedContent = agent ? renderAgentContent(message.content) : message.content}
+        {#if !agent || renderedContent.trim()}
+          <article class="turn" class:turn--agent={agent} class:turn--participant={!agent}>
+            <p class="turn-role">{agent ? agentName : participantName}</p>
+            <p class="turn-body">
+              {renderedContent}
+            </p>
+          </article>
+        {/if}
       {/each}
       {#if pending}
         <article class="turn turn--agent turn--pending" aria-hidden="true">

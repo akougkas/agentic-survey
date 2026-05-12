@@ -663,6 +663,155 @@
     @apply grid content-start gap-5;
   }
 
+  .interview-progress {
+    @apply grid gap-3 rounded-[6px] border border-[color:var(--line)] px-4 py-4;
+    background: rgba(255, 255, 255, 0.01);
+  }
+
+  .interview-progress-copy {
+    @apply m-0 max-w-[26rem] text-[14px] leading-[1.55] text-[color:var(--muted)];
+  }
+
+  .interview-progress-current {
+    @apply m-0 text-[13px] leading-[1.5] text-[color:var(--text)];
+  }
+
+  .interview-progress-meta {
+    @apply m-0 flex flex-wrap items-center gap-2 text-[12px] text-[color:var(--muted)];
+  }
+
+  .interview-progress-drawer {
+    @apply rounded-[6px] border border-[color:var(--line)] bg-[color:rgba(255,255,255,0.02)];
+    overflow: hidden;
+  }
+
+  .interview-progress-drawer summary {
+    @apply cursor-pointer list-none grid w-full grid-cols-[1fr_auto] items-center gap-3 border-b border-[color:var(--line)] px-3 py-3 text-[12px] font-mono uppercase tracking-[0.14em] text-[color:var(--muted)];
+  }
+
+  .interview-progress-drawer summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .interview-progress-summary {
+    @apply text-left;
+  }
+
+  .interview-progress-summary-subtle {
+    @apply text-[11px] text-[color:var(--muted)] font-normal normal-case tracking-[0.02em] not-italic;
+  }
+
+  .interview-progress-summary::after {
+    content: '▾';
+    font-size: 13px;
+    color: var(--moss);
+  }
+
+  .interview-progress-drawer[open] .interview-progress-summary::after {
+    content: '▴';
+  }
+
+  .interview-progress-body {
+    @apply grid gap-3 px-3 py-3;
+  }
+
+  .interview-progress-empty {
+    @apply m-0 text-[13px] leading-[1.55] text-[color:var(--muted)];
+  }
+
+  .interview-axis {
+    @apply grid gap-1.5 rounded-[6px] px-2 py-2;
+  }
+
+  .interview-axis--active {
+    background: rgba(126, 184, 141, 0.05);
+    border: 1px solid rgba(126, 184, 141, 0.22);
+  }
+
+  .interview-axis-head {
+    @apply flex items-start justify-between gap-2;
+  }
+
+  .interview-axis-label {
+    @apply m-0 flex min-w-0 flex-1 items-start gap-2 text-[13px] leading-[1.45];
+  }
+
+  .interview-axis-code {
+    @apply inline-flex shrink-0 items-center rounded-full border border-[color:var(--line)] px-2 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-[color:var(--muted)];
+    background: rgba(232, 224, 207, 0.06);
+    min-width: 2.75rem;
+    justify-content: center;
+  }
+
+  .interview-axis-code[data-tone='moss'] {
+    border-color: rgba(126, 184, 141, 0.34);
+    background: rgba(126, 184, 141, 0.12);
+    color: #a6d5b2;
+  }
+
+  .interview-axis-code[data-tone='brass'] {
+    border-color: rgba(167, 146, 82, 0.36);
+    background: rgba(167, 146, 82, 0.1);
+    color: #cfbc82;
+  }
+
+  .interview-axis-title {
+    @apply m-0 min-w-0 truncate text-[13px] text-[color:var(--text)];
+  }
+
+  .interview-axis-state {
+    @apply m-0 text-[11px] font-mono uppercase tracking-[0.12em] text-[color:var(--muted)];
+  }
+
+  .interview-axis-meter-wrap {
+    @apply flex items-center gap-2;
+  }
+
+  .interview-axis-meter {
+    @apply relative h-2 min-w-0 flex-1 overflow-hidden rounded-full;
+    background: rgba(232, 224, 207, 0.14);
+  }
+
+  .interview-axis-meter-fill {
+    @apply absolute top-0 left-0 block h-full rounded-full bg-[color:rgba(232,224,207,0.7)];
+    width: var(--axis-score);
+  }
+
+  .interview-axis-meter-fill--moss {
+    background: rgba(126, 184, 141, 0.85);
+  }
+
+  .interview-axis-meter-fill--brass {
+    background: rgba(220, 125, 78, 0.85);
+  }
+
+  .interview-axis-score {
+    @apply w-11 text-right font-mono text-[11px] leading-none text-[color:var(--muted)];
+  }
+
+  .interview-progress-drawer:not([open]) .interview-progress-body {
+    @apply hidden;
+  }
+
+  .interview-progress-drawer[open] {
+    @apply border;
+  }
+
+  @media (max-width: 767px) {
+    .interview-axis-title {
+      @apply hidden;
+    }
+
+    .interview-axis-state {
+      @apply text-[10px];
+    }
+
+    .interview-progress-drawer summary {
+      grid-template-columns: 1fr auto;
+      padding-right: 0.8rem;
+    }
+  }
+
   .working-notes {
     @apply grid gap-3 border-t border-[color:var(--line)] pt-4;
   }
