@@ -65,15 +65,15 @@ def test_litellm_aliases_are_pinned_to_runtime_envs() -> None:
 
     chatter = _entry_by_name(config, "mira-chatter")
     assert chatter["litellm_params"] == {
-        "model": "openai/${SURVEY_MINI_MODEL}",
-        "api_base": "${SURVEY_MINI_ENDPOINT_URL}",
+        "model": "openai/${SURVEY_CHATTER_MODEL}",
+        "api_base": "${SURVEY_CHATTER_ENDPOINT_URL}",
     }
 
     for alias in ["mira-scientist", "validator", "analyst", "ingest"]:
         entry = _entry_by_name(config, alias)
         assert entry["litellm_params"] == {
-            "model": "openai/${SURVEY_DYNAMO_MODEL}",
-            "api_base": "${SURVEY_DYNAMO_ENDPOINT_URL}",
+            "model": "openai/${SURVEY_SCIENTIST_MODEL}",
+            "api_base": "${SURVEY_SCIENTIST_ENDPOINT_URL}",
         }
 
     embeddings = _entry_by_name(config, "embeddings")
@@ -114,7 +114,7 @@ def test_scientist_route_has_openrouter_fallback_row() -> None:
     )
     assert (
         or_rows[0]["litellm_params"]["model"]
-        == "openrouter/${SURVEY_OPENROUTER_DYNAMO_MODEL}"
+        == "openrouter/${SURVEY_OPENROUTER_SCIENTIST_MODEL}"
     )
 
 

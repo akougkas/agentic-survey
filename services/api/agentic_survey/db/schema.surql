@@ -36,12 +36,18 @@ DEFINE FIELD IF NOT EXISTS catalog_id ON TABLE model_catalog TYPE string;
 DEFINE FIELD IF NOT EXISTS role ON TABLE model_catalog TYPE string
     ASSERT $value IN ["chatter","scientist","validator","analyst","embedding","ingest"];
 DEFINE FIELD IF NOT EXISTS endpoint ON TABLE model_catalog TYPE string
-    ASSERT $value IN ["mini","dynamo"];
+    ASSERT $value IN ["chatter","scientist"];
 DEFINE FIELD IF NOT EXISTS model_id ON TABLE model_catalog TYPE string;
 DEFINE FIELD IF NOT EXISTS label ON TABLE model_catalog TYPE string;
 DEFINE FIELD IF NOT EXISTS notes ON TABLE model_catalog TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS enabled ON TABLE model_catalog TYPE bool DEFAULT true;
 DEFINE FIELD IF NOT EXISTS is_default ON TABLE model_catalog TYPE bool DEFAULT false;
+DEFINE FIELD IF NOT EXISTS reasoning_mode ON TABLE model_catalog TYPE string DEFAULT "off"
+    ASSERT $value IN ["off","on","budget"];
+DEFINE FIELD IF NOT EXISTS reasoning_budget_tokens ON TABLE model_catalog TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS reasoning_kwarg ON TABLE model_catalog TYPE string DEFAULT "none"
+    ASSERT $value IN ["enable_thinking","reasoning_effort","none"];
+DEFINE FIELD IF NOT EXISTS temperature ON TABLE model_catalog TYPE option<float>;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE model_catalog TYPE datetime DEFAULT time::now();
 DEFINE FIELD IF NOT EXISTS updated_at ON TABLE model_catalog TYPE datetime DEFAULT time::now();
 DEFINE INDEX IF NOT EXISTS model_catalog_id_role ON TABLE model_catalog COLUMNS catalog_id, role UNIQUE;

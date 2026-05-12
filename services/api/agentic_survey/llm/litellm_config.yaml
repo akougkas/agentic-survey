@@ -4,137 +4,136 @@
 # are dropped so simple-shuffle picks deterministically.
 #
 # Priority by role:
-#   * mira-chatter (Brain A):   mini → dynamo → openrouter
-#   * mira-scientist + others:  dynamo → openrouter → mini
+#   * mira-chatter (Brain A):     chatter → scientist → openrouter
+#   * mira-scientist + others:    scientist → openrouter → chatter
 #
-# This expresses the five supported runtime configurations without inventing
-# fake aliases:
-#   1. mini + dynamo:     mini=set, dynamo=set                  → chatter→mini, others→dynamo
-#   2. mini + openrouter: mini=set, dynamo=empty, OR=on         → chatter→mini, others→OR
-#   3. only mini:         mini=set, dynamo=empty, OR=off        → everyone→mini
-#   4. only dynamo:       mini=empty, dynamo=set, OR=off        → everyone→dynamo
-#   5. only openrouter:   mini=empty, dynamo=empty, OR=on       → everyone→OR
+# This expresses every supported runtime configuration without inventing fake
+# aliases. The two brain endpoints can point at the same physical backend
+# (single-machine deploys) or at different machines (dual-machine deploys);
+# in either case operators set ``SURVEY_CHATTER_ENDPOINT_URL`` and
+# ``SURVEY_SCIENTIST_ENDPOINT_URL`` to the URLs they want each brain to use.
 
 model_list:
   # ---- mira-chatter (Brain A) -------------------------------------------
   - model_name: mira-chatter
-    _requires_env: [SURVEY_MINI_ENDPOINT_URL]
+    _requires_env: [SURVEY_CHATTER_ENDPOINT_URL]
     litellm_params:
-      model: openai/${SURVEY_MINI_MODEL}
-      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+      model: openai/${SURVEY_CHATTER_MODEL}
+      api_base: ${SURVEY_CHATTER_ENDPOINT_URL}
   - model_name: mira-chatter
-    _requires_env: [SURVEY_DYNAMO_ENDPOINT_URL]
+    _requires_env: [SURVEY_SCIENTIST_ENDPOINT_URL]
     litellm_params:
-      model: openai/${SURVEY_DYNAMO_MODEL}
-      api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      model: openai/${SURVEY_SCIENTIST_MODEL}
+      api_base: ${SURVEY_SCIENTIST_ENDPOINT_URL}
   - model_name: mira-chatter
     _openrouter_fallback: true
     litellm_params:
-      model: openrouter/${SURVEY_OPENROUTER_DYNAMO_MODEL}
+      model: openrouter/${SURVEY_OPENROUTER_SCIENTIST_MODEL}
       api_key: ${SURVEY_OPENROUTER_API_KEY}
       api_base: ${SURVEY_OPENROUTER_BASE_URL}
 
   # ---- mira-scientist (Brain B) -----------------------------------------
   - model_name: mira-scientist
-    _requires_env: [SURVEY_DYNAMO_ENDPOINT_URL]
+    _requires_env: [SURVEY_SCIENTIST_ENDPOINT_URL]
     litellm_params:
-      model: openai/${SURVEY_DYNAMO_MODEL}
-      api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      model: openai/${SURVEY_SCIENTIST_MODEL}
+      api_base: ${SURVEY_SCIENTIST_ENDPOINT_URL}
     model_info:
       supports_response_schema: true
   - model_name: mira-scientist
     _openrouter_fallback: true
     litellm_params:
-      model: openrouter/${SURVEY_OPENROUTER_DYNAMO_MODEL}
+      model: openrouter/${SURVEY_OPENROUTER_SCIENTIST_MODEL}
       api_key: ${SURVEY_OPENROUTER_API_KEY}
       api_base: ${SURVEY_OPENROUTER_BASE_URL}
     model_info:
       supports_response_schema: true
   - model_name: mira-scientist
-    _requires_env: [SURVEY_MINI_ENDPOINT_URL]
+    _requires_env: [SURVEY_CHATTER_ENDPOINT_URL]
     litellm_params:
-      model: openai/${SURVEY_MINI_MODEL}
-      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+      model: openai/${SURVEY_CHATTER_MODEL}
+      api_base: ${SURVEY_CHATTER_ENDPOINT_URL}
     model_info:
       supports_response_schema: true
 
   # ---- validator --------------------------------------------------------
   - model_name: validator
-    _requires_env: [SURVEY_DYNAMO_ENDPOINT_URL]
+    _requires_env: [SURVEY_SCIENTIST_ENDPOINT_URL]
     litellm_params:
-      model: openai/${SURVEY_DYNAMO_MODEL}
-      api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      model: openai/${SURVEY_SCIENTIST_MODEL}
+      api_base: ${SURVEY_SCIENTIST_ENDPOINT_URL}
     model_info:
       supports_response_schema: true
   - model_name: validator
     _openrouter_fallback: true
     litellm_params:
-      model: openrouter/${SURVEY_OPENROUTER_DYNAMO_MODEL}
+      model: openrouter/${SURVEY_OPENROUTER_SCIENTIST_MODEL}
       api_key: ${SURVEY_OPENROUTER_API_KEY}
       api_base: ${SURVEY_OPENROUTER_BASE_URL}
     model_info:
       supports_response_schema: true
   - model_name: validator
-    _requires_env: [SURVEY_MINI_ENDPOINT_URL]
+    _requires_env: [SURVEY_CHATTER_ENDPOINT_URL]
     litellm_params:
-      model: openai/${SURVEY_MINI_MODEL}
-      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+      model: openai/${SURVEY_CHATTER_MODEL}
+      api_base: ${SURVEY_CHATTER_ENDPOINT_URL}
     model_info:
       supports_response_schema: true
 
   # ---- analyst ----------------------------------------------------------
   - model_name: analyst
-    _requires_env: [SURVEY_DYNAMO_ENDPOINT_URL]
+    _requires_env: [SURVEY_SCIENTIST_ENDPOINT_URL]
     litellm_params:
-      model: openai/${SURVEY_DYNAMO_MODEL}
-      api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      model: openai/${SURVEY_SCIENTIST_MODEL}
+      api_base: ${SURVEY_SCIENTIST_ENDPOINT_URL}
     model_info:
       supports_response_schema: true
   - model_name: analyst
     _openrouter_fallback: true
     litellm_params:
-      model: openrouter/${SURVEY_OPENROUTER_DYNAMO_MODEL}
+      model: openrouter/${SURVEY_OPENROUTER_SCIENTIST_MODEL}
       api_key: ${SURVEY_OPENROUTER_API_KEY}
       api_base: ${SURVEY_OPENROUTER_BASE_URL}
     model_info:
       supports_response_schema: true
   - model_name: analyst
-    _requires_env: [SURVEY_MINI_ENDPOINT_URL]
+    _requires_env: [SURVEY_CHATTER_ENDPOINT_URL]
     litellm_params:
-      model: openai/${SURVEY_MINI_MODEL}
-      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+      model: openai/${SURVEY_CHATTER_MODEL}
+      api_base: ${SURVEY_CHATTER_ENDPOINT_URL}
     model_info:
       supports_response_schema: true
 
   # ---- ingest -----------------------------------------------------------
   - model_name: ingest
-    _requires_env: [SURVEY_DYNAMO_ENDPOINT_URL]
+    _requires_env: [SURVEY_SCIENTIST_ENDPOINT_URL]
     litellm_params:
-      model: openai/${SURVEY_DYNAMO_MODEL}
-      api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      model: openai/${SURVEY_SCIENTIST_MODEL}
+      api_base: ${SURVEY_SCIENTIST_ENDPOINT_URL}
     model_info:
       supports_response_schema: true
   - model_name: ingest
     _openrouter_fallback: true
     litellm_params:
-      model: openrouter/${SURVEY_OPENROUTER_DYNAMO_MODEL}
+      model: openrouter/${SURVEY_OPENROUTER_SCIENTIST_MODEL}
       api_key: ${SURVEY_OPENROUTER_API_KEY}
       api_base: ${SURVEY_OPENROUTER_BASE_URL}
     model_info:
       supports_response_schema: true
   - model_name: ingest
-    _requires_env: [SURVEY_MINI_ENDPOINT_URL]
+    _requires_env: [SURVEY_CHATTER_ENDPOINT_URL]
     litellm_params:
-      model: openai/${SURVEY_MINI_MODEL}
-      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+      model: openai/${SURVEY_CHATTER_MODEL}
+      api_base: ${SURVEY_CHATTER_ENDPOINT_URL}
     model_info:
       supports_response_schema: true
 
   # ---- embeddings -------------------------------------------------------
-  # Priority: explicit SURVEY_EMBEDDING_ENDPOINT_URL → dynamo → mini. Phase 5
-  # (only OpenRouter) drops every embedding row because OpenRouter does not
-  # host the catalog embedding model; operators must run that config with
-  # SURVEY_RETRIEVAL_FORCE_MODE=bm25 so retrieval never reaches the embedder.
+  # Priority: explicit SURVEY_EMBEDDING_ENDPOINT_URL → scientist → chatter.
+  # Phase 5 (only OpenRouter) drops every embedding row because OpenRouter
+  # does not host the catalog embedding model; operators must run that config
+  # with SURVEY_RETRIEVAL_FORCE_MODE=bm25 so retrieval never reaches the
+  # embedder.
   - model_name: embeddings
     _requires_env: [SURVEY_EMBEDDING_ENDPOINT_URL]
     litellm_params:
@@ -142,16 +141,16 @@ model_list:
       api_base: ${SURVEY_EMBEDDING_ENDPOINT_URL}
       api_key: ${SURVEY_EMBEDDING_API_KEY}
   - model_name: embeddings
-    _requires_env: [SURVEY_DYNAMO_ENDPOINT_URL]
+    _requires_env: [SURVEY_SCIENTIST_ENDPOINT_URL]
     litellm_params:
       model: openai/${SURVEY_EMBEDDING_MODEL}
-      api_base: ${SURVEY_DYNAMO_ENDPOINT_URL}
+      api_base: ${SURVEY_SCIENTIST_ENDPOINT_URL}
       api_key: ${SURVEY_EMBEDDING_API_KEY}
   - model_name: embeddings
-    _requires_env: [SURVEY_MINI_ENDPOINT_URL]
+    _requires_env: [SURVEY_CHATTER_ENDPOINT_URL]
     litellm_params:
       model: openai/${SURVEY_EMBEDDING_MODEL}
-      api_base: ${SURVEY_MINI_ENDPOINT_URL}
+      api_base: ${SURVEY_CHATTER_ENDPOINT_URL}
       api_key: ${SURVEY_EMBEDDING_API_KEY}
 
 router_settings:

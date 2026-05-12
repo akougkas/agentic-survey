@@ -339,10 +339,10 @@ def get_endpoint_pool() -> EndpointPool:
     settings = get_settings()
     registry = Path(__file__).parent / "models.yaml"
     variables = {
-        "SURVEY_MINI_ENDPOINT_URL": settings.mini_endpoint_url,
-        "SURVEY_MINI_MODEL": settings.mini_model,
-        "SURVEY_DYNAMO_ENDPOINT_URL": settings.dynamo_endpoint_url,
-        "SURVEY_DYNAMO_MODEL": settings.dynamo_model,
+        "SURVEY_CHATTER_ENDPOINT_URL": settings.chatter_endpoint_url,
+        "SURVEY_CHATTER_MODEL": settings.chatter_model,
+        "SURVEY_SCIENTIST_ENDPOINT_URL": settings.scientist_endpoint_url,
+        "SURVEY_SCIENTIST_MODEL": settings.scientist_model,
     }
     return EndpointPool(registry, variables=variables)
 

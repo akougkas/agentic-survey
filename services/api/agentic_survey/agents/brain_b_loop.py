@@ -297,19 +297,22 @@ def _brain_b_tools_for_request(
     return [*registry.openai_schema(), output_tool_schema]
 
 
-def _tool_choice_for_request(*, terminal_only: bool) -> str | None:
+def _tool_choice_for_request(*, terminal_only: bool) -> str:
     """Tool-choice value to send to the router.
 
-    Always omitted (default ``auto``). The OpenAI object form
-    ``{"type":"function","function":{"name":...}}`` works on llama.cpp and
-    OpenRouter but LM Studio rejects it with HTTP 400. The string ``required``
-    works on llama.cpp/OpenRouter but is also broken on LM Studio for
-    Nemotron OMNI: the model emits a ``<tool_call>`` XML in
-    ``reasoning_content`` and zero real tool_calls. Default ``auto`` plus a
-    single-tool list elicits the right call on every backend we support.
+    Always ``required`` so the model commits to a tool call on every iteration.
+    Brain B's full system prompt plus the rubric, question bank, and transcript
+    is heavy enough that ``auto`` lets some models (notably AgenticQwen) fall
+    silent: ``finish_reason=stop``, no content, no tool calls. Forcing a
+    selection makes planning iterations pick a registry tool when grounding
+    helps and the terminal iteration emit ``emit_brain_b_intent`` directly.
+    The OpenAI object form (``{"type":"function","function":{"name":...}}``)
+    is avoided because LM Studio rejects it with HTTP 400; the string
+    ``required`` is honored by llama.cpp and OpenRouter and fits both
+    planning and terminal iterations without per-backend branches.
     """
     del terminal_only
-    return None
+    return "required"
 
 
 _OPTION_MAX_LEN = 120
@@ -1464,6 +1467,8 @@ async def run_brain_b_with_tools(
                 .get("enable_thinking")
             )
             completion_kwargs["metadata"]["thinking_enabled"] = thinking_enabled
+            if effective_resolution.temperature is not None:
+                completion_kwargs["temperature"] = effective_resolution.temperature
         else:
             set_lmstudio_thinking(completion_kwargs, enabled=False)
         completion_kwargs["tools"] = _brain_b_tools_for_request(
@@ -1471,9 +1476,16 @@ async def run_brain_b_with_tools(
             output_tool_schema,
             terminal_only=terminal_only,
         )
-        tool_choice = _tool_choice_for_request(terminal_only=terminal_only)
-        if tool_choice is not None:
-            completion_kwargs["tool_choice"] = tool_choice
+        completion_kwargs["tool_choice"] = _tool_choice_for_request(
+            terminal_only=terminal_only
+        )
+        # parallel_tool_calls=False forces one tool call per response. With
+        # tool_choice="required" some models (observed on AgenticQwen) interpret
+        # "required" as "call as many tools as you can in parallel" and emit
+        # 100+ tool_calls in a single message until the token budget runs out.
+        # Sequential dispatch is what the orchestrator expects, so disable
+        # parallelism explicitly.
+        completion_kwargs["parallel_tool_calls"] = False
 
         start_time = time.monotonic()
         response = await router.acompletion(**completion_kwargs)
@@ -1618,6 +1630,42 @@ async def run_brain_b_with_tools(
             continue
 
         if tool_calls:
+            # Some local models (observed on AgenticQwen with tool_choice=
+            # required) spam parallel tool_calls with identical args until the
+            # token budget runs out. Dedupe by (name, args) signature so a
+            # single response cannot blow the per-turn budget through
+            # repetition. Logs at WARNING when dedup actually fires so the
+            # operator can see the model is misbehaving.
+            if len(tool_calls) > 1:
+                seen_signatures: set[str] = set()
+                deduped: list[dict[str, Any]] = []
+                for call in tool_calls:
+                    signature = (
+                        f"{_tool_call_name(call)}::{_tool_call_arguments(call)}"
+                    )
+                    if signature in seen_signatures:
+                        continue
+                    seen_signatures.add(signature)
+                    deduped.append(call)
+                if len(deduped) < len(tool_calls):
+                    logger.warning(
+                        "brain_b deduped tool_calls in single response surface=%s emitted=%s unique=%s",
+                        surface,
+                        len(tool_calls),
+                        len(deduped),
+                    )
+                    tool_calls = deduped
+            # Per-response cap protects against unique-but-still-runaway
+            # tool_call generation. The orchestrator dispatches the first N
+            # and continues; remaining calls are dropped with a warning.
+            if len(tool_calls) > max_tool_calls:
+                logger.warning(
+                    "brain_b capped tool_calls per response surface=%s emitted=%s cap=%s",
+                    surface,
+                    len(tool_calls),
+                    max_tool_calls,
+                )
+                tool_calls = tool_calls[:max_tool_calls]
             if len(tool_calls_made) + len(tool_calls) > max_tool_calls:
                 raise BrainBToolBudgetExceeded(
                     f"Brain B exceeded tool-call budget of {max_tool_calls}",

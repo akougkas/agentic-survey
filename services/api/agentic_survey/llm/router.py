@@ -264,26 +264,27 @@ def get_litellm_router() -> LiteLLMRouter:
     from agentic_survey.config import get_settings
 
     settings = get_settings()
-    os.environ.setdefault("SURVEY_MINI_ENDPOINT_URL", settings.mini_endpoint_url)
-    os.environ.setdefault("SURVEY_MINI_MODEL", settings.mini_model)
-    os.environ.setdefault("SURVEY_DYNAMO_ENDPOINT_URL", settings.dynamo_endpoint_url)
-    os.environ.setdefault("SURVEY_DYNAMO_MODEL", settings.dynamo_model)
+    os.environ.setdefault("SURVEY_CHATTER_ENDPOINT_URL", settings.chatter_endpoint_url)
+    os.environ.setdefault("SURVEY_CHATTER_MODEL", settings.chatter_model)
+    os.environ.setdefault("SURVEY_SCIENTIST_ENDPOINT_URL", settings.scientist_endpoint_url)
+    os.environ.setdefault("SURVEY_SCIENTIST_MODEL", settings.scientist_model)
     os.environ.setdefault("SURVEY_EMBEDDING_MODEL", settings.embedding_model)
-    # Embedding endpoint falls back to dynamo URL when the operator has not set
-    # an explicit value, so the historical single-endpoint deploy keeps working
-    # without a config change. setdefault keeps explicit shell exports authoritative.
+    # Embedding endpoint falls back to scientist URL when the operator has
+    # not set an explicit value, so the historical single-backend deploy
+    # keeps working without a config change. setdefault keeps explicit shell
+    # exports authoritative.
     os.environ.setdefault(
         "SURVEY_EMBEDDING_ENDPOINT_URL",
-        settings.embedding_endpoint_url.strip() or settings.dynamo_endpoint_url,
+        settings.embedding_endpoint_url.strip() or settings.scientist_endpoint_url,
     )
     # LiteLLM's OpenAI-compat client requires an api_key field even when talking
-    # to a local server that ignores it (LM Studio, ollama). Reuse the same
-    # placeholder used by the chat endpoints.
+    # to a local server that ignores it (LM Studio, llama.cpp, Ollama). Reuse
+    # the same placeholder used by the chat endpoints.
     os.environ.setdefault("SURVEY_EMBEDDING_API_KEY", os.environ.get("OPENAI_API_KEY", "lm-studio"))
     # OpenRouter fallback. setdefault keeps explicit shell exports authoritative.
     os.environ.setdefault("SURVEY_OPENROUTER_API_KEY", settings.openrouter_api_key)
     os.environ.setdefault("SURVEY_OPENROUTER_BASE_URL", settings.openrouter_base_url)
-    os.environ.setdefault("SURVEY_OPENROUTER_DYNAMO_MODEL", settings.openrouter_dynamo_model)
+    os.environ.setdefault("SURVEY_OPENROUTER_SCIENTIST_MODEL", settings.openrouter_scientist_model)
     os.environ.setdefault(
         "SURVEY_OPENROUTER_FALLBACK_ENABLED",
         "true" if settings.openrouter_fallback_enabled else "false",

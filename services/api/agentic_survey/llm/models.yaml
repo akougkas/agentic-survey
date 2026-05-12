@@ -1,13 +1,13 @@
 endpoints:
-  mini:
-    base_url: ${SURVEY_MINI_ENDPOINT_URL}
-    model: ${SURVEY_MINI_MODEL}
+  chatter:
+    base_url: ${SURVEY_CHATTER_ENDPOINT_URL}
+    model: ${SURVEY_CHATTER_MODEL}
     roles:
       - designer
       - interviewer
-  dynamo:
-    base_url: ${SURVEY_DYNAMO_ENDPOINT_URL}
-    model: ${SURVEY_DYNAMO_MODEL}
+  scientist:
+    base_url: ${SURVEY_SCIENTIST_ENDPOINT_URL}
+    model: ${SURVEY_SCIENTIST_MODEL}
     roles:
       - validator
       - analyst

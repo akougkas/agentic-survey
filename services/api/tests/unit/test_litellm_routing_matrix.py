@@ -1,13 +1,14 @@
 """Routing-matrix tests for litellm_config.yaml.
 
-These exercise the loader directly so the five required runtime configurations
-all resolve without fake aliases:
+The five required runtime configurations are expressed as combinations of
+the ``SURVEY_CHATTER_ENDPOINT_URL``, ``SURVEY_SCIENTIST_ENDPOINT_URL``, and
+``SURVEY_OPENROUTER_FALLBACK_ENABLED`` env vars:
 
-  1. mini + dynamo (separate endpoints)
-  2. mini + OpenRouter
-  3. only mini
-  4. only dynamo
-  5. only OpenRouter
+  1. chatter + scientist (separate hosts; e.g., dual-machine)
+  2. chatter + OpenRouter (scientist URL empty, OR enabled)
+  3. only chatter (scientist URL empty, OR disabled)
+  4. only scientist (chatter URL empty, OR disabled)
+  5. only OpenRouter (both URLs empty, OR enabled)
 
 Each test patches the SURVEY_* env vars to express one configuration, calls
 ``load_filtered_model_list``, and asserts the surviving rows. The loader must
@@ -47,16 +48,16 @@ CANONICAL_ALIASES: frozenset[str] = frozenset(
 def _phase_env(**overrides: str) -> dict[str, str]:
     """Build an env mapping from a sane base, blanking the unset entries."""
     base = {
-        "SURVEY_MINI_ENDPOINT_URL": "",
-        "SURVEY_MINI_MODEL": "Nemotron-3-Nano-Omni-30B-A3B-Reasoning-UD-Q4_K_M",
-        "SURVEY_DYNAMO_ENDPOINT_URL": "",
-        "SURVEY_DYNAMO_MODEL": "nvidia-nemotron-3-nano-omni-30b-a3b-reasoning",
+        "SURVEY_CHATTER_ENDPOINT_URL": "",
+        "SURVEY_CHATTER_MODEL": "Nemotron-3-Nano-Omni-30B-A3B-Reasoning-UD-Q4_K_M",
+        "SURVEY_SCIENTIST_ENDPOINT_URL": "",
+        "SURVEY_SCIENTIST_MODEL": "nvidia-nemotron-3-nano-omni-30b-a3b-reasoning",
         "SURVEY_EMBEDDING_MODEL": "text-embedding-nomic-embed-text-v2-moe",
         "SURVEY_EMBEDDING_ENDPOINT_URL": "",
         "SURVEY_EMBEDDING_API_KEY": "lm-studio",
         "SURVEY_OPENROUTER_API_KEY": "",
         "SURVEY_OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
-        "SURVEY_OPENROUTER_DYNAMO_MODEL": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "SURVEY_OPENROUTER_SCIENTIST_MODEL": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
         "SURVEY_OPENROUTER_FALLBACK_ENABLED": "false",
     }
     base.update(overrides)
@@ -97,16 +98,16 @@ def test_no_fake_aliases_appear_anywhere(monkeypatch: pytest.MonkeyPatch) -> Non
     """
     configs = [
         _phase_env(
-            SURVEY_MINI_ENDPOINT_URL="http://mini:8080/v1",
-            SURVEY_DYNAMO_ENDPOINT_URL="http://dynamo:1234/v1",
+            SURVEY_CHATTER_ENDPOINT_URL="http://chatter-host:8080/v1",
+            SURVEY_SCIENTIST_ENDPOINT_URL="http://scientist-host:1234/v1",
         ),
         _phase_env(
-            SURVEY_MINI_ENDPOINT_URL="http://mini:8080/v1",
+            SURVEY_CHATTER_ENDPOINT_URL="http://chatter-host:8080/v1",
             SURVEY_OPENROUTER_API_KEY="sk-or-v1-test",
             SURVEY_OPENROUTER_FALLBACK_ENABLED="true",
         ),
-        _phase_env(SURVEY_MINI_ENDPOINT_URL="http://mini:8080/v1"),
-        _phase_env(SURVEY_DYNAMO_ENDPOINT_URL="http://dynamo:1234/v1"),
+        _phase_env(SURVEY_CHATTER_ENDPOINT_URL="http://chatter-host:8080/v1"),
+        _phase_env(SURVEY_SCIENTIST_ENDPOINT_URL="http://scientist-host:1234/v1"),
         _phase_env(
             SURVEY_OPENROUTER_API_KEY="sk-or-v1-test",
             SURVEY_OPENROUTER_FALLBACK_ENABLED="true",
@@ -121,13 +122,13 @@ def test_no_fake_aliases_appear_anywhere(monkeypatch: pytest.MonkeyPatch) -> Non
         )
 
 
-def test_phase_one_mini_plus_dynamo_pins_each_role_to_its_canonical_endpoint(
+def test_phase_one_chatter_plus_scientist_pins_each_role_to_its_canonical_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both local endpoints up, no OR. Brain A on mini, Brain B and friends on dynamo."""
+    """Both local endpoints up, no OR. Brain A on chatter URL, Brain B and friends on scientist URL."""
     env = _phase_env(
-        SURVEY_MINI_ENDPOINT_URL="http://mini:8080/v1",
-        SURVEY_DYNAMO_ENDPOINT_URL="http://dynamo:1234/v1",
+        SURVEY_CHATTER_ENDPOINT_URL="http://chatter-host:8080/v1",
+        SURVEY_SCIENTIST_ENDPOINT_URL="http://scientist-host:1234/v1",
     )
     _apply_env(monkeypatch, env)
 
@@ -135,13 +136,13 @@ def test_phase_one_mini_plus_dynamo_pins_each_role_to_its_canonical_endpoint(
     api_base = _api_base_by_alias(rows)
     model_id = _model_id_by_alias(rows)
 
-    assert api_base["mira-chatter"] == "http://mini:8080/v1"
-    assert api_base["mira-scientist"] == "http://dynamo:1234/v1"
-    assert api_base["validator"] == "http://dynamo:1234/v1"
-    assert api_base["analyst"] == "http://dynamo:1234/v1"
-    assert api_base["ingest"] == "http://dynamo:1234/v1"
-    # Embedding endpoint defaults to the dynamo URL when no explicit override.
-    assert api_base["embeddings"] in {"http://dynamo:1234/v1", ""}
+    assert api_base["mira-chatter"] == "http://chatter-host:8080/v1"
+    assert api_base["mira-scientist"] == "http://scientist-host:1234/v1"
+    assert api_base["validator"] == "http://scientist-host:1234/v1"
+    assert api_base["analyst"] == "http://scientist-host:1234/v1"
+    assert api_base["ingest"] == "http://scientist-host:1234/v1"
+    # Embedding endpoint defaults to the scientist URL when no explicit override.
+    assert api_base["embeddings"] in {"http://scientist-host:1234/v1", ""}
 
     assert model_id["mira-chatter"].startswith("openai/")
     assert model_id["mira-scientist"].startswith("openai/")
@@ -151,12 +152,12 @@ def test_phase_one_mini_plus_dynamo_pins_each_role_to_its_canonical_endpoint(
     assert len(aliases) == len(set(aliases))
 
 
-def test_phase_two_mini_plus_openrouter_routes_scientist_through_or(
+def test_phase_two_chatter_plus_openrouter_routes_scientist_through_or(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """mini local up; dynamo down; OR enabled. Brain A on mini, Brain B and friends on OR."""
+    """Chatter URL set; scientist URL empty; OR enabled. Brain A local, Brain B and friends on OR."""
     env = _phase_env(
-        SURVEY_MINI_ENDPOINT_URL="http://mini:8080/v1",
+        SURVEY_CHATTER_ENDPOINT_URL="http://chatter-host:8080/v1",
         SURVEY_OPENROUTER_API_KEY="sk-or-v1-test",
         SURVEY_OPENROUTER_FALLBACK_ENABLED="true",
     )
@@ -166,7 +167,7 @@ def test_phase_two_mini_plus_openrouter_routes_scientist_through_or(
     api_base = _api_base_by_alias(rows)
     model_id = _model_id_by_alias(rows)
 
-    assert api_base["mira-chatter"] == "http://mini:8080/v1"
+    assert api_base["mira-chatter"] == "http://chatter-host:8080/v1"
     assert api_base["mira-scientist"] == "https://openrouter.ai/api/v1"
     assert api_base["validator"] == "https://openrouter.ai/api/v1"
     assert api_base["analyst"] == "https://openrouter.ai/api/v1"
@@ -176,33 +177,33 @@ def test_phase_two_mini_plus_openrouter_routes_scientist_through_or(
     assert model_id["validator"].startswith("openrouter/")
 
 
-def test_phase_three_only_mini_collapses_every_role_onto_mini(
+def test_phase_three_only_chatter_collapses_every_role_onto_chatter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    env = _phase_env(SURVEY_MINI_ENDPOINT_URL="http://mini:8080/v1")
+    env = _phase_env(SURVEY_CHATTER_ENDPOINT_URL="http://chatter-host:8080/v1")
     _apply_env(monkeypatch, env)
 
     rows = load_filtered_model_list(CONFIG_PATH)
     api_base = _api_base_by_alias(rows)
 
     for alias in ("mira-chatter", "mira-scientist", "validator", "analyst", "ingest"):
-        assert api_base[alias] == "http://mini:8080/v1", (
-            f"alias {alias!r} did not collapse onto mini in phase 3: {api_base}"
+        assert api_base[alias] == "http://chatter-host:8080/v1", (
+            f"alias {alias!r} did not collapse onto chatter in phase 3: {api_base}"
         )
 
 
-def test_phase_four_only_dynamo_collapses_every_role_onto_dynamo(
+def test_phase_four_only_scientist_collapses_every_role_onto_scientist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    env = _phase_env(SURVEY_DYNAMO_ENDPOINT_URL="http://dynamo:1234/v1")
+    env = _phase_env(SURVEY_SCIENTIST_ENDPOINT_URL="http://scientist-host:1234/v1")
     _apply_env(monkeypatch, env)
 
     rows = load_filtered_model_list(CONFIG_PATH)
     api_base = _api_base_by_alias(rows)
 
     for alias in ("mira-chatter", "mira-scientist", "validator", "analyst", "ingest"):
-        assert api_base[alias] == "http://dynamo:1234/v1", (
-            f"alias {alias!r} did not collapse onto dynamo in phase 4: {api_base}"
+        assert api_base[alias] == "http://scientist-host:1234/v1", (
+            f"alias {alias!r} did not collapse onto scientist in phase 4: {api_base}"
         )
 
 
@@ -237,8 +238,8 @@ def test_each_role_has_exactly_one_surviving_row(
     whose env requirements are satisfied.
     """
     env = _phase_env(
-        SURVEY_MINI_ENDPOINT_URL="http://mini:8080/v1",
-        SURVEY_DYNAMO_ENDPOINT_URL="http://dynamo:1234/v1",
+        SURVEY_CHATTER_ENDPOINT_URL="http://chatter-host:8080/v1",
+        SURVEY_SCIENTIST_ENDPOINT_URL="http://scientist-host:1234/v1",
         SURVEY_OPENROUTER_API_KEY="sk-or-v1-test",
         SURVEY_OPENROUTER_FALLBACK_ENABLED="true",
     )
@@ -256,8 +257,8 @@ def test_loader_strips_metadata_keys_from_returned_rows(
     """Internal gate keys (``_requires_env``, ``_openrouter_fallback``) must not
     leak into the LiteLLM model_list — Router rejects unknown row keys."""
     env = _phase_env(
-        SURVEY_MINI_ENDPOINT_URL="http://mini:8080/v1",
-        SURVEY_DYNAMO_ENDPOINT_URL="http://dynamo:1234/v1",
+        SURVEY_CHATTER_ENDPOINT_URL="http://chatter-host:8080/v1",
+        SURVEY_SCIENTIST_ENDPOINT_URL="http://scientist-host:1234/v1",
         SURVEY_OPENROUTER_API_KEY="sk-or-v1-test",
         SURVEY_OPENROUTER_FALLBACK_ENABLED="true",
     )

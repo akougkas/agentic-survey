@@ -250,7 +250,18 @@ class SurrealRepository:
         return stored.model_copy(deep=True)
 
     def update_catalog_entry(self, catalog_id: str, role: CatalogRole, patch: dict) -> CatalogEntry:
-        allowed_fields = {"endpoint", "model_id", "label", "notes", "enabled", "is_default"}
+        allowed_fields = {
+            "endpoint",
+            "model_id",
+            "label",
+            "notes",
+            "enabled",
+            "is_default",
+            "reasoning_mode",
+            "reasoning_budget_tokens",
+            "reasoning_kwarg",
+            "temperature",
+        }
         unknown = set(patch) - allowed_fields
         if unknown:
             raise ValueError(f"Unsupported catalog patch fields: {', '.join(sorted(unknown))}")

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from agentic_survey.llm.pool import EndpointPool
 
 AgentRole = Literal["chatter", "scientist", "validator", "analyst", "embedding", "ingest"]
-Endpoint = Literal["mini", "dynamo"]
+Endpoint = Literal["chatter", "scientist"]
 ReasoningMode = Literal["off", "on", "budget"]
 ReasoningKwarg = Literal["enable_thinking", "reasoning_effort", "none"]
 
@@ -39,6 +39,7 @@ class CatalogEntry(BaseModel):
     reasoning_mode: ReasoningMode = "off"
     reasoning_budget_tokens: int | None = Field(default=None, ge=1)
     reasoning_kwarg: ReasoningKwarg = "none"
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     created_at: str = Field(default_factory=_timestamp)
     updated_at: str = Field(default_factory=_timestamp)
 
@@ -54,87 +55,112 @@ class CatalogResolution:
     reasoning_mode: ReasoningMode = "off"
     reasoning_budget_tokens: int | None = None
     reasoning_kwarg: ReasoningKwarg = "none"
+    temperature: float | None = None
 
 
 def seed_entries() -> list[CatalogEntry]:
-    """Canonical three-model catalog.
+    """Canonical brain-aligned catalog.
 
-    Identity, endpoint routing, and model IDs all come from the Settings
-    object. Brain A (chatter) lives on mini; every other LLM role collapses
-    to the dynamo reasoning model; embeddings sit on dynamo too. Extend by
-    editing env vars, not this list.
+    Two logical brains, each independently configurable:
+
+    * ``chatter`` — Brain A. Mira's voice. Streams visible replies to the
+      participant. Reasoning always off; temperature reads from
+      ``settings.chatter_temperature``.
+    * ``scientist`` — Brain B + Validator + Analyst + Ingest. Tool-using,
+      analytical, runs in the background. Temperature reads from
+      ``settings.scientist_temperature``. Reasoning mode reads from
+      ``settings.scientist_supports_reasoning``: when False the catalog
+      clamps every scientist-family role to ``reasoning_mode="off"`` so a
+      non-thinking model (Gemma, Qwen3-base, AgenticQwen) does not burn
+      per-turn latency on stream-of-consciousness deliberation.
+
+    Both brains can share a single physical endpoint (e.g., one llama.cpp
+    server with ``--parallel N``) by pointing both URLs at the same host;
+    per-call temperature and ``enable_thinking`` overrides differentiate the
+    two brains' request shapes.
     """
     from agentic_survey.config import get_settings
 
     settings = get_settings()
-    mini_model = settings.mini_model
-    dynamo_model = settings.dynamo_model
+    chatter_model = settings.chatter_model
+    scientist_model = settings.scientist_model
     embedding_model = settings.embedding_model
+    chatter_temperature = settings.chatter_temperature
+    scientist_temperature = settings.scientist_temperature
+    scientist_reasoning: ReasoningMode = (
+        "on" if settings.scientist_supports_reasoning else "off"
+    )
     context_note = (
-        f"Dynamo host context window is configured as "
-        f"{settings.dynamo_context_window_tokens} tokens; per-call completion caps stay separate."
+        f"Scientist host context window is configured as "
+        f"{settings.scientist_context_window_tokens} tokens; per-call completion "
+        f"caps stay separate."
     )
     return [
         CatalogEntry(
-            catalog_id="mini-chatter",
+            catalog_id="chatter-default",
             role="chatter",
-            endpoint="mini",
-            model_id=mini_model,
-            label=f"{mini_model} (Brain A on mini)",
+            endpoint="chatter",
+            model_id=chatter_model,
+            label=f"{chatter_model} (Brain A — Mira's voice)",
             is_default=True,
             reasoning_mode="off",
             reasoning_kwarg="enable_thinking",
+            temperature=chatter_temperature,
         ),
         CatalogEntry(
-            catalog_id="dynamo-scientist",
+            catalog_id="scientist-default",
             role="scientist",
-            endpoint="dynamo",
-            model_id=dynamo_model,
-            label=f"{dynamo_model} (Brain B on dynamo)",
+            endpoint="scientist",
+            model_id=scientist_model,
+            label=f"{scientist_model} (Brain B — planner + analyst)",
             notes=context_note,
             is_default=True,
-            reasoning_mode="on",
+            reasoning_mode=scientist_reasoning,
             reasoning_kwarg="enable_thinking",
+            temperature=scientist_temperature,
         ),
         CatalogEntry(
-            catalog_id="dynamo-validator",
+            catalog_id="scientist-validator",
             role="validator",
-            endpoint="dynamo",
-            model_id=dynamo_model,
-            label=f"{dynamo_model} (Validator on dynamo, compact JSON)",
+            endpoint="scientist",
+            model_id=scientist_model,
+            label=f"{scientist_model} (Validator — compact JSON)",
             notes=context_note,
             is_default=True,
             reasoning_mode="off",
             reasoning_kwarg="enable_thinking",
+            temperature=0.0,
         ),
         CatalogEntry(
-            catalog_id="dynamo-analyst",
+            catalog_id="scientist-analyst",
             role="analyst",
-            endpoint="dynamo",
-            model_id=dynamo_model,
-            label=f"{dynamo_model} (Analyst on dynamo)",
+            endpoint="scientist",
+            model_id=scientist_model,
+            label=f"{scientist_model} (Analyst)",
             notes=context_note,
             is_default=True,
-            reasoning_mode="on",
+            reasoning_mode=scientist_reasoning,
             reasoning_kwarg="enable_thinking",
+            temperature=scientist_temperature,
         ),
         CatalogEntry(
-            catalog_id="dynamo-ingest",
+            catalog_id="scientist-ingest",
             role="ingest",
-            endpoint="dynamo",
-            model_id=dynamo_model,
-            label=f"{dynamo_model} (Ingest on dynamo)",
+            endpoint="scientist",
+            model_id=scientist_model,
+            label=f"{scientist_model} (Ingest)",
             notes=context_note,
             is_default=True,
             reasoning_mode="off",
             reasoning_kwarg="enable_thinking",
+            temperature=0.0,
         ),
         CatalogEntry(
-            catalog_id="dynamo-embedding",
+            catalog_id="scientist-embedding",
             role="embedding",
-            endpoint="dynamo",
+            endpoint="scientist",
             model_id=embedding_model,
-            label=f"{embedding_model} (Embeddings on dynamo)",
+            label=f"{embedding_model} (Embeddings)",
             is_default=True,
         ),
     ]
@@ -167,6 +193,7 @@ def resolve(
                 reasoning_mode=entry.reasoning_mode,
                 reasoning_budget_tokens=entry.reasoning_budget_tokens,
                 reasoning_kwarg=entry.reasoning_kwarg,
+                temperature=entry.temperature,
             )
 
     entry = next(
@@ -188,6 +215,7 @@ def resolve(
             reasoning_mode=entry.reasoning_mode,
             reasoning_budget_tokens=entry.reasoning_budget_tokens,
             reasoning_kwarg=entry.reasoning_kwarg,
+            temperature=entry.temperature,
         )
 
     endpoint_name = _fallback_endpoint(role)
@@ -208,5 +236,5 @@ def _endpoint_url(endpoint: Endpoint, pool: EndpointPool) -> str:
 
 def _fallback_endpoint(role: AgentRole) -> Endpoint:
     if role == "chatter":
-        return "mini"
-    return "dynamo"
+        return "chatter"
+    return "scientist"

@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
 from agentic_survey.auth import require_admin_session
-from agentic_survey.llm.catalog import AgentRole, CatalogEntry, Endpoint
+from agentic_survey.llm.catalog import (
+    AgentRole,
+    CatalogEntry,
+    Endpoint,
+    ReasoningKwarg,
+    ReasoningMode,
+)
 from agentic_survey.repository import InMemoryRepository, get_repository
 
 router = APIRouter(
@@ -23,6 +29,10 @@ class CatalogEntryPayload(BaseModel):
     notes: str | None = None
     enabled: bool = True
     is_default: bool = False
+    reasoning_mode: ReasoningMode = "off"
+    reasoning_budget_tokens: int | None = Field(default=None, ge=1)
+    reasoning_kwarg: ReasoningKwarg = "none"
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
 
 
 class CatalogEntryPatch(BaseModel):
@@ -32,6 +42,10 @@ class CatalogEntryPatch(BaseModel):
     notes: str | None = None
     enabled: bool | None = None
     is_default: bool | None = None
+    reasoning_mode: ReasoningMode | None = None
+    reasoning_budget_tokens: int | None = Field(default=None, ge=1)
+    reasoning_kwarg: ReasoningKwarg | None = None
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
 
 
 @router.get("")

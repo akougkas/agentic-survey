@@ -1080,6 +1080,8 @@ async def _stream_closing(
             "chatter", repository=repository, campaign=campaign
         )
         apply_reasoning_settings(chatter_resolution, request_payload)
+        if chatter_resolution.temperature is not None:
+            request_payload["temperature"] = chatter_resolution.temperature
     else:
         set_lmstudio_thinking(request_payload, enabled=False)
     stream = await router.acompletion(**request_payload)

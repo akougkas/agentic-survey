@@ -29,7 +29,7 @@ class _Pool:
         role: AgentRole,
         session_id: str | None = None,
     ) -> EndpointConfig:
-        return self.get_endpoint("dynamo" if role is not AgentRole.DESIGNER else "mini")
+        return self.get_endpoint("scientist" if role is not AgentRole.DESIGNER else "chatter")
 
 
 class _RepairRouter:
@@ -60,10 +60,10 @@ def _resolution(
     return CatalogResolution(
         role="scientist",
         source="catalog_default",
-        catalog_id="dynamo-scientist",
-        endpoint="dynamo",
+        catalog_id="scientist-default",
+        endpoint="scientist",
         model_id="nvidia-nemotron-3-nano-omni-30b-a3b-reasoning",
-        api_base="http://dynamo:1234/v1",
+        api_base="http://scientist-host:1234/v1",
         reasoning_mode=mode,  # type: ignore[arg-type]
         reasoning_budget_tokens=budget,
         reasoning_kwarg="enable_thinking",
@@ -102,7 +102,7 @@ def test_validator_catalog_default_disables_thinking() -> None:
     validator = next(
         entry
         for entry in seed_entries()
-        if entry.catalog_id == "dynamo-validator"
+        if entry.catalog_id == "scientist-validator"
     )
     request = {"max_tokens": 1024}
 
@@ -113,7 +113,7 @@ def test_validator_catalog_default_disables_thinking() -> None:
             catalog_id=validator.catalog_id,
             endpoint=validator.endpoint,
             model_id=validator.model_id,
-            api_base="http://dynamo:1234/v1",
+            api_base="http://scientist-host:1234/v1",
             reasoning_mode=validator.reasoning_mode,
             reasoning_budget_tokens=validator.reasoning_budget_tokens,
             reasoning_kwarg=validator.reasoning_kwarg,
@@ -130,7 +130,17 @@ def test_repair_budget_is_smaller_than_reasoning_budget() -> None:
     assert REPAIR_COMPLETION_TOKENS < reasoning_completion_tokens()
 
 
-def test_empty_content_repair_disables_reasoning() -> None:
+def test_empty_content_repair_disables_reasoning(monkeypatch) -> None:
+    """First scientist call enables thinking (so the model has reasoning headroom);
+    if it returns empty content, the repair retry disables thinking and uses the
+    smaller repair budget. Requires ``SURVEY_SCIENTIST_SUPPORTS_REASONING=true``
+    so the catalog actually leaves scientist reasoning_mode=on for the first call.
+    """
+    from agentic_survey.config import get_settings
+
+    monkeypatch.setenv("SURVEY_SCIENTIST_SUPPORTS_REASONING", "true")
+    get_settings.cache_clear()
+
     router = _RepairRouter()
     client = LLMClient(
         _Pool(),  # type: ignore[arg-type]
@@ -154,3 +164,5 @@ def test_empty_content_repair_disables_reasoning() -> None:
     assert router.calls[0]["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
     assert router.calls[1]["max_tokens"] == REPAIR_COMPLETION_TOKENS
     assert router.calls[1]["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+
+    get_settings.cache_clear()

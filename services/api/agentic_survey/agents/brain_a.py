@@ -208,6 +208,8 @@ async def stream_brain_a(
     }
     if catalog_resolution is not None:
         apply_reasoning_settings(catalog_resolution, request)
+        if catalog_resolution.temperature is not None:
+            request["temperature"] = catalog_resolution.temperature
     else:
         set_lmstudio_thinking(request, enabled=False)
     stream = await router.acompletion(**request)

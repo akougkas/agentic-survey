@@ -36,29 +36,35 @@ def _intent_json() -> str:
     ).model_dump_json()
 
 
-def _scientist_resolution(*, mode: str = "on") -> CatalogResolution:
+def _scientist_resolution(
+    *, mode: str = "on", temperature: float | None = 0.3
+) -> CatalogResolution:
     return CatalogResolution(
         role="scientist",
         source="catalog_default",
-        catalog_id="dynamo-scientist",
-        endpoint="dynamo",
+        catalog_id="scientist-default",
+        endpoint="scientist",
         model_id="nvidia-nemotron-3-nano-omni-30b-a3b-reasoning",
-        api_base="http://dynamo:1234/v1",
+        api_base="http://scientist-host:1234/v1",
         reasoning_mode=mode,  # type: ignore[arg-type]
         reasoning_kwarg="enable_thinking",
+        temperature=temperature,
     )
 
 
-def _chatter_resolution(*, mode: str = "off") -> CatalogResolution:
+def _chatter_resolution(
+    *, mode: str = "off", temperature: float | None = 0.7
+) -> CatalogResolution:
     return CatalogResolution(
         role="chatter",
         source="catalog_default",
-        catalog_id="mini-chatter",
-        endpoint="mini",
-        model_id="gemma-4-26B-A4B-it-Q4_K_M",
-        api_base="http://mini:8080/v1",
+        catalog_id="chatter-default",
+        endpoint="chatter",
+        model_id="AgenticQwen-30B-A3B-i1-Q4_K_M",
+        api_base="http://chatter-host:8080/v1",
         reasoning_mode=mode,  # type: ignore[arg-type]
         reasoning_kwarg="enable_thinking",
+        temperature=temperature,
     )
 
 
@@ -226,3 +232,113 @@ def test_brain_a_default_resolution_falls_back_to_mini_chatter_off() -> None:
     chat_template_kwargs = extra_body.get("chat_template_kwargs") or {}
     assert chat_template_kwargs.get("enable_thinking") is False
     assert request["max_tokens"] >= 4096
+
+
+def test_brain_a_request_threads_chatter_temperature() -> None:
+    """Chatter resolution carries a per-brain temperature; Brain A must apply it."""
+    router = _BrainAStreamRouter()
+    intent = BrainBIntent.model_validate_json(_intent_json())
+
+    async def _run() -> None:
+        async for _chunk in stream_brain_a(
+            role="mira-chatter",
+            prompt_md_path="interviewer_brain_a.md",
+            transcript_tail=[],
+            brain_b_intent=intent,
+            persona="",
+            router=router,
+            catalog_resolution=_chatter_resolution(temperature=0.7),
+        ):
+            pass
+
+    asyncio.run(_run())
+
+    request = router.calls[0]
+    assert request.get("temperature") == 0.7
+
+
+def test_brain_b_request_threads_scientist_temperature() -> None:
+    """Scientist resolution carries a per-brain temperature; Brain B must apply it."""
+    router = _BrainBRouter()
+
+    async def _run() -> None:
+        await run_brain_b_with_tools(
+            surface="interviewer",
+            system_context=[],
+            transcript_tail=[],
+            registry=ToolRegistry([]),
+            router=router,
+            rubric_axes=[],
+            catalog_resolution=_scientist_resolution(mode="on", temperature=0.3),
+        )
+
+    asyncio.run(_run())
+
+    request = router.calls[0]
+    assert request.get("temperature") == 0.3
+
+
+def test_seed_entries_clamps_scientist_reasoning_off_when_unsupported(monkeypatch) -> None:
+    """When the deployed scientist model does not support reasoning, the
+    catalog must clamp scientist + analyst reasoning_mode to ``off``.
+
+    Without the clamp, a non-thinking model (Gemma, AgenticQwen, Qwen3-base)
+    receives ``enable_thinking=true`` from the catalog default and produces
+    thousands of tokens of stream-of-consciousness before any tool call,
+    blowing per-turn latency past the participant pacing window.
+    """
+    from agentic_survey.config import get_settings
+    from agentic_survey.llm.catalog import seed_entries
+
+    monkeypatch.setenv("SURVEY_SCIENTIST_SUPPORTS_REASONING", "false")
+    get_settings.cache_clear()  # reload settings under patched env
+
+    entries = {entry.role: entry for entry in seed_entries()}
+    assert entries["scientist"].reasoning_mode == "off"
+    assert entries["analyst"].reasoning_mode == "off"
+    # Validator and ingest were already off; chatter is always off.
+    assert entries["validator"].reasoning_mode == "off"
+    assert entries["ingest"].reasoning_mode == "off"
+    assert entries["chatter"].reasoning_mode == "off"
+
+    get_settings.cache_clear()
+
+
+def test_seed_entries_keeps_scientist_reasoning_on_when_supported(monkeypatch) -> None:
+    """The clamp is gated on the env var; the default behavior is reasoning-on
+    so dual-machine deploys with Nemotron OMNI on the scientist endpoint keep
+    their thinking budget."""
+    from agentic_survey.config import get_settings
+    from agentic_survey.llm.catalog import seed_entries
+
+    monkeypatch.setenv("SURVEY_SCIENTIST_SUPPORTS_REASONING", "true")
+    get_settings.cache_clear()
+
+    entries = {entry.role: entry for entry in seed_entries()}
+    assert entries["scientist"].reasoning_mode == "on"
+    assert entries["analyst"].reasoning_mode == "on"
+
+    get_settings.cache_clear()
+
+
+def test_seed_entries_threads_per_brain_temperatures(monkeypatch) -> None:
+    """seed_entries reads chatter/scientist temperatures from settings and
+    sets them on each catalog entry. Validator and ingest stay deterministic
+    at 0.0 regardless of the scientist temperature; embedding has no
+    temperature."""
+    from agentic_survey.config import get_settings
+    from agentic_survey.llm.catalog import seed_entries
+
+    monkeypatch.setenv("SURVEY_CHATTER_TEMPERATURE", "0.85")
+    monkeypatch.setenv("SURVEY_SCIENTIST_TEMPERATURE", "0.25")
+    get_settings.cache_clear()
+
+    entries = {entry.role: entry for entry in seed_entries()}
+    assert entries["chatter"].temperature == 0.85
+    assert entries["scientist"].temperature == 0.25
+    assert entries["analyst"].temperature == 0.25
+    assert entries["validator"].temperature == 0.0
+    assert entries["ingest"].temperature == 0.0
+    assert entries["embedding"].temperature is None
+
+    get_settings.cache_clear()
