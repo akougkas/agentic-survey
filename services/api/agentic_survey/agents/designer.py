@@ -236,6 +236,7 @@ async def run_designer_turn(
         propose_search_queries=propose_queries_fn,
         graph_neighborhood=neighborhood_fn,
         catalog_resolution=scientist_resolution,
+        campaign_id=campaign.id,
     )
 
     working = (
@@ -253,6 +254,8 @@ async def run_designer_turn(
         persona=persona,
         router=router,
         catalog_resolution=chatter_resolution,
+        surface="designer",
+        campaign_id=campaign.id,
     ):
         chunks.append(token)
     reply_text = "".join(chunks).strip()

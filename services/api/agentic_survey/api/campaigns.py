@@ -462,27 +462,54 @@ async def submit_designer_turn(
 
 
 _KEEPALIVE_SECONDS = 15.0
+_CAMPAIGN_STREAM_EXCLUDED_EVENTS = {"token"}
 
 
 def _sse_frame(envelope: EventEnvelope) -> bytes:
     """Format one EventEnvelope as a single SSE frame."""
     payload = json.dumps(envelope.data, default=str, sort_keys=True)
-    return f"id: {envelope.seq}\nevent: {envelope.name}\ndata: {payload}\n\n".encode("utf-8")
+    event_line = f"event: {envelope.name}\ndata: {payload}\n\n"
+    if envelope.seq < 0:
+        return event_line.encode("utf-8")
+    return f"id: {envelope.seq}\n{event_line}".encode("utf-8")
 
 
 async def _campaign_event_stream(
     campaign_id: str,
     request: Request,
     since: int,
+    repository: InMemoryRepository,
 ) -> AsyncIterator[bytes]:
     bus = get_event_bus()
     queue = bus.subscribe(campaign_id)
     try:
         # Replay first: every envelope in the ring with a higher seq.
+        replayed_sequences: set[int] = set()
         for envelope in bus.replay(campaign_id, since=since):
             if await request.is_disconnected():
                 return
+            if envelope.name in _CAMPAIGN_STREAM_EXCLUDED_EVENTS:
+                continue
+            replayed_sequences.add(envelope.seq)
             yield _sse_frame(envelope)
+        for row in repository.list_interview_events_for_campaign(
+            campaign_id,
+            after_sequence=since,
+            limit=500,
+        ):
+            if row.sequence in replayed_sequences:
+                continue
+            if row.event_name in _CAMPAIGN_STREAM_EXCLUDED_EVENTS:
+                continue
+            if await request.is_disconnected():
+                return
+            yield _sse_frame(
+                EventEnvelope(
+                    seq=row.sequence,
+                    name=row.event_name,
+                    data=row.payload,
+                )
+            )
         # Then live. Keepalive comments keep intermediaries from closing idle streams.
         while True:
             if await request.is_disconnected():
@@ -491,6 +518,8 @@ async def _campaign_event_stream(
                 envelope = await asyncio.wait_for(queue.get(), timeout=_KEEPALIVE_SECONDS)
             except asyncio.TimeoutError:
                 yield b": keepalive\n\n"
+                continue
+            if envelope.name in _CAMPAIGN_STREAM_EXCLUDED_EVENTS:
                 continue
             yield _sse_frame(envelope)
     finally:
@@ -526,7 +555,7 @@ async def stream_campaign_events(
         cursor = -1
 
     return StreamingResponse(
-        _campaign_event_stream(campaign_id, request, cursor),
+        _campaign_event_stream(campaign_id, request, cursor, repository),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

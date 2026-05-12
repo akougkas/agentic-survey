@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from secrets import token_urlsafe
 from threading import RLock
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -141,6 +141,42 @@ class ValidatorResultRecord(BaseModel):
     extracted_concepts: list[dict] = Field(default_factory=list)
     extracted_relations: list[dict] = Field(default_factory=list)
     objective_tags: list[str] = Field(default_factory=list)
+    created_at: str
+
+
+class InterviewEventRecord(BaseModel):
+    id: str
+    campaign_id: str
+    session_id: str | None = None
+    turn_id: str | None = None
+    event_name: str
+    payload: dict = Field(default_factory=dict)
+    sequence: int
+    created_at: str
+
+
+class LLMAuditRecord(BaseModel):
+    id: str
+    campaign_id: str | None = None
+    session_id: str | None = None
+    turn_id: str | None = None
+    surface: str
+    brain: str | None = None
+    role: str | None = None
+    model_alias: str
+    catalog_id: str | None = None
+    catalog_route: str | None = None
+    endpoint: str
+    endpoint_model: str | None = None
+    latency_ms: int
+    status: Literal["ok", "failed"]
+    error_summary: str | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    reasoning_tokens: int | None = None
+    reasoning_metadata: dict = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
     created_at: str
 
 
@@ -283,6 +319,13 @@ def _timestamp() -> str:
     return _utcnow().isoformat()
 
 
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def _campaign_id() -> str:
     return f"campaign-{uuid4().hex[:12]}"
 
@@ -382,6 +425,13 @@ class InMemoryRepository:
         self._retrieval_audits: dict[str, RetrievalAuditRow] = {}
         self._retrieval_audits_by_campaign: dict[str, list[str]] = {}
         self._validator_results_by_turn: dict[str, ValidatorResultRecord] = {}
+        self._interview_events: dict[str, InterviewEventRecord] = {}
+        self._interview_events_by_campaign: dict[str, list[str]] = {}
+        self._interview_events_by_session: dict[str, list[str]] = {}
+        self._interview_event_next_sequence: dict[str, int] = {}
+        self._llm_audits: dict[str, LLMAuditRecord] = {}
+        self._llm_audits_by_campaign: dict[str, list[str]] = {}
+        self._llm_audits_by_session: dict[str, list[str]] = {}
         self._chunk_embeddings: dict[str, list[float]] = {}
         self._concepts: dict[str, Concept] = {}
         self._concept_by_label: dict[tuple[str, str], str] = {}
@@ -959,6 +1009,145 @@ class InMemoryRepository:
         with self._lock:
             row = self._validator_results_by_turn.get(turn_id)
             return None if row is None else row.model_copy(deep=True)
+
+    def record_interview_events(
+        self,
+        *,
+        campaign_id: str,
+        events: list[Any],
+    ) -> list[InterviewEventRecord]:
+        """Persist replayable interview lifecycle events in campaign order."""
+        if not events:
+            return []
+        records: list[InterviewEventRecord] = []
+        with self._lock:
+            sequence = self._interview_event_next_sequence.get(campaign_id, 0)
+            for event in events:
+                name = str(getattr(event, "name", "") or "")
+                payload_raw = getattr(event, "data", {}) or {}
+                payload = dict(payload_raw) if isinstance(payload_raw, dict) else {}
+                session_id = _optional_str(payload.get("session_id"))
+                turn_id = _optional_str(payload.get("turn_id"))
+                record = InterviewEventRecord(
+                    id=f"ievent-{uuid4().hex[:12]}",
+                    campaign_id=campaign_id,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    event_name=name,
+                    payload=payload,
+                    sequence=sequence,
+                    created_at=_timestamp(),
+                )
+                sequence += 1
+                self._interview_events[record.id] = record
+                self._interview_events_by_campaign.setdefault(campaign_id, []).append(record.id)
+                if session_id:
+                    self._interview_events_by_session.setdefault(session_id, []).append(record.id)
+                records.append(record.model_copy(deep=True))
+            self._interview_event_next_sequence[campaign_id] = sequence
+        return records
+
+    def list_interview_events_for_campaign(
+        self,
+        campaign_id: str,
+        *,
+        session_id: str | None = None,
+        after_sequence: int | None = None,
+        limit: int = 200,
+    ) -> list[InterviewEventRecord]:
+        with self._lock:
+            ids = list(self._interview_events_by_campaign.get(campaign_id, []))
+            rows = [self._interview_events[event_id].model_copy(deep=True) for event_id in ids]
+        if session_id is not None:
+            rows = [row for row in rows if row.session_id == session_id]
+        if after_sequence is not None:
+            rows = [row for row in rows if row.sequence > after_sequence]
+        rows.sort(key=lambda row: (row.sequence, row.created_at, row.id))
+        return rows[: max(0, min(limit, 1000))]
+
+    def list_interview_events_for_session(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int | None = None,
+        limit: int = 200,
+    ) -> list[InterviewEventRecord]:
+        with self._lock:
+            ids = list(self._interview_events_by_session.get(session_id, []))
+            rows = [self._interview_events[event_id].model_copy(deep=True) for event_id in ids]
+        if after_sequence is not None:
+            rows = [row for row in rows if row.sequence > after_sequence]
+        rows.sort(key=lambda row: (row.sequence, row.created_at, row.id))
+        return rows[: max(0, min(limit, 1000))]
+
+    def latest_interview_event_sequence(self, campaign_id: str) -> int:
+        with self._lock:
+            ids = self._interview_events_by_campaign.get(campaign_id, [])
+            if not ids:
+                return -1
+            return max(self._interview_events[event_id].sequence for event_id in ids)
+
+    def record_llm_audit(self, payload: dict[str, Any]) -> LLMAuditRecord:
+        row = LLMAuditRecord(
+            id=f"llmaudit-{uuid4().hex[:12]}",
+            campaign_id=_optional_str(payload.get("campaign_id")),
+            session_id=_optional_str(payload.get("session_id")),
+            turn_id=_optional_str(payload.get("turn_id")),
+            surface=str(payload.get("surface") or "unknown"),
+            brain=_optional_str(payload.get("brain")),
+            role=_optional_str(payload.get("role")),
+            model_alias=str(payload.get("model_alias") or payload.get("model") or "unknown"),
+            catalog_id=_optional_str(payload.get("catalog_id")),
+            catalog_route=_optional_str(payload.get("catalog_route")),
+            endpoint=str(payload.get("endpoint") or "unknown"),
+            endpoint_model=_optional_str(payload.get("endpoint_model")),
+            latency_ms=int(payload.get("latency_ms") or 0),
+            status="failed" if payload.get("status") == "failed" else "ok",
+            error_summary=_optional_str(payload.get("error_summary")),
+            prompt_tokens=int(payload.get("prompt_tokens") or 0),
+            completion_tokens=int(payload.get("completion_tokens") or 0),
+            total_tokens=int(payload.get("total_tokens") or 0),
+            reasoning_tokens=(
+                int(payload["reasoning_tokens"])
+                if payload.get("reasoning_tokens") is not None
+                else None
+            ),
+            reasoning_metadata=dict(payload.get("reasoning_metadata") or {}),
+            metadata=dict(payload.get("metadata") or {}),
+            created_at=str(payload.get("created_at") or _timestamp()),
+        )
+        with self._lock:
+            self._llm_audits[row.id] = row
+            if row.campaign_id:
+                self._llm_audits_by_campaign.setdefault(row.campaign_id, []).append(row.id)
+            if row.session_id:
+                self._llm_audits_by_session.setdefault(row.session_id, []).append(row.id)
+        return row.model_copy(deep=True)
+
+    def list_llm_audits(
+        self,
+        *,
+        campaign_id: str | None = None,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+        limit: int = 200,
+    ) -> list[LLMAuditRecord]:
+        with self._lock:
+            if session_id is not None:
+                ids = list(self._llm_audits_by_session.get(session_id, []))
+            elif campaign_id is not None:
+                ids = list(self._llm_audits_by_campaign.get(campaign_id, []))
+            else:
+                ids = list(self._llm_audits)
+            rows = [self._llm_audits[audit_id].model_copy(deep=True) for audit_id in ids]
+        if campaign_id is not None:
+            rows = [row for row in rows if row.campaign_id == campaign_id]
+        if session_id is not None:
+            rows = [row for row in rows if row.session_id == session_id]
+        if turn_id is not None:
+            rows = [row for row in rows if row.turn_id == turn_id]
+        rows.sort(key=lambda row: row.created_at, reverse=True)
+        return rows[: max(0, min(limit, 1000))]
 
     def upsert_question_answer(
         self,

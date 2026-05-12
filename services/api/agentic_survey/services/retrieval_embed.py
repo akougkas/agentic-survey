@@ -11,7 +11,10 @@ error; invariant: no silent fallback.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
+
+from agentic_survey.llm.callbacks import failure_callback, success_callback
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,7 @@ async def embed_query(
     router: Any,
     model: str = "embeddings",
     expected_dim: int = EXPECTED_DIM,
+    metadata: dict[str, Any] | None = None,
 ) -> list[float]:
     """Embed a single query string using the embeddings model.
 
@@ -49,10 +53,18 @@ async def embed_query(
     if not cleaned:
         raise RetrievalError("query must be a non-empty string")
 
+    request = {
+        "model": model,
+        "input": [cleaned],
+        "metadata": metadata or {"surface": "retrieval", "brain": "embedding"},
+    }
+    start_time = datetime.now(tz=UTC)
     try:
         response = await router.aembedding(model=model, input=[cleaned])
     except Exception as exc:
+        failure_callback(request, exc, start_time, datetime.now(tz=UTC))
         raise RetrievalError(f"query embedding call failed: {exc}") from exc
+    success_callback(request, response, start_time, datetime.now(tz=UTC))
 
     vector = _extract_single_vector(response)
     if len(vector) != expected_dim:

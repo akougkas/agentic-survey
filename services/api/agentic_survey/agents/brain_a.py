@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -7,6 +8,7 @@ from typing import Any, AsyncIterator
 from agentic_survey.domain.intent import BrainBIntent
 from agentic_survey.domain.outline import OutlineArtifact
 from agentic_survey.domain.tools import GetUserInputOptions
+from agentic_survey.llm.callbacks import failure_callback, success_callback
 from agentic_survey.llm.catalog import CatalogResolution
 from agentic_survey.llm.reasoning import (
     apply_reasoning_settings,
@@ -159,6 +161,10 @@ async def stream_brain_a(
     router,
     participant_context: dict[str, str] | None = None,
     catalog_resolution: CatalogResolution | None = None,
+    surface: str = "designer",
+    campaign_id: str | None = None,
+    session_id: str | None = None,
+    turn_id: str | None = None,
 ) -> AsyncIterator[str]:
     """Stream Brain A's conversational reply token-by-token.
 
@@ -204,16 +210,45 @@ async def stream_brain_a(
         "messages": messages,
         "stream": True,
         "max_tokens": visible_reply_max_tokens(),
-        "metadata": {"surface": "designer", "brain": "A"},
+        "metadata": {
+            "surface": surface,
+            "brain": "A",
+            "campaign_id": campaign_id,
+            "session_id": session_id,
+            "turn_id": turn_id,
+        },
     }
     if catalog_resolution is not None:
+        request["metadata"].update(
+            {
+                "catalog_id": catalog_resolution.catalog_id,
+                "catalog_role": catalog_resolution.role,
+                "router_alias": role,
+                "route_source": catalog_resolution.source,
+                "endpoint_name": catalog_resolution.endpoint,
+                "endpoint_model": catalog_resolution.model_id,
+                "reasoning_mode": catalog_resolution.reasoning_mode,
+                "reasoning_kwarg": catalog_resolution.reasoning_kwarg,
+                "reasoning_budget_tokens": catalog_resolution.reasoning_budget_tokens,
+            }
+        )
         apply_reasoning_settings(catalog_resolution, request)
         if catalog_resolution.temperature is not None:
             request["temperature"] = catalog_resolution.temperature
     else:
         set_lmstudio_thinking(request, enabled=False)
-    stream = await router.acompletion(**request)
-    async for chunk in stream:
-        text = _extract_chunk_text(chunk)
-        if text:
-            yield text
+    start_time = datetime.now(tz=UTC)
+    try:
+        stream = await router.acompletion(**request)
+    except Exception as exc:
+        failure_callback(request, exc, start_time, datetime.now(tz=UTC))
+        raise
+    try:
+        async for chunk in stream:
+            text = _extract_chunk_text(chunk)
+            if text:
+                yield text
+    except Exception as exc:
+        failure_callback(request, exc, start_time, datetime.now(tz=UTC))
+        raise
+    success_callback(request, {}, start_time, datetime.now(tz=UTC))

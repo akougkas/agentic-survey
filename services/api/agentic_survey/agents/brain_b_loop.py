@@ -5,6 +5,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -12,6 +13,7 @@ from pydantic import ValidationError
 
 from agentic_survey.agents.tools.registry import ToolDispatchError, ToolRegistry
 from agentic_survey.domain.intent import AxisCoverage, BrainBIntent, QuestionCoverage
+from agentic_survey.llm.callbacks import failure_callback, success_callback
 from agentic_survey.llm.catalog import CatalogResolution
 from agentic_survey.llm.reasoning import (
     apply_reasoning_settings,
@@ -1369,6 +1371,9 @@ async def run_brain_b_with_tools(
     last_participant_message: str = "",
     participant_extracted_concepts: list[str] | None = None,
     catalog_resolution: CatalogResolution | None = None,
+    campaign_id: str | None = None,
+    session_id: str | None = None,
+    turn_id: str | None = None,
 ) -> BrainBLoopResult:
     """Single tool-calling loop shared by Designer and Interviewer Brain B.
 
@@ -1477,12 +1482,28 @@ async def run_brain_b_with_tools(
             "metadata": {
                 "surface": surface,
                 "brain": "B",
+                "campaign_id": campaign_id,
+                "session_id": session_id,
+                "turn_id": turn_id,
                 "iteration": iteration,
                 "terminal_only": terminal_only,
                 "thinking_enabled": thinking_enabled,
             },
         }
         if effective_resolution is not None:
+            completion_kwargs["metadata"].update(
+                {
+                    "catalog_id": effective_resolution.catalog_id,
+                    "catalog_role": effective_resolution.role,
+                    "router_alias": "mira-scientist",
+                    "route_source": effective_resolution.source,
+                    "endpoint_name": effective_resolution.endpoint,
+                    "endpoint_model": effective_resolution.model_id,
+                    "reasoning_mode": effective_resolution.reasoning_mode,
+                    "reasoning_kwarg": effective_resolution.reasoning_kwarg,
+                    "reasoning_budget_tokens": effective_resolution.reasoning_budget_tokens,
+                }
+            )
             apply_reasoning_settings(effective_resolution, completion_kwargs)
             thinking_enabled = bool(
                 completion_kwargs.get("extra_body", {})
@@ -1511,7 +1532,14 @@ async def run_brain_b_with_tools(
         completion_kwargs["parallel_tool_calls"] = False
 
         start_time = time.monotonic()
-        response = await router.acompletion(**completion_kwargs)
+        audit_start = datetime.now(tz=UTC)
+        try:
+            response = await router.acompletion(**completion_kwargs)
+        except Exception as exc:
+            failure_callback(completion_kwargs, exc, audit_start, datetime.now(tz=UTC))
+            raise
+        audit_end = datetime.now(tz=UTC)
+        success_callback(completion_kwargs, response, audit_start, audit_end)
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         message = _extract_message(response)
         tool_calls = _normalize_tool_calls(message)

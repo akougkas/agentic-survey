@@ -148,11 +148,47 @@ DEFINE FIELD IF NOT EXISTS created_at ON TABLE validator_result TYPE datetime;
 DEFINE INDEX IF NOT EXISTS validator_result_turn_unique ON TABLE validator_result COLUMNS turn UNIQUE;
 
 DEFINE TABLE IF NOT EXISTS interview_event SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS session ON TABLE interview_event TYPE record<interview_session>;
+DEFINE FIELD IF NOT EXISTS campaign ON TABLE interview_event TYPE record<campaign>;
+DEFINE FIELD IF NOT EXISTS session ON TABLE interview_event TYPE option<record<interview_session>>;
+DEFINE FIELD IF NOT EXISTS turn ON TABLE interview_event TYPE option<record<interview_turn>>;
 DEFINE FIELD IF NOT EXISTS event_name ON TABLE interview_event TYPE string;
-DEFINE FIELD IF NOT EXISTS payload ON TABLE interview_event TYPE object;
+DEFINE FIELD IF NOT EXISTS payload ON TABLE interview_event FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS sequence ON TABLE interview_event TYPE int
+    ASSERT $value >= 0;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE interview_event TYPE datetime DEFAULT time::now();
-DEFINE INDEX IF NOT EXISTS interview_event_session_idx ON TABLE interview_event COLUMNS session, created_at;
+DEFINE INDEX IF NOT EXISTS interview_event_campaign_sequence_unique
+    ON TABLE interview_event COLUMNS campaign, sequence UNIQUE;
+DEFINE INDEX IF NOT EXISTS interview_event_campaign_idx
+    ON TABLE interview_event COLUMNS campaign, sequence;
+DEFINE INDEX IF NOT EXISTS interview_event_session_idx
+    ON TABLE interview_event COLUMNS session, sequence;
+
+DEFINE TABLE IF NOT EXISTS llm_audit SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS campaign ON TABLE llm_audit TYPE option<record<campaign>>;
+DEFINE FIELD IF NOT EXISTS session ON TABLE llm_audit TYPE option<record<interview_session>>;
+DEFINE FIELD IF NOT EXISTS turn ON TABLE llm_audit TYPE option<record<interview_turn>>;
+DEFINE FIELD IF NOT EXISTS surface ON TABLE llm_audit TYPE string;
+DEFINE FIELD IF NOT EXISTS brain ON TABLE llm_audit TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS role ON TABLE llm_audit TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS model_alias ON TABLE llm_audit TYPE string;
+DEFINE FIELD IF NOT EXISTS catalog_id ON TABLE llm_audit TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS catalog_route ON TABLE llm_audit TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS endpoint ON TABLE llm_audit TYPE string;
+DEFINE FIELD IF NOT EXISTS endpoint_model ON TABLE llm_audit TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS latency_ms ON TABLE llm_audit TYPE int
+    ASSERT $value >= 0;
+DEFINE FIELD IF NOT EXISTS status ON TABLE llm_audit TYPE string
+    ASSERT $value IN ["ok","failed"];
+DEFINE FIELD IF NOT EXISTS error_summary ON TABLE llm_audit TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS prompt_tokens ON TABLE llm_audit TYPE int DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS completion_tokens ON TABLE llm_audit TYPE int DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS total_tokens ON TABLE llm_audit TYPE int DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS reasoning_tokens ON TABLE llm_audit TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS reasoning_metadata ON TABLE llm_audit FLEXIBLE TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS metadata ON TABLE llm_audit FLEXIBLE TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE llm_audit TYPE datetime DEFAULT time::now();
+DEFINE INDEX IF NOT EXISTS llm_audit_campaign_idx ON TABLE llm_audit COLUMNS campaign, created_at;
+DEFINE INDEX IF NOT EXISTS llm_audit_session_idx ON TABLE llm_audit COLUMNS session, created_at;
 
 DEFINE TABLE IF NOT EXISTS question_answer SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS campaign ON TABLE question_answer TYPE record<campaign>;

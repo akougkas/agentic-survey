@@ -4,7 +4,8 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, Callable
 
 from agentic_survey.agents.brain_a import build_scaffold_intent, stream_brain_a
 from agentic_survey.agents.brain_b_interviewer import (
@@ -15,6 +16,7 @@ from agentic_survey.agents.brain_b_interviewer import (
 from agentic_survey.agents.brain_b_loop import _apply_closing_prose_guard
 from agentic_survey.agents.validator import Validator
 from agentic_survey.domain.intent import AxisCoverage, BrainBIntent, QuestionCoverage
+from agentic_survey.engine.event_publisher import persist_and_publish_events
 from agentic_survey.engine.graph_builder import apply_validator_to_graph
 
 if TYPE_CHECKING:
@@ -26,6 +28,7 @@ from agentic_survey.engine.session_policy import (
     derive_objective_tags,
 )
 from agentic_survey.llm.client import resolve_catalog_route
+from agentic_survey.llm.callbacks import failure_callback, success_callback
 from agentic_survey.llm.router import LiteLLMRouter
 from agentic_survey.llm.reasoning import (
     apply_reasoning_settings,
@@ -296,6 +299,7 @@ async def run_interview_turn(
     validator: Validator,
     router: LiteLLMRouter,
     cache: RetrievalCache,
+    event_sink: Callable[[InterviewEvent], None] | None = None,
 ) -> InterviewTurnResult:
     """Run one participant turn in the **foreground**.
 
@@ -357,6 +361,12 @@ async def run_interview_turn(
         content=content,
         validation=validation_payload,
     )
+    events.append(
+        InterviewEvent(
+            name="participant_turn",
+            data={"session_id": session.id, "turn_id": participant_turn.id},
+        )
+    )
 
     if control == "pause":
         paused = repository.pause_interview_session(session.id, reason="participant_paused")
@@ -384,6 +394,8 @@ async def run_interview_turn(
             close_reason=close_reason,
             events=events,
             repository=repository,
+            event_sink=event_sink,
+            turn_id=participant_turn.id,
         )
         agent_turn = repository.append_interview_turn(
             refreshed.id,
@@ -449,9 +461,23 @@ async def run_interview_turn(
         router=router,
         participant_context=dict(refreshed.micro_form_answers or {}),
         catalog_resolution=chatter_resolution,
+        surface="interviewer",
+        campaign_id=campaign.id,
+        session_id=refreshed.id,
+        turn_id=participant_turn.id,
     ):
         chunks.append(token)
-        events.append(InterviewEvent(name="token", data={"text": token}))
+        token_event = InterviewEvent(
+            name="token",
+            data={
+                "session_id": refreshed.id,
+                "participant_turn_id": participant_turn.id,
+                "text": token,
+            },
+        )
+        events.append(token_event)
+        if event_sink is not None:
+            event_sink(token_event)
 
     reply_text = "".join(chunks).strip()
     intent = _apply_closing_prose_guard(intent, reply_text=reply_text)
@@ -603,6 +629,8 @@ async def _post_turn_background_inner(
             content=participant_turn.content,
             outline=campaign.outline,
             previous_agent_question=last_agent,
+            session_id=session_id,
+            turn_id=participant_turn_id,
         )
         validation_payload = result.to_dict()
         validation_payload["objective_tags"] = derive_objective_tags(
@@ -622,9 +650,11 @@ async def _post_turn_background_inner(
             turn_id=participant_turn_id,
             validation=validation_payload,
         )
-        bus.publish_many(
-            campaign_id,
-            [
+        persist_and_publish_events(
+            repository=repository,
+            bus=bus,
+            campaign_id=campaign_id,
+            events=[
                 InterviewEvent(
                     name="validator_scored",
                     data={
@@ -657,9 +687,11 @@ async def _post_turn_background_inner(
             ],
             "light_up": list(delta.light_up),
         }
-        bus.publish_many(
-            campaign_id,
-            [
+        persist_and_publish_events(
+            repository=repository,
+            bus=bus,
+            campaign_id=campaign_id,
+            events=[
                 InterviewEvent(name="graph_delta", data=delta_payload),
                 InterviewEvent(name="concepts_extracted", data=concept_payload),
             ],
@@ -724,6 +756,9 @@ async def _post_turn_background_inner(
         last_participant_message=last_participant_message,
         participant_extracted_concepts=participant_extracted_concepts,
         catalog_resolution=scientist_resolution,
+        campaign_id=campaign_id,
+        session_id=session_id,
+        turn_id=participant_turn_id,
     )
     intent = _attach_retrieval_audit_ids(intent, retrieval_audit_ids)
     intent = _attach_question_coverage_turn_ids(
@@ -754,9 +789,11 @@ async def _post_turn_background_inner(
         prior_question_coverage=prior_question_coverage,
         intent=intent,
     )
-    bus.publish_many(
-        campaign_id,
-        [
+    persist_and_publish_events(
+        repository=repository,
+        bus=bus,
+        campaign_id=campaign_id,
+        events=[
             InterviewEvent(
                 name="brain_b_planned",
                 data={
@@ -967,6 +1004,8 @@ async def run_pre_plan_background(
             reasoning_budget_tokens=preplan_reasoning_budget_tokens(),
             compact_context=True,
             catalog_resolution=scientist_resolution,
+            campaign_id=campaign_id,
+            session_id=session_id,
         )
         intent = _attach_retrieval_audit_ids(intent, retrieval_audit_ids)
         latest = repository.get_interview_session(session_id)
@@ -976,6 +1015,21 @@ async def run_pre_plan_background(
                 status="failed",
                 error_detail="session disappeared during warmup",
             )
+            persist_and_publish_events(
+                repository=repository,
+                bus=bus,
+                campaign_id=campaign_id,
+                events=[
+                    InterviewEvent(
+                        name="preplan_failed",
+                        data={
+                            "session_id": session_id,
+                            "status": "failed",
+                            "error_detail": "session disappeared during warmup",
+                        },
+                    )
+                ],
+            )
             return
         if any(turn.role == "participant" for turn in latest.turns):
             logger.info(
@@ -983,12 +1037,29 @@ async def run_pre_plan_background(
                 session_id,
             )
             repository.update_preplan_status(session_id, status="late_skipped")
+            persist_and_publish_events(
+                repository=repository,
+                bus=bus,
+                campaign_id=campaign_id,
+                events=[
+                    InterviewEvent(
+                        name="preplan_late_skipped",
+                        data={"session_id": session_id, "status": "late_skipped"},
+                    )
+                ],
+            )
             return
         repository.update_next_plan(session_id, intent)
         repository.update_preplan_status(session_id, status="ready")
-        bus.publish_many(
-            campaign_id,
-            [
+        persist_and_publish_events(
+            repository=repository,
+            bus=bus,
+            campaign_id=campaign_id,
+            events=[
+                InterviewEvent(
+                    name="preplan_ready",
+                    data={"session_id": session_id, "status": "ready"},
+                ),
                 InterviewEvent(
                     name="brain_b_planned",
                     data={
@@ -1009,6 +1080,21 @@ async def run_pre_plan_background(
                 session_id,
                 status="failed",
                 error_detail=str(exc),
+            )
+            persist_and_publish_events(
+                repository=repository,
+                bus=bus,
+                campaign_id=campaign_id,
+                events=[
+                    InterviewEvent(
+                        name="preplan_failed",
+                        data={
+                            "session_id": session_id,
+                            "status": "failed",
+                            "error_detail": str(exc),
+                        },
+                    )
+                ],
             )
         except Exception:  # noqa: BLE001
             logger.exception(
@@ -1038,6 +1124,8 @@ async def _stream_closing(
     close_reason: str,
     events: list[InterviewEvent],
     repository: InMemoryRepository | None = None,
+    event_sink: Callable[[InterviewEvent], None] | None = None,
+    turn_id: str | None = None,
 ) -> str:
     """Invoke Brain A in closing mode: no chips, short reflective prose.
 
@@ -1067,24 +1155,60 @@ async def _stream_closing(
         "messages": messages,
         "stream": True,
         "max_tokens": visible_reply_max_tokens(),
-        "metadata": {"surface": "interviewer", "brain": "A", "mode": "closing"},
+        "metadata": {
+            "surface": "interviewer",
+            "brain": "A",
+            "mode": "closing",
+            "campaign_id": campaign.id,
+            "session_id": session.id,
+            "turn_id": turn_id,
+        },
     }
     if repository is not None:
         chatter_resolution = resolve_catalog_route(
             "chatter", repository=repository, campaign=campaign
+        )
+        request_payload["metadata"].update(
+            {
+                "catalog_id": chatter_resolution.catalog_id,
+                "catalog_role": chatter_resolution.role,
+                "router_alias": "mira-chatter",
+                "route_source": chatter_resolution.source,
+                "endpoint_name": chatter_resolution.endpoint,
+                "endpoint_model": chatter_resolution.model_id,
+                "reasoning_mode": chatter_resolution.reasoning_mode,
+                "reasoning_kwarg": chatter_resolution.reasoning_kwarg,
+                "reasoning_budget_tokens": chatter_resolution.reasoning_budget_tokens,
+            }
         )
         apply_reasoning_settings(chatter_resolution, request_payload)
         if chatter_resolution.temperature is not None:
             request_payload["temperature"] = chatter_resolution.temperature
     else:
         set_lmstudio_thinking(request_payload, enabled=False)
-    stream = await router.acompletion(**request_payload)
+    start_time = datetime.now(tz=UTC)
+    try:
+        stream = await router.acompletion(**request_payload)
+    except Exception as exc:
+        failure_callback(request_payload, exc, start_time, datetime.now(tz=UTC))
+        raise
     chunks: list[str] = []
-    async for chunk in stream:
-        text = _extract_chunk_text(chunk)
-        if text:
-            chunks.append(text)
-            events.append(InterviewEvent(name="token", data={"text": text}))
+    try:
+        async for chunk in stream:
+            text = _extract_chunk_text(chunk)
+            if text:
+                chunks.append(text)
+                token_event = InterviewEvent(
+                    name="token",
+                    data={"session_id": session.id, "text": text, "closing": True},
+                )
+                events.append(token_event)
+                if event_sink is not None:
+                    event_sink(token_event)
+    except Exception as exc:
+        failure_callback(request_payload, exc, start_time, datetime.now(tz=UTC))
+        raise
+    success_callback(request_payload, {}, start_time, datetime.now(tz=UTC))
     return "".join(chunks).strip()
 
 

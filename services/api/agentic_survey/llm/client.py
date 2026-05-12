@@ -7,7 +7,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-from agentic_survey.llm.callbacks import failure_callback, success_callback
+from agentic_survey.llm.callbacks import (
+    failure_callback,
+    set_llm_audit_repository,
+    success_callback,
+)
 from agentic_survey.llm.catalog import (
     AgentRole as CatalogRole,
     CatalogResolution,
@@ -112,6 +116,7 @@ class LLMClient:
         self._repository = repository
         self._enabled = enabled
         self._timeout_seconds = timeout_seconds
+        set_llm_audit_repository(repository)
 
     @property
     def enabled(self) -> bool:
@@ -154,6 +159,7 @@ class LLMClient:
         response_format: dict | None = None,
         extra_body: dict | None = None,
         disable_reasoning: bool = False,
+        audit_turn_id: str | None = None,
     ) -> ChatCompletion:
         if not self._enabled:
             raise LLMUnavailable("llm client disabled (SURVEY_LLM_ENABLED=false)")
@@ -179,7 +185,10 @@ class LLMClient:
                 "reasoning_mode": resolution.reasoning_mode,
                 "reasoning_kwarg": resolution.reasoning_kwarg,
                 "reasoning_budget_tokens": resolution.reasoning_budget_tokens,
+                "campaign_id": campaign.id if campaign is not None else None,
             }
+            if audit_turn_id is not None:
+                metadata_extra["turn_id"] = audit_turn_id
             logger.warning(
                 "llm route surface=%s catalog_role=%s source=%s using catalog=%s alias=%s endpoint=%s model=%s reasoning=%s/%s",
                 role.value,

@@ -12,6 +12,9 @@ Design:
 - One bounded ring buffer per campaign for replay. A late-joining client
   passes ``since=<seq>`` and receives every envelope with a higher seq
   that is still in the ring.
+- Transient events are supported for live-only participant UI updates
+  such as Brain A token chunks. They are delivered to current
+  subscribers, never enter the replay ring, and carry no cursor id.
 - Publishers are fire-and-forget and never block. A slow subscriber
   drops its own oldest queued event rather than slowing the turn loop.
 - Envelope ``seq`` is monotonic per campaign; gaps in the sequence a
@@ -80,6 +83,39 @@ class CampaignEventBus:
             for queue in list(subs):
                 _offer(queue, envelope)
         self._next_seq[campaign_id] = next_seq
+
+    def publish_many_with_sequences(
+        self,
+        campaign_id: str,
+        events: list[InterviewEvent],
+        sequences: list[int],
+    ) -> None:
+        if not events:
+            return
+        if len(events) != len(sequences):
+            raise ValueError("events and sequences must have the same length")
+        ring = self._rings.setdefault(campaign_id, deque(maxlen=self._ring_size))
+        subs = self._subs.get(campaign_id, set())
+        next_seq = self._next_seq.get(campaign_id, 0)
+        for event, sequence in zip(events, sequences, strict=True):
+            envelope = EventEnvelope(seq=sequence, name=event.name, data=event.data)
+            next_seq = max(next_seq, sequence + 1)
+            ring.append(envelope)
+            for queue in list(subs):
+                _offer(queue, envelope)
+        self._next_seq[campaign_id] = next_seq
+
+    def publish_transient_many(self, campaign_id: str, events: list[InterviewEvent]) -> None:
+        """Deliver live-only events without adding replay/cursor state."""
+        if not events:
+            return
+        subs = self._subs.get(campaign_id, set())
+        if not subs:
+            return
+        for event in events:
+            envelope = EventEnvelope(seq=-1, name=event.name, data=event.data)
+            for queue in list(subs):
+                _offer(queue, envelope)
 
     def replay(self, campaign_id: str, since: int) -> list[EventEnvelope]:
         ring = self._rings.get(campaign_id)

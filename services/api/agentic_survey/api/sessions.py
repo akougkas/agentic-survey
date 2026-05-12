@@ -25,7 +25,12 @@ from agentic_survey.engine.event_bus import (
     EventEnvelope,
     get_event_bus,
 )
+from agentic_survey.engine.event_publisher import (
+    persist_and_publish_events,
+    publish_transient_events,
+)
 from agentic_survey.engine.interview_loop import (
+    InterviewEvent,
     opening_turn_message,
     run_interview_turn,
 )
@@ -39,6 +44,7 @@ from agentic_survey.engine.interview_loop import (
 # filter do not silently drop them.
 _BUS_EVENT_NAMES = {
     "turn_start",
+    "participant_turn",
     "turn_complete",
     "graph_delta",
     "get_user_input",
@@ -48,6 +54,7 @@ _BUS_EVENT_NAMES = {
     "brain_b_planned",
     "concepts_extracted",
 }
+_TRANSIENT_SESSION_EVENT_NAMES = {"token"}
 from agentic_survey.engine.retrieval_cache import RetrievalCache
 from agentic_survey.llm.client import get_llm_client
 from agentic_survey.llm.router import get_litellm_router
@@ -141,10 +148,21 @@ async def start_participant_loop(
     if session.turns:
         return SessionBundleResponse(session=session, campaign=campaign)
 
-    repository.append_interview_turn(
+    opening_turn = repository.append_interview_turn(
         session.id,
         role="agent",
         content=opening_turn_message(campaign, session),
+    )
+    persist_and_publish_events(
+        repository=repository,
+        bus=get_event_bus(),
+        campaign_id=campaign.id,
+        events=[
+            InterviewEvent(
+                name="session_started",
+                data={"session_id": session.id, "turn_id": opening_turn.id},
+            )
+        ],
     )
     session = repository.get_interview_session(session.id)  # type: ignore[assignment]
     assert session is not None
@@ -189,7 +207,22 @@ async def submit_participant_turn(
     if session.status != "active":
         raise HTTPException(status_code=409, detail="Session is no longer active")
     campaign = _load_campaign(repository, session.campaign_id)
-    cancel_pre_plan_bg(session_id=session.id, repository=repository)
+    bus = get_event_bus()
+    cancel_pre_plan_bg(
+        session_id=session.id,
+        repository=repository,
+        campaign_id=campaign.id,
+        bus=bus,
+    )
+
+
+    def _live_event_sink(event: InterviewEvent) -> None:
+        if event.name in _TRANSIENT_SESSION_EVENT_NAMES:
+            publish_transient_events(
+                bus=bus,
+                campaign_id=campaign.id,
+                events=[event],
+            )
 
     result = await run_interview_turn(
         session_id=session.id,
@@ -199,10 +232,16 @@ async def submit_participant_turn(
         validator=_validator,
         router=get_litellm_router(),
         cache=_retrieval_cache,
+        event_sink=_live_event_sink,
     )
 
     bus_events = [event for event in result.events if event.name in _BUS_EVENT_NAMES]
-    get_event_bus().publish_many(campaign.id, bus_events)
+    persist_and_publish_events(
+        repository=repository,
+        bus=bus,
+        campaign_id=campaign.id,
+        events=bus_events,
+    )
 
     agent_turn = result.agent_turn
     participant_turn = result.participant_turn
@@ -220,7 +259,7 @@ async def submit_participant_turn(
             router=get_litellm_router(),
             validator=_validator,
             cache=_retrieval_cache,
-            bus=get_event_bus(),
+            bus=bus,
         )
 
     return SessionBundleResponse(session=result.session, campaign=campaign)
@@ -259,6 +298,7 @@ async def stream_session_events(
             session_id=session_id,
             request=request,
             since=cursor,
+            repository=repository,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -268,7 +308,10 @@ async def stream_session_events(
 def _sse_frame(envelope: EventEnvelope) -> bytes:
     """Format one EventEnvelope as a single SSE frame."""
     payload = json.dumps(envelope.data, default=str, sort_keys=True)
-    return f"id: {envelope.seq}\nevent: {envelope.name}\ndata: {payload}\n\n".encode("utf-8")
+    event_line = f"event: {envelope.name}\ndata: {payload}\n\n"
+    if envelope.seq < 0:
+        return event_line.encode("utf-8")
+    return f"id: {envelope.seq}\n{event_line}".encode("utf-8")
 
 
 def _schedule_pre_plan(
@@ -304,16 +347,35 @@ async def _session_event_stream(
     session_id: str,
     request: Request,
     since: int,
+    repository: InMemoryRepository,
 ) -> AsyncIterator[bytes]:
     bus = get_event_bus()
     queue = bus.subscribe(campaign_id)
     try:
+        replayed_sequences: set[int] = set()
         for envelope in bus.replay(campaign_id, since=since):
             if await request.is_disconnected():
                 return
             if not _event_matches_session(envelope, session_id):
                 continue
+            replayed_sequences.add(envelope.seq)
             yield _sse_frame(envelope)
+        for row in repository.list_interview_events_for_session(
+            session_id,
+            after_sequence=since,
+            limit=500,
+        ):
+            if row.sequence in replayed_sequences:
+                continue
+            if await request.is_disconnected():
+                return
+            yield _sse_frame(
+                EventEnvelope(
+                    seq=row.sequence,
+                    name=row.event_name,
+                    data=row.payload,
+                )
+            )
         while True:
             if await request.is_disconnected():
                 return
@@ -348,4 +410,16 @@ async def finish_session(
     participant = get_participant_session_from_request(request, settings, repository)
     is_participant = participant is not None and participant.id == session.id
     close_reason = "participant_self_close" if is_participant else "scientist_override"
-    return repository.finish_interview_session(session_id, close_reason=close_reason)
+    finished = repository.finish_interview_session(session_id, close_reason=close_reason)
+    persist_and_publish_events(
+        repository=repository,
+        bus=get_event_bus(),
+        campaign_id=finished.campaign_id,
+        events=[
+            InterviewEvent(
+                name="session_finished",
+                data={"session_id": finished.id, "close_reason": close_reason},
+            )
+        ],
+    )
+    return finished

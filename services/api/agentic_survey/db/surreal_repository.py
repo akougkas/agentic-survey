@@ -24,6 +24,7 @@ from agentic_survey.repository import (
     DesignerSession,
     DesignerTurn,
     InMemoryRepository,
+    InterviewEventRecord,
     InterviewSessionRecord,
     InterviewTurnRecord,
     Invite,
@@ -31,6 +32,7 @@ from agentic_survey.repository import (
     KnowledgeSource,
     KnowledgeSourceKind,
     KnowledgeSourceStatus,
+    LLMAuditRecord,
     OutlineRevision,
     QuestionAnswerRecord,
     RetrievalAuditRow,
@@ -51,6 +53,13 @@ def _utcnow() -> datetime:
 
 def _timestamp() -> str:
     return _utcnow().isoformat()
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _ensure_iso(value: Any) -> str:
@@ -1047,6 +1056,233 @@ class SurrealRepository:
             return None
         return self._row_to_validator_result(rows[0])
 
+    def record_interview_events(
+        self,
+        *,
+        campaign_id: str,
+        events: list[Any],
+    ) -> list[InterviewEventRecord]:
+        if not events:
+            return []
+        records: list[InterviewEventRecord] = []
+        with self._lock:
+            latest = self._query(
+                """
+                SELECT sequence
+                FROM interview_event
+                WHERE campaign = type::thing('campaign', $cid)
+                ORDER BY sequence DESC
+                LIMIT 1;
+                """,
+                {"cid": campaign_id},
+            )
+            sequence = int(latest[0]["sequence"]) + 1 if latest else 0
+            for event in events:
+                name = str(getattr(event, "name", "") or "")
+                payload_raw = getattr(event, "data", {}) or {}
+                payload = dict(payload_raw) if isinstance(payload_raw, dict) else {}
+                session_id = _optional_str(payload.get("session_id"))
+                turn_id = _optional_str(payload.get("turn_id"))
+                event_id = f"ievent-{uuid4().hex[:12]}"
+                now_dt = _utcnow()
+                self._db().create(
+                    RecordID("interview_event", event_id),
+                    {
+                        "campaign": RecordID("campaign", campaign_id),
+                        "session": (
+                            RecordID("interview_session", session_id)
+                            if session_id is not None
+                            else None
+                        ),
+                        "turn": (
+                            RecordID("interview_turn", turn_id)
+                            if turn_id is not None
+                            else None
+                        ),
+                        "event_name": name,
+                        "payload": payload,
+                        "sequence": sequence,
+                        "created_at": now_dt,
+                    },
+                )
+                records.append(
+                    InterviewEventRecord(
+                        id=event_id,
+                        campaign_id=campaign_id,
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        event_name=name,
+                        payload=payload,
+                        sequence=sequence,
+                        created_at=now_dt.isoformat(),
+                    )
+                )
+                sequence += 1
+        return [record.model_copy(deep=True) for record in records]
+
+    def list_interview_events_for_campaign(
+        self,
+        campaign_id: str,
+        *,
+        session_id: str | None = None,
+        after_sequence: int | None = None,
+        limit: int = 200,
+    ) -> list[InterviewEventRecord]:
+        bounded_limit = max(0, min(limit, 1000))
+        params: dict[str, Any] = {
+            "cid": campaign_id,
+            "sid": session_id,
+            "after": -1 if after_sequence is None else after_sequence,
+        }
+        session_filter = (
+            "AND session = type::thing('interview_session', $sid)"
+            if session_id is not None
+            else ""
+        )
+        rows = self._query(
+            f"""
+            SELECT *
+            FROM interview_event
+            WHERE campaign = type::thing('campaign', $cid)
+              AND sequence > $after
+              {session_filter}
+            ORDER BY sequence ASC
+            LIMIT {bounded_limit};
+            """,
+            params,
+        )
+        return [self._row_to_interview_event(row) for row in rows or []]
+
+    def list_interview_events_for_session(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int | None = None,
+        limit: int = 200,
+    ) -> list[InterviewEventRecord]:
+        bounded_limit = max(0, min(limit, 1000))
+        rows = self._query(
+            f"""
+            SELECT *
+            FROM interview_event
+            WHERE session = type::thing('interview_session', $sid)
+              AND sequence > $after
+            ORDER BY sequence ASC
+            LIMIT {bounded_limit};
+            """,
+            {
+                "sid": session_id,
+                "after": -1 if after_sequence is None else after_sequence,
+            },
+        )
+        return [self._row_to_interview_event(row) for row in rows or []]
+
+    def latest_interview_event_sequence(self, campaign_id: str) -> int:
+        rows = self._query(
+            """
+            SELECT sequence
+            FROM interview_event
+            WHERE campaign = type::thing('campaign', $cid)
+            ORDER BY sequence DESC
+            LIMIT 1;
+            """,
+            {"cid": campaign_id},
+        )
+        return int(rows[0]["sequence"]) if rows else -1
+
+    def record_llm_audit(self, payload: dict[str, Any]) -> LLMAuditRecord:
+        audit_id = f"llmaudit-{uuid4().hex[:12]}"
+        now_raw = payload.get("created_at")
+        now_dt = _to_dt(now_raw) if isinstance(now_raw, (str, datetime)) else _utcnow()
+        campaign_id = _optional_str(payload.get("campaign_id"))
+        session_id = _optional_str(payload.get("session_id"))
+        turn_id = _optional_str(payload.get("turn_id"))
+        row_payload = {
+            "campaign": RecordID("campaign", campaign_id) if campaign_id else None,
+            "session": RecordID("interview_session", session_id) if session_id else None,
+            "turn": RecordID("interview_turn", turn_id) if turn_id else None,
+            "surface": str(payload.get("surface") or "unknown"),
+            "brain": _optional_str(payload.get("brain")),
+            "role": _optional_str(payload.get("role")),
+            "model_alias": str(payload.get("model_alias") or payload.get("model") or "unknown"),
+            "catalog_id": _optional_str(payload.get("catalog_id")),
+            "catalog_route": _optional_str(payload.get("catalog_route")),
+            "endpoint": str(payload.get("endpoint") or "unknown"),
+            "endpoint_model": _optional_str(payload.get("endpoint_model")),
+            "latency_ms": int(payload.get("latency_ms") or 0),
+            "status": "failed" if payload.get("status") == "failed" else "ok",
+            "error_summary": _optional_str(payload.get("error_summary")),
+            "prompt_tokens": int(payload.get("prompt_tokens") or 0),
+            "completion_tokens": int(payload.get("completion_tokens") or 0),
+            "total_tokens": int(payload.get("total_tokens") or 0),
+            "reasoning_tokens": (
+                int(payload["reasoning_tokens"])
+                if payload.get("reasoning_tokens") is not None
+                else None
+            ),
+            "reasoning_metadata": dict(payload.get("reasoning_metadata") or {}),
+            "metadata": dict(payload.get("metadata") or {}),
+            "created_at": now_dt,
+        }
+        self._db().create(RecordID("llm_audit", audit_id), row_payload)
+        return LLMAuditRecord(
+            id=audit_id,
+            campaign_id=campaign_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            surface=row_payload["surface"],
+            brain=row_payload["brain"],
+            role=row_payload["role"],
+            model_alias=row_payload["model_alias"],
+            catalog_id=row_payload["catalog_id"],
+            catalog_route=row_payload["catalog_route"],
+            endpoint=row_payload["endpoint"],
+            endpoint_model=row_payload["endpoint_model"],
+            latency_ms=row_payload["latency_ms"],
+            status=row_payload["status"],
+            error_summary=row_payload["error_summary"],
+            prompt_tokens=row_payload["prompt_tokens"],
+            completion_tokens=row_payload["completion_tokens"],
+            total_tokens=row_payload["total_tokens"],
+            reasoning_tokens=row_payload["reasoning_tokens"],
+            reasoning_metadata=row_payload["reasoning_metadata"],
+            metadata=row_payload["metadata"],
+            created_at=now_dt.isoformat(),
+        )
+
+    def list_llm_audits(
+        self,
+        *,
+        campaign_id: str | None = None,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+        limit: int = 200,
+    ) -> list[LLMAuditRecord]:
+        filters: list[str] = []
+        params: dict[str, Any] = {}
+        bounded_limit = max(0, min(limit, 1000))
+        if campaign_id is not None:
+            filters.append("campaign = type::thing('campaign', $cid)")
+            params["cid"] = campaign_id
+        if session_id is not None:
+            filters.append("session = type::thing('interview_session', $sid)")
+            params["sid"] = session_id
+        if turn_id is not None:
+            filters.append("turn = type::thing('interview_turn', $tid)")
+            params["tid"] = turn_id
+        where = "WHERE " + " AND ".join(filters) if filters else ""
+        rows = self._query(
+            f"""
+            SELECT *
+            FROM llm_audit
+            {where}
+            ORDER BY created_at DESC
+            LIMIT {bounded_limit};
+            """,
+            params,
+        )
+        return [self._row_to_llm_audit(row) for row in rows or []]
+
     def upsert_question_answer(
         self,
         *,
@@ -1321,6 +1557,53 @@ class SurrealRepository:
                 for item in row.get("objective_tags") or []
                 if isinstance(item, str)
             ],
+            created_at=_ensure_iso(row.get("created_at")),
+        )
+
+    def _row_to_interview_event(self, row: dict) -> InterviewEventRecord:
+        session_ref = row.get("session")
+        turn_ref = row.get("turn")
+        return InterviewEventRecord(
+            id=_record_id("interview_event", row.get("id")),
+            campaign_id=_record_id("campaign", row.get("campaign")),
+            session_id=_record_id("interview_session", session_ref) if session_ref else None,
+            turn_id=_record_id("interview_turn", turn_ref) if turn_ref else None,
+            event_name=str(row.get("event_name") or ""),
+            payload=dict(row.get("payload") or {}),
+            sequence=int(row.get("sequence") or 0),
+            created_at=_ensure_iso(row.get("created_at")),
+        )
+
+    def _row_to_llm_audit(self, row: dict) -> LLMAuditRecord:
+        campaign_ref = row.get("campaign")
+        session_ref = row.get("session")
+        turn_ref = row.get("turn")
+        return LLMAuditRecord(
+            id=_record_id("llm_audit", row.get("id")),
+            campaign_id=_record_id("campaign", campaign_ref) if campaign_ref else None,
+            session_id=_record_id("interview_session", session_ref) if session_ref else None,
+            turn_id=_record_id("interview_turn", turn_ref) if turn_ref else None,
+            surface=str(row.get("surface") or "unknown"),
+            brain=_optional_str(row.get("brain")),
+            role=_optional_str(row.get("role")),
+            model_alias=str(row.get("model_alias") or "unknown"),
+            catalog_id=_optional_str(row.get("catalog_id")),
+            catalog_route=_optional_str(row.get("catalog_route")),
+            endpoint=str(row.get("endpoint") or "unknown"),
+            endpoint_model=_optional_str(row.get("endpoint_model")),
+            latency_ms=int(row.get("latency_ms") or 0),
+            status="failed" if row.get("status") == "failed" else "ok",
+            error_summary=_optional_str(row.get("error_summary")),
+            prompt_tokens=int(row.get("prompt_tokens") or 0),
+            completion_tokens=int(row.get("completion_tokens") or 0),
+            total_tokens=int(row.get("total_tokens") or 0),
+            reasoning_tokens=(
+                int(row["reasoning_tokens"])
+                if row.get("reasoning_tokens") is not None
+                else None
+            ),
+            reasoning_metadata=dict(row.get("reasoning_metadata") or {}),
+            metadata=dict(row.get("metadata") or {}),
             created_at=_ensure_iso(row.get("created_at")),
         )
 

@@ -64,6 +64,9 @@ async def run_brain_b_interviewer(
     last_participant_message: str = "",
     participant_extracted_concepts: list[str] | None = None,
     catalog_resolution: CatalogResolution | None = None,
+    campaign_id: str | None = None,
+    session_id: str | None = None,
+    turn_id: str | None = None,
 ) -> BrainBIntent:
     """Run Interviewer Brain B as a tool-calling agent.
 
@@ -176,6 +179,9 @@ async def run_brain_b_interviewer(
         last_participant_message=last_participant_message,
         participant_extracted_concepts=participant_extracted_concepts,
         catalog_resolution=catalog_resolution,
+        campaign_id=campaign_id,
+        session_id=session_id,
+        turn_id=turn_id,
     )
     return result.intent
 

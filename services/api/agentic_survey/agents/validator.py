@@ -66,6 +66,8 @@ class Validator(BaseAgent):
         content: str,
         outline: OutlineArtifact,
         previous_agent_question: str,
+        session_id: str | None = None,
+        turn_id: str | None = None,
     ) -> ValidationResult:
         if self._llm is None:
             raise LLMUnavailable("validator has no llm client configured")
@@ -74,6 +76,8 @@ class Validator(BaseAgent):
             content=content,
             outline=outline,
             previous_agent_question=previous_agent_question,
+            session_id=session_id,
+            turn_id=turn_id,
         )
 
     async def _llm_validate(
@@ -83,6 +87,8 @@ class Validator(BaseAgent):
         content: str,
         outline: OutlineArtifact,
         previous_agent_question: str,
+        session_id: str | None = None,
+        turn_id: str | None = None,
     ) -> ValidationResult:
         assert self._llm is not None
         objectives = "\n".join(f"- {obj}" for obj in outline.objectives)
@@ -98,10 +104,12 @@ class Validator(BaseAgent):
         raw = await self._llm.chat(
             AgentRole.VALIDATOR,
             messages,
+            session_id=session_id,
             campaign=campaign,
             temperature=0.0,
             max_tokens=1024,
             disable_reasoning=True,
+            audit_turn_id=turn_id,
         )
         try:
             return self._parse(raw.content)
@@ -131,10 +139,12 @@ class Validator(BaseAgent):
             repaired = await self._llm.chat(
                 AgentRole.VALIDATOR,
                 repair_messages,
+                session_id=session_id,
                 campaign=campaign,
                 temperature=0.0,
                 max_tokens=1024,
                 disable_reasoning=True,
+                audit_turn_id=turn_id,
             )
             return self._parse(repaired.content)
 

@@ -97,6 +97,29 @@ def test_publish_empty_list_is_noop() -> None:
     assert bus.replay("cid", since=-1) == []
 
 
+def test_transient_publish_reaches_subscriber_without_replay() -> None:
+    async def main() -> tuple[CampaignEventBus, EventEnvelope]:
+        bus = CampaignEventBus()
+        q = bus.subscribe("cid")
+        bus.publish_transient_many("cid", [InterviewEvent(name="token", data={"text": "hi"})])
+        return bus, q.get_nowait()
+
+    bus, got = asyncio.run(main())
+    assert got.seq == -1
+    assert got.name == "token"
+    assert got.data == {"text": "hi"}
+    assert bus.replay("cid", since=-1) == []
+    assert bus.latest_seq("cid") == -1
+
+
+def test_publish_with_sequences_uses_durable_cursor() -> None:
+    bus = CampaignEventBus()
+    bus.publish_many_with_sequences("cid", _make_events(["a", "b"]), [10, 11])
+    envs = bus.replay("cid", since=9)
+    assert [env.seq for env in envs] == [10, 11]
+    assert bus.latest_seq("cid") == 11
+
+
 def test_sequence_is_per_campaign() -> None:
     bus = CampaignEventBus()
     bus.publish_many("a", _make_events(["x", "y"]))

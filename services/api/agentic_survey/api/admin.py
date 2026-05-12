@@ -25,6 +25,7 @@ from agentic_survey.repository import (
     AdminSession,
     InMemoryRepository,
     InterviewSessionRecord,
+    LLMAuditRecord,
     QuestionAnswerRecord,
     get_repository,
 )
@@ -59,6 +60,15 @@ class TurnAuditResponse(BaseModel):
     validator_result: dict[str, Any] | None = None
     retrieval: TurnRetrievalAudit
     preplan: SessionPreplanAudit
+    llm_audits: list[LLMAuditRecord] = Field(default_factory=list)
+
+
+class InterviewEventListResponse(BaseModel):
+    items: list[dict[str, Any]]
+
+
+class LLMAuditListResponse(BaseModel):
+    items: list[LLMAuditRecord]
 
 
 class AdminLoginRequest(BaseModel):
@@ -446,6 +456,119 @@ async def get_turn_audit(
             error_detail=session.preplan_error_detail,
             inflight=session.preplan_inflight,
         ),
+        llm_audits=repository.list_llm_audits(
+            campaign_id=campaign_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            limit=50,
+        ),
+    )
+
+
+@router.get(
+    "/campaigns/{campaign_id}/events",
+    dependencies=[Depends(require_admin_session)],
+)
+async def list_campaign_interview_events(
+    campaign_id: str,
+    session_id: str | None = None,
+    after_sequence: int | None = None,
+    limit: int = 200,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> InterviewEventListResponse:
+    if repository.get_campaign(campaign_id) is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if session_id is not None:
+        session = repository.get_interview_session(session_id)
+        if session is None or session.campaign_id != campaign_id:
+            raise HTTPException(status_code=404, detail="Session not found for this campaign")
+    rows = repository.list_interview_events_for_campaign(
+        campaign_id,
+        session_id=session_id,
+        after_sequence=after_sequence,
+        limit=limit,
+    )
+    return InterviewEventListResponse(
+        items=[row.model_dump(mode="json") for row in rows],
+    )
+
+
+@router.get(
+    "/campaigns/{campaign_id}/sessions/{session_id}/events",
+    dependencies=[Depends(require_admin_session)],
+)
+async def list_session_interview_events(
+    campaign_id: str,
+    session_id: str,
+    after_sequence: int | None = None,
+    limit: int = 200,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> InterviewEventListResponse:
+    _require_campaign_session(
+        campaign_id=campaign_id,
+        session_id=session_id,
+        repository=repository,
+    )
+    rows = repository.list_interview_events_for_session(
+        session_id,
+        after_sequence=after_sequence,
+        limit=limit,
+    )
+    return InterviewEventListResponse(
+        items=[row.model_dump(mode="json") for row in rows],
+    )
+
+
+@router.get(
+    "/campaigns/{campaign_id}/llm-audits",
+    dependencies=[Depends(require_admin_session)],
+)
+async def list_campaign_llm_audits(
+    campaign_id: str,
+    session_id: str | None = None,
+    turn_id: str | None = None,
+    limit: int = 200,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> LLMAuditListResponse:
+    if repository.get_campaign(campaign_id) is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if session_id is not None:
+        session = repository.get_interview_session(session_id)
+        if session is None or session.campaign_id != campaign_id:
+            raise HTTPException(status_code=404, detail="Session not found for this campaign")
+    return LLMAuditListResponse(
+        items=repository.list_llm_audits(
+            campaign_id=campaign_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            limit=limit,
+        )
+    )
+
+
+@router.get(
+    "/campaigns/{campaign_id}/sessions/{session_id}/llm-audits",
+    dependencies=[Depends(require_admin_session)],
+)
+async def list_session_llm_audits(
+    campaign_id: str,
+    session_id: str,
+    turn_id: str | None = None,
+    limit: int = 200,
+    repository: InMemoryRepository = Depends(get_repository),
+) -> LLMAuditListResponse:
+    _require_campaign_session(
+        campaign_id=campaign_id,
+        session_id=session_id,
+        repository=repository,
+    )
+    return LLMAuditListResponse(
+        items=repository.list_llm_audits(
+            campaign_id=campaign_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            limit=limit,
+        )
     )
 
 
@@ -626,5 +749,8 @@ async def get_campaign_graph_snapshot(
         campaign_id=campaign_id,
         nodes=nodes,
         edges=edges,
-        latest_event_seq=get_event_bus().latest_seq(campaign_id),
+        latest_event_seq=max(
+            get_event_bus().latest_seq(campaign_id),
+            repository.latest_interview_event_sequence(campaign_id),
+        ),
     )

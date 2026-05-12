@@ -86,6 +86,7 @@ def test_sse_frame_format() -> None:
 
 def test_generator_replays_ring() -> None:
     reset_event_bus()
+    repo = InMemoryRepository()
     get_event_bus().publish_many(
         "cid",
         [
@@ -96,7 +97,7 @@ def test_generator_replays_ring() -> None:
     # is_disconnected() returns False twice (one check per replay yield) then True.
     request = _FakeRequest(disconnect_after_yields=2)
 
-    chunks = asyncio.run(_drain(_campaign_event_stream("cid", request, since=-1)))
+    chunks = asyncio.run(_drain(_campaign_event_stream("cid", request, since=-1, repository=repo)))
     assert len(chunks) == 2
     assert b"id: 0\nevent: turn_start\n" in chunks[0]
     assert b"id: 1\nevent: graph_delta\n" in chunks[1]
@@ -104,13 +105,14 @@ def test_generator_replays_ring() -> None:
 
 def test_generator_since_filters_out_old_events() -> None:
     reset_event_bus()
+    repo = InMemoryRepository()
     get_event_bus().publish_many(
         "cid",
         [InterviewEvent(name=n, data={}) for n in ("a", "b", "c")],
     )
     request = _FakeRequest(disconnect_after_yields=2)
 
-    chunks = asyncio.run(_drain(_campaign_event_stream("cid", request, since=0)))
+    chunks = asyncio.run(_drain(_campaign_event_stream("cid", request, since=0, repository=repo)))
     assert len(chunks) == 2
     assert b"id: 1\n" in chunks[0]
     assert b"id: 2\n" in chunks[1]
@@ -119,11 +121,12 @@ def test_generator_since_filters_out_old_events() -> None:
 def test_generator_unsubscribes_on_disconnect() -> None:
     """The ``finally`` in the generator must drop the subscriber queue."""
     reset_event_bus()
+    repo = InMemoryRepository()
     get_event_bus().publish_many("cid", [InterviewEvent(name="x", data={})])
     bus = get_event_bus()
     request = _FakeRequest(disconnect_after_yields=1)
 
-    asyncio.run(_drain(_campaign_event_stream("cid", request, since=-1)))
+    asyncio.run(_drain(_campaign_event_stream("cid", request, since=-1, repository=repo)))
 
     assert bus.subscriber_count("cid") == 0
 
@@ -131,10 +134,11 @@ def test_generator_unsubscribes_on_disconnect() -> None:
 def test_generator_respects_disconnect_before_replay() -> None:
     """If the client hangs up before any replay yield, nothing is emitted."""
     reset_event_bus()
+    repo = InMemoryRepository()
     get_event_bus().publish_many("cid", [InterviewEvent(name="x", data={})])
     request = _FakeRequest(disconnect_after_yields=0)
 
-    chunks = asyncio.run(_drain(_campaign_event_stream("cid", request, since=-1)))
+    chunks = asyncio.run(_drain(_campaign_event_stream("cid", request, since=-1, repository=repo)))
     assert chunks == []
 
 

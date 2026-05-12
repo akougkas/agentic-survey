@@ -39,6 +39,7 @@ EXPECTED_TABLES = {
     "interview_turn",
     "validator_result",
     "interview_event",
+    "llm_audit",
     "question_answer",
     "method_observation",
     "knowledge_source",

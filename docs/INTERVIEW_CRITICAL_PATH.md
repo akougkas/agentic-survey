@@ -54,9 +54,10 @@ flowchart LR
 ```
 
 The participant shell uses normal HTTP calls for state-changing work and an SSE
-connection for background updates. The visible agent reply is generated through a
-streaming LiteLLM call internally, but the current `POST /sessions/{id}/turns`
-handler waits for the full reply and returns a refreshed session bundle.
+connection for live/background updates. `POST /sessions/{id}/turns` still waits
+for the full Brain A reply before returning the refreshed session bundle, but
+Brain A token chunks are also emitted as live-only `token` SSE events while the
+request is in flight so the participant sees Mira composing.
 
 ## Interview Start
 
@@ -224,6 +225,10 @@ Background events published on success:
 - `concepts_extracted`
 - `brain_b_planned`
 
+These events are persisted as `interview_event` rows before they are published
+to the in-process campaign bus. Pre-plan warmup also persists
+`preplan_ready`, `preplan_late_skipped`, or `preplan_failed` where applicable.
+
 If the background task raises, the exception is logged and the agent turn's
 validation dict is marked with `background_failed=true`. The exception is not
 raised back to the already-completed participant request.
@@ -319,9 +324,15 @@ flowchart LR
 Important write points:
 
 - Invite redemption writes `interview_session` and marks the `invite` used.
+- Invite redemption persists a `session_created` `interview_event`.
 - `/sessions/{id}/start` writes the deterministic opening `interview_turn`.
+- `/sessions/{id}/start` persists a `session_started` `interview_event`.
 - Each participant message writes a participant `interview_turn`.
+- Each participant message persists `turn_start` and `participant_turn`
+  `interview_event` rows.
 - Each Mira response writes an agent `interview_turn`.
+- Each Mira response persists `turn_complete`; pause/finish paths persist
+  `session_paused` and `session_finished`.
 - Validator output is merged into `interview_turn.validation` and upserted to
   the queryable `validator_result` row keyed by participant turn.
 - Graph extraction writes or updates `concept`, `mentioned_with`, and
@@ -332,11 +343,14 @@ Important write points:
 - Brain B plans carry `retrieval_audit_ids`; the rendered agent turn stores the
   primary `retrieval_audit_id` so admin audit views can load the exact retrieval
   rows used by that turn.
-
-Schema tables currently defined but not the primary write path in this loop:
-
-- `interview_event`: current live updates use the in-memory `CampaignEventBus`
-  ring buffer rather than persistent event rows.
+- `interview_event` stores durable lifecycle events with campaign, optional
+  session/turn, event name, payload, created_at, and per-campaign `sequence`.
+  Admin endpoints can query by campaign or session; SSE reconnects can replay
+  durable rows when the in-memory bus ring is empty after process restart.
+- `llm_audit` stores structured LiteLLM completion audit rows with surface,
+  brain/role, optional campaign/session/turn, model alias, catalog/route,
+  endpoint metadata, latency, status/error summary, token counts, reasoning
+  metadata, metadata, and created_at. Raw prompt/response text is not persisted.
 
 ## Retrieval And Grounding
 
@@ -413,10 +427,11 @@ Role behavior:
   - Defaults to the scientist endpoint unless
     `SURVEY_EMBEDDING_ENDPOINT_URL` is set.
 
-LiteLLM success and failure callbacks log `llm_call_audit` JSON containing
-surface, brain, model alias, endpoint metadata, token counts, reasoning content
-metadata when present, latency, and status. These audit rows are log records;
-they are not persisted to SurrealDB by the current callback implementation.
+LiteLLM success and failure callbacks log `llm_call_audit` JSON and persist the
+same structured audit data to `llm_audit`. Direct streaming/tool-calling paths
+that bypass `LLMClient` manually invoke the same callbacks with request metadata
+so Brain A, Brain B, Validator, Designer, and retrieval embedding calls share
+one queryable audit surface.
 
 ## SSE Events Seen By The Chat Page
 
@@ -431,6 +446,7 @@ requested cursor, and filters each event to `data.session_id == session_id`.
 
 The participant chat page listens for:
 
+- `token`
 - `brain_b_planned`
 - `validator_scored`
 - `concepts_extracted`
@@ -442,6 +458,11 @@ The participant chat page listens for:
 The route may publish `get_user_input` as part of the foreground event list, but
 the current chat page does not listen for that event over SSE because the
 refreshed session bundle already includes the agent turn and chip options.
+
+`token` is live-only: it is delivered to current session SSE subscribers without
+entering the durable `interview_event` table or campaign replay ring. Campaign
+streams filter token events so operator graph cursors are not polluted by
+participant-facing prose chunks.
 
 ## Failure And Degradation Rules
 

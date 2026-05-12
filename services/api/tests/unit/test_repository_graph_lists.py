@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from agentic_survey.engine.graph_builder import apply_validator_to_graph
+from agentic_survey.engine.interview_loop import InterviewEvent
 from agentic_survey.repository import InMemoryRepository
 
 
@@ -112,6 +113,103 @@ def test_validator_result_upsert_round_trips_by_turn() -> None:
     assert loaded.id == first.id
     assert loaded.coverage_score == 0.8
     assert loaded.objective_tags == ["R1", "R3"]
+
+
+def test_interview_events_are_queryable_by_campaign_and_session() -> None:
+    repo = InMemoryRepository()
+    campaign = repo.create_campaign(title="Events", min_n=3, max_n=6)
+    session = repo.start_interview_session(
+        campaign_id=campaign.id,
+        invite_id=None,
+        consent_mode="anonymous",
+        identity_label="",
+        persona_snapshot={},
+        pinned_endpoint="chatter",
+    )
+    other = repo.start_interview_session(
+        campaign_id=campaign.id,
+        invite_id=None,
+        consent_mode="anonymous",
+        identity_label="",
+        persona_snapshot={},
+        pinned_endpoint="chatter",
+    )
+
+    repo.record_interview_events(
+        campaign_id=campaign.id,
+        events=[
+            InterviewEvent(name="session_started", data={"session_id": session.id}),
+            InterviewEvent(name="participant_turn", data={"session_id": session.id, "turn_id": "t1"}),
+            InterviewEvent(name="session_started", data={"session_id": other.id}),
+        ],
+    )
+
+    all_rows = repo.list_interview_events_for_campaign(campaign.id)
+    session_rows = repo.list_interview_events_for_session(session.id)
+    assert [row.sequence for row in all_rows] == [0, 1, 2]
+    assert [row.event_name for row in session_rows] == ["session_started", "participant_turn"]
+    assert repo.latest_interview_event_sequence(campaign.id) == 2
+    assert [row.event_name for row in repo.list_interview_events_for_campaign(campaign.id, after_sequence=0)] == [
+        "participant_turn",
+        "session_started",
+    ]
+
+
+def test_llm_audits_are_queryable_by_campaign_session_and_turn() -> None:
+    repo = InMemoryRepository()
+    campaign = repo.create_campaign(title="LLM", min_n=3, max_n=6)
+    session = repo.start_interview_session(
+        campaign_id=campaign.id,
+        invite_id=None,
+        consent_mode="anonymous",
+        identity_label="",
+        persona_snapshot={},
+        pinned_endpoint="chatter",
+    )
+
+    repo.record_llm_audit(
+        {
+            "campaign_id": campaign.id,
+            "session_id": session.id,
+            "turn_id": "turn-1",
+            "surface": "interviewer",
+            "brain": "A",
+            "model_alias": "mira-chatter",
+            "catalog_id": "chatter-default",
+            "catalog_route": "chatter",
+            "endpoint": "chatter",
+            "endpoint_model": "local-model",
+            "latency_ms": 123,
+            "status": "ok",
+            "prompt_tokens": 10,
+            "completion_tokens": 20,
+            "total_tokens": 30,
+            "reasoning_metadata": {"reasoning_mode": "off"},
+            "metadata": {"mode": "test"},
+        }
+    )
+    repo.record_llm_audit(
+        {
+            "campaign_id": campaign.id,
+            "session_id": session.id,
+            "turn_id": "turn-2",
+            "surface": "interviewer",
+            "brain": "B",
+            "model_alias": "mira-scientist",
+            "endpoint": "scientist",
+            "latency_ms": 50,
+            "status": "failed",
+            "error_summary": "timeout",
+        }
+    )
+
+    campaign_rows = repo.list_llm_audits(campaign_id=campaign.id)
+    turn_rows = repo.list_llm_audits(campaign_id=campaign.id, session_id=session.id, turn_id="turn-1")
+    assert {row.turn_id for row in campaign_rows} == {"turn-1", "turn-2"}
+    assert len(turn_rows) == 1
+    assert turn_rows[0].brain == "A"
+    assert turn_rows[0].prompt_tokens == 10
+    assert turn_rows[0].metadata == {"mode": "test"}
 
 
 def test_list_concepts_returns_first_seen_ascending() -> None:

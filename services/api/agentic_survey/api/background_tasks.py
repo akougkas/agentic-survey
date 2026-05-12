@@ -5,7 +5,9 @@ import logging
 
 from agentic_survey.agents.validator import Validator
 from agentic_survey.engine.event_bus import CampaignEventBus
+from agentic_survey.engine.event_publisher import persist_and_publish_events
 from agentic_survey.engine.interview_loop import (
+    InterviewEvent,
     run_post_turn_background,
     run_pre_plan_background,
 )
@@ -46,6 +48,8 @@ def spawn_post_turn_bg(
     cancel_pre_plan_bg(
         session_id=session_id,
         repository=repository,
+        campaign_id=campaign_id,
+        bus=bus,
     )
     task = asyncio.create_task(
         run_post_turn_background(
@@ -68,17 +72,32 @@ def cancel_pre_plan_bg(
     *,
     session_id: str,
     repository: InMemoryRepository,
+    campaign_id: str | None = None,
+    bus: CampaignEventBus | None = None,
 ) -> None:
     task = _pre_plan_tasks_by_session.get(session_id)
     if task is None or task.done():
         return
     task.cancel()
+    _pre_plan_tasks_by_session.pop(session_id, None)
     logger.info(
         "pre-plan background cancelled by participant turn: session=%s",
         session_id,
     )
     try:
         repository.update_preplan_status(session_id, status="late_skipped")
+        if campaign_id is not None and bus is not None:
+            persist_and_publish_events(
+                repository=repository,
+                bus=bus,
+                campaign_id=campaign_id,
+                events=[
+                    InterviewEvent(
+                        name="preplan_late_skipped",
+                        data={"session_id": session_id, "status": "late_skipped"},
+                    )
+                ],
+            )
     except Exception:  # noqa: BLE001
         logger.exception(
             "pre-plan cancellation failed to mark late_skipped: session=%s",

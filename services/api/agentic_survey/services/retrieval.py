@@ -87,7 +87,15 @@ async def search_knowledge(
     elif mode == "vector":
         if router is None:
             raise RetrievalError("vector mode requires a router for embedding the query")
-        vector = await embed_query(cleaned, router=router)
+        vector = await embed_query(
+            cleaned,
+            router=router,
+            metadata=_embedding_metadata(
+                campaign_id=campaign_id,
+                session_id=session_id,
+                surface=surface,
+            ),
+        )
         vec_hash = _hash_vector(vector)
         fused = repository.search_knowledge_chunks_vector(
             campaign_id=campaign_id, vector=vector, k=k
@@ -98,7 +106,15 @@ async def search_knowledge(
         bm25_hits = _run_bm25(repository, campaign_id=campaign_id, query=cleaned, k=k)
         if router is None:
             raise RetrievalError("hybrid mode requires a router for embedding the query")
-        vector = await embed_query(cleaned, router=router)
+        vector = await embed_query(
+            cleaned,
+            router=router,
+            metadata=_embedding_metadata(
+                campaign_id=campaign_id,
+                session_id=session_id,
+                surface=surface,
+            ),
+        )
         vec_hash = _hash_vector(vector)
         vector_hits = repository.search_knowledge_chunks_vector(
             campaign_id=campaign_id, vector=vector, k=max(k * 2, 1)
@@ -194,6 +210,22 @@ def _run_bm25(repository, *, campaign_id: str, query: str, k: int) -> list[Chunk
             campaign_id=campaign_id, query=query, k=k
         )
     )
+
+
+def _embedding_metadata(
+    *,
+    campaign_id: str,
+    session_id: str | None,
+    surface: str,
+) -> dict[str, Any]:
+    return {
+        "surface": surface,
+        "brain": "embedding",
+        "campaign_id": campaign_id,
+        "session_id": session_id,
+        "catalog_role": "embedding",
+        "router_alias": "embeddings",
+    }
 
 
 def _cache_lookup(

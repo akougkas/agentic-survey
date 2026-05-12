@@ -13,6 +13,7 @@ Covers the gotchas the live smoke caught during M2 and M4:
 from __future__ import annotations
 
 from agentic_survey.db.surreal_repository import SurrealRepository
+from agentic_survey.engine.interview_loop import InterviewEvent
 
 
 def test_error_detail_preserved_across_intermediate_status_bumps(
@@ -254,6 +255,93 @@ def test_validator_result_round_trips_by_turn(
     assert loaded.turn_id == turn.id
     assert loaded.coverage_score == 0.8
     assert loaded.objective_tags == ["R1", "R3"]
+
+
+def test_interview_event_round_trips_by_campaign_and_session(
+    surreal_repository: SurrealRepository,
+) -> None:
+    campaign = surreal_repository.create_campaign(
+        title="InterviewEventRoundTrip", min_n=1, max_n=3
+    )
+    session = surreal_repository.start_interview_session(
+        campaign_id=campaign.id,
+        invite_id=None,
+        consent_mode="anonymous",
+        identity_label="anon",
+        persona_snapshot={"role": "tester"},
+        pinned_endpoint="chatter",
+    )
+    surreal_repository.record_interview_events(
+        campaign_id=campaign.id,
+        events=[
+            InterviewEvent(name="session_started", data={"session_id": session.id}),
+            InterviewEvent(name="turn_complete", data={"session_id": session.id, "turn_id": "turn-x"}),
+        ],
+    )
+
+    campaign_rows = surreal_repository.list_interview_events_for_campaign(campaign.id)
+    session_rows = surreal_repository.list_interview_events_for_session(session.id)
+
+    assert [row.sequence for row in campaign_rows] == [0, 1]
+    assert [row.event_name for row in session_rows] == ["session_started", "turn_complete"]
+    assert session_rows[1].turn_id == "turn-x"
+    assert surreal_repository.latest_interview_event_sequence(campaign.id) == 1
+
+
+def test_llm_audit_round_trips_by_campaign_session_and_turn(
+    surreal_repository: SurrealRepository,
+) -> None:
+    campaign = surreal_repository.create_campaign(
+        title="LLMAuditRoundTrip", min_n=1, max_n=3
+    )
+    session = surreal_repository.start_interview_session(
+        campaign_id=campaign.id,
+        invite_id=None,
+        consent_mode="anonymous",
+        identity_label="anon",
+        persona_snapshot={"role": "tester"},
+        pinned_endpoint="chatter",
+    )
+    turn = surreal_repository.append_interview_turn(
+        session.id,
+        role="participant",
+        content="I lost a day to queue metadata.",
+    )
+    surreal_repository.record_llm_audit(
+        {
+            "campaign_id": campaign.id,
+            "session_id": session.id,
+            "turn_id": turn.id,
+            "surface": "interviewer",
+            "brain": "B",
+            "role": "scientist",
+            "model_alias": "mira-scientist",
+            "catalog_id": "scientist-default",
+            "catalog_route": "scientist",
+            "endpoint": "scientist",
+            "endpoint_model": "local-scientist",
+            "latency_ms": 12,
+            "status": "ok",
+            "prompt_tokens": 5,
+            "completion_tokens": 6,
+            "total_tokens": 11,
+            "reasoning_tokens": 2,
+            "reasoning_metadata": {"thinking_enabled": False},
+        }
+    )
+
+    rows = surreal_repository.list_llm_audits(
+        campaign_id=campaign.id,
+        session_id=session.id,
+        turn_id=turn.id,
+    )
+
+    assert len(rows) == 1
+    assert rows[0].campaign_id == campaign.id
+    assert rows[0].session_id == session.id
+    assert rows[0].turn_id == turn.id
+    assert rows[0].brain == "B"
+    assert rows[0].total_tokens == 11
 
 
 def test_list_knowledge_sources_by_status_filters_correctly(

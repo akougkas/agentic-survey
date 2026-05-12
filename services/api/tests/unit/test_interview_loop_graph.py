@@ -42,6 +42,8 @@ class _FakeValidator:
         content: str,
         outline,
         previous_agent_question: str,
+        session_id: str | None = None,
+        turn_id: str | None = None,
     ) -> ValidationResult:
         return ValidationResult(
             coverage_score=0.6,

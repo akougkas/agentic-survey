@@ -51,6 +51,7 @@ async def run_brain_b_designer(
     graph_neighborhood: GraphNeighborhood | None = None,
     max_tool_calls: int = 4,
     catalog_resolution: CatalogResolution | None = None,
+    campaign_id: str | None = None,
 ) -> BrainBIntent:
     """Run Designer Brain B as a tool-calling agent.
 
@@ -87,5 +88,6 @@ async def run_brain_b_designer(
         router=router,
         max_tool_calls=max_tool_calls,
         catalog_resolution=catalog_resolution,
+        campaign_id=campaign_id,
     )
     return result.intent

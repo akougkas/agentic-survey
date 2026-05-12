@@ -13,6 +13,8 @@ from agentic_survey.auth import (
 from agentic_survey.config import Settings, get_settings
 from agentic_survey.domain.outline import MicroFormField
 from agentic_survey.engine.event_bus import get_event_bus
+from agentic_survey.engine.event_publisher import persist_and_publish_events
+from agentic_survey.engine.interview_loop import InterviewEvent
 from agentic_survey.engine.retrieval_cache import RetrievalCache
 from agentic_survey.engine.state_machine import CampaignState
 from agentic_survey.llm.client import get_endpoint_pool
@@ -171,6 +173,17 @@ async def redeem_invite(
     # docs/AGENTS.md promises the Interviewer is pinned for the session's lifetime.
     get_endpoint_pool().pin_session(session.id, settings.default_interviewer_endpoint)
     repository.mark_invite_used(invite.id, session.id)
+    persist_and_publish_events(
+        repository=repository,
+        bus=get_event_bus(),
+        campaign_id=campaign.id,
+        events=[
+            InterviewEvent(
+                name="session_created",
+                data={"session_id": session.id, "invite_id": invite.id},
+            )
+        ],
+    )
     set_participant_session_cookie(response, session.participant_token, settings)
     _schedule_pre_plan(
         session_id=session.id,
