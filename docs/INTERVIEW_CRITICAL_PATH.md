@@ -183,9 +183,11 @@ Foreground behavior:
   - `get_user_input` chip options
   - `validation.planner_source`, either `brain_b` or `scaffold`
 
-The HTTP route returns after the Brain A reply is complete. It publishes
-non-token events to the campaign event bus; token chunks are collected inside
-the foreground result but are not sent over the session SSE stream today.
+The HTTP route returns after the Brain A reply is complete. While the request
+is in flight, Brain A publishes live-only `token` events to the session SSE
+stream so the participant sees Mira composing. Token chunks are not durable
+`interview_event` rows; the persisted contract remains the final agent turn
+plus lifecycle/progress events.
 
 ## Participant Turn: Background Path
 
@@ -350,7 +352,13 @@ Important write points:
 - `llm_audit` stores structured LiteLLM completion audit rows with surface,
   brain/role, optional campaign/session/turn, model alias, catalog/route,
   endpoint metadata, latency, status/error summary, token counts, reasoning
-  metadata, metadata, and created_at. Raw prompt/response text is not persisted.
+  metadata, JSON-safe callback metadata, and created_at. Raw prompt/response
+  text is not persisted.
+
+Designer `outline_patch` sections are treated as untrusted model output. The
+API normalizes common wrapped text shapes (for example `{ "text": "..." }`),
+validates every value against the target `OutlineArtifact` field type, and
+skips invalid sections instead of letting an object replace a string field.
 
 ## Retrieval And Grounding
 
@@ -418,6 +426,10 @@ Role behavior:
   - Used by Brain B for planning and tool use.
   - Reasoning is controlled by `SURVEY_SCIENTIST_SUPPORTS_REASONING`.
   - Temperature comes from `SURVEY_SCIENTIST_TEMPERATURE`.
+  - Planning iterations still use registry tools. When reasoning is enabled,
+    the terminal Brain B handoff uses a JSON-schema `response_format` instead
+    of a forced final tool call so local reasoning models can spend tokens in
+    `reasoning_content` and still return a parseable final object.
 - Validator routes to `validator`.
   - Called by `LLMClient.chat(...)`.
   - Uses `temperature=0.0` and disables reasoning.

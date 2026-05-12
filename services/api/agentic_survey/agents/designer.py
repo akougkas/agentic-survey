@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, get_args, get_origin
+
+from pydantic import TypeAdapter, ValidationError
 
 from agentic_survey.agents.brain_a import stream_brain_a
 from agentic_survey.agents.brain_b_designer import (
@@ -22,6 +25,8 @@ from agentic_survey.services.web_search.suggestions import (
     queue_proposed_queries,
 )
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "DESIGNER_BRAIN_A_PROMPT",
     "DesignerBrainBError",
@@ -36,6 +41,19 @@ __all__ = [
 
 
 DESIGNER_BRAIN_A_PROMPT = "designer_brain_a.md"
+_SKIP_PATCH_VALUE = object()
+_TEXT_PATCH_KEYS = (
+    "text",
+    "value",
+    "content",
+    "question",
+    "research_question",
+    "answer",
+    "summary",
+    "rationale",
+    "description",
+    "draft",
+)
 
 
 @dataclass(slots=True)
@@ -96,31 +114,175 @@ def build_transcript_tail(session: DesignerSession | None, *, tail: int = 6) -> 
     return messages
 
 
+def _coerce_text_patch_value(section: str, value: Any) -> str | None:
+    if isinstance(value, str):
+        return value.strip()
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        for key in (section, *_TEXT_PATCH_KEYS):
+            if key not in value:
+                continue
+            text = _coerce_text_patch_value(section, value[key])
+            if text:
+                return text
+        string_values = [
+            item.strip()
+            for item in value.values()
+            if isinstance(item, str) and item.strip()
+        ]
+        if len(string_values) == 1:
+            return string_values[0]
+        return None
+    if isinstance(value, list):
+        if not value:
+            return ""
+        pieces: list[str] = []
+        for item in value:
+            text = _coerce_text_patch_value(section, item)
+            if not text:
+                return None
+            pieces.append(text)
+        return "\n".join(pieces)
+    if isinstance(value, (bool, int, float)):
+        return str(value)
+    return None
+
+
+def _list_item_annotation(annotation: Any) -> Any | None:
+    origin = get_origin(annotation)
+    if origin is not list:
+        return None
+    args = get_args(annotation)
+    return args[0] if args else Any
+
+
+def _normalize_for_annotation(section: str, value: Any, annotation: Any) -> Any:
+    item_annotation = _list_item_annotation(annotation)
+    if item_annotation is not None:
+        raw_items = value if isinstance(value, list) else [value]
+        normalized_items: list[Any] = []
+        for raw_item in raw_items:
+            normalized = _normalize_for_annotation(section, raw_item, item_annotation)
+            if normalized is _SKIP_PATCH_VALUE:
+                continue
+            try:
+                normalized_items.append(TypeAdapter(item_annotation).validate_python(normalized))
+            except ValidationError as exc:
+                logger.warning(
+                    "skipping invalid outline patch list item section=%s error=%s",
+                    section,
+                    exc.errors(include_url=False),
+                )
+        if raw_items and not normalized_items:
+            return _SKIP_PATCH_VALUE
+        return normalized_items
+
+    if annotation is str:
+        text = _coerce_text_patch_value(section, value)
+        return text if text is not None else _SKIP_PATCH_VALUE
+    return value
+
+
+def _validate_outline_field(section: str, value: Any) -> Any:
+    field = OutlineArtifact.model_fields[section]
+    return TypeAdapter(field.annotation).validate_python(value)
+
+
+def _set_outline_field(
+    working: OutlineArtifact,
+    *,
+    section: str,
+    op: str,
+    value: Any,
+) -> bool:
+    if value is _SKIP_PATCH_VALUE:
+        logger.warning("skipping invalid outline patch value section=%s op=%s", section, op)
+        return False
+    try:
+        validated = _validate_outline_field(section, value)
+    except ValidationError as exc:
+        logger.warning(
+            "skipping invalid outline patch section=%s op=%s error=%s",
+            section,
+            op,
+            exc.errors(include_url=False),
+        )
+        return False
+    setattr(working, section, validated)
+    return True
+
+
 def apply_outline_patch(outline: OutlineArtifact, patch: OutlinePatch) -> OutlineArtifact:
     """Apply a Brain B outline patch section-by-section.
 
     Unknown sections are skipped rather than raised. ``replace`` sets the
     value, ``append`` extends lists, ``remove`` filters list items by
-    equality.
+    equality. All values are normalized and validated against the
+    ``OutlineArtifact`` field type before assignment so model-specific JSON
+    wrappers cannot corrupt the outline shape.
     """
     working = outline.model_copy(deep=True)
     for section in patch.sections:
         if not hasattr(working, section.section):
             continue
+        field = OutlineArtifact.model_fields.get(section.section)
+        if field is None:
+            continue
+        annotation = field.annotation
         current = getattr(working, section.section)
         if section.op == "replace":
-            setattr(working, section.section, section.value)
+            normalized = _normalize_for_annotation(
+                section.section,
+                section.value,
+                annotation,
+            )
+            _set_outline_field(
+                working,
+                section=section.section,
+                op=section.op,
+                value=normalized,
+            )
         elif section.op == "append":
             if isinstance(current, list):
+                item_annotation = _list_item_annotation(annotation)
+                if item_annotation is None:
+                    continue
+                normalized = _normalize_for_annotation(
+                    section.section,
+                    section.value,
+                    annotation,
+                )
+                if normalized is _SKIP_PATCH_VALUE:
+                    logger.warning(
+                        "skipping invalid outline patch value section=%s op=%s",
+                        section.section,
+                        section.op,
+                    )
+                    continue
                 new_list = list(current)
-                new_list.append(section.value)
-                setattr(working, section.section, new_list)
+                new_list.extend(normalized)
+                _set_outline_field(
+                    working,
+                    section=section.section,
+                    op=section.op,
+                    value=new_list,
+                )
         elif section.op == "remove":
             if isinstance(current, list):
-                setattr(
-                    working,
+                normalized = _normalize_for_annotation(
                     section.section,
-                    [item for item in current if item != section.value],
+                    section.value,
+                    annotation,
+                )
+                if normalized is _SKIP_PATCH_VALUE:
+                    continue
+                remove_values = normalized if isinstance(normalized, list) else [normalized]
+                _set_outline_field(
+                    working,
+                    section=section.section,
+                    op=section.op,
+                    value=[item for item in current if item not in remove_values],
                 )
     return working
 

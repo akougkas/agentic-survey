@@ -19,6 +19,7 @@ from agentic_survey.domain.outline import (
 )
 from agentic_survey.domain.tools import GetUserInputOptions
 from agentic_survey.engine.state_machine import CampaignState, transition_or_raise
+from agentic_survey.json_safety import json_safe
 from agentic_survey.llm.catalog import AGENT_ROLES, AgentRole as CatalogRole, CatalogEntry, seed_entries
 
 ParticipantControl = Literal["pause", "skip", "continue", "stop"]
@@ -324,6 +325,11 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _safe_dict(value: Any) -> dict:
+    safe = json_safe(value or {})
+    return safe if isinstance(safe, dict) else {}
 
 
 def _campaign_id() -> str:
@@ -1112,8 +1118,8 @@ class InMemoryRepository:
                 if payload.get("reasoning_tokens") is not None
                 else None
             ),
-            reasoning_metadata=dict(payload.get("reasoning_metadata") or {}),
-            metadata=dict(payload.get("metadata") or {}),
+            reasoning_metadata=_safe_dict(payload.get("reasoning_metadata")),
+            metadata=_safe_dict(payload.get("metadata")),
             created_at=str(payload.get("created_at") or _timestamp()),
         )
         with self._lock:

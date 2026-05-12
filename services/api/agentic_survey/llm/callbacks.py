@@ -5,6 +5,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from agentic_survey.json_safety import json_safe
+
 logger = logging.getLogger(__name__)
 _audit_repository: Any | None = None
 
@@ -80,6 +82,9 @@ def _build_audit_row(
     error: Any = None,
 ) -> dict[str, Any]:
     metadata = _metadata(kwargs)
+    safe_metadata = json_safe(metadata)
+    if not isinstance(safe_metadata, dict):
+        safe_metadata = {}
     usage = _usage_from_response(completion_response)
     completion_tokens_details = _extract_value(usage, "completion_tokens_details") or {}
     reasoning_content = _reasoning_content(completion_response)
@@ -116,17 +121,17 @@ def _build_audit_row(
         "completion_tokens": completion_tokens,
         "total_tokens": total_tokens,
         "reasoning_tokens": _extract_value(completion_tokens_details, "reasoning_tokens"),
-        "reasoning_metadata": {
+        "reasoning_metadata": json_safe({
             "reasoning_chars": len(reasoning_content) if reasoning_content is not None else None,
             "reasoning_mode": metadata.get("reasoning_mode"),
             "reasoning_kwarg": metadata.get("reasoning_kwarg"),
             "reasoning_budget_tokens": metadata.get("reasoning_budget_tokens"),
             "thinking_enabled": metadata.get("thinking_enabled"),
-        },
+        }),
         "latency_ms": _latency_ms(start_time, end_time),
         "status": status,
         "error_summary": error_summary,
-        "metadata": metadata or {},
+        "metadata": safe_metadata,
         "created_at": _coerce_datetime(end_time).isoformat(),
     }
     return row
