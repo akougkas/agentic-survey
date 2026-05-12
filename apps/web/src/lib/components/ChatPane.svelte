@@ -17,6 +17,7 @@
   export let resumePending = false;
   export let connected = true;
   export let thinkingMessages: string[] = ['Thinking...'];
+  export let streamingAgentText = '';
 
   const PENDING_ROTATION_MS = 2500;
 
@@ -325,9 +326,16 @@
       {#if pending}
         <article class="turn turn--agent turn--pending" aria-hidden="true">
           <p class="turn-role">{agentName}</p>
-          <p class="turn-body turn-body--muted">
-            <span class="dot-pulse"><span></span><span></span><span></span></span>
-            <span class="turn-pending-status">{pendingStatus}</span>
+          <p
+            class="turn-body"
+            class:turn-body--muted={!streamingAgentText.trim()}
+          >
+            {#if streamingAgentText.trim()}
+              {streamingAgentText}
+            {:else}
+              <span class="dot-pulse"><span></span><span></span><span></span></span>
+              <span class="turn-pending-status">{pendingStatus}</span>
+            {/if}
           </p>
         </article>
       {/if}

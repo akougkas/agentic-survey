@@ -22,6 +22,7 @@
   let endModalOpen = false;
   let endPending = false;
   let connected = true;
+  let streamingAgentText = '';
 
   let modalCardEl: HTMLDivElement | null = null;
   let modalKeepBtnEl: HTMLButtonElement | null = null;
@@ -145,6 +146,13 @@
       return;
     }
     switch (name) {
+      case 'token': {
+        const text = typeof data.text === 'string' ? data.text : '';
+        if (text && sendPending) {
+          streamingAgentText = `${streamingAgentText}${text}`;
+        }
+        return;
+      }
       case 'brain_b_planned': {
         const plan = (data.next_plan ?? null) as BrainBIntent | null;
         patchNextPlan(plan);
@@ -225,6 +233,7 @@
       'validator_scored',
       'concepts_extracted',
       'graph_delta',
+      'token',
       'turn_complete',
       'session_finished',
       'session_paused'
@@ -292,6 +301,7 @@
     }
 
     sendPending = true;
+    streamingAgentText = '';
     error = '';
 
     const optimisticTurnId = `pending-${Date.now()}`;
@@ -322,8 +332,10 @@
           content: event.detail.content
         }
       );
+      streamingAgentText = '';
     } catch (caught) {
       rollbackOptimisticTurn(optimisticTurnId);
+      streamingAgentText = '';
       error = caught instanceof ApiError ? caught.message : 'Unable to send that turn right now.';
     } finally {
       sendPending = false;
@@ -450,6 +462,7 @@
       submitLabel={submitLabelText}
       disabled={isFinished}
       pending={sendPending}
+      streamingAgentText={streamingAgentText}
       paused={isPaused}
       resumePending={resumePending}
       activePrompt={activePrompt}
