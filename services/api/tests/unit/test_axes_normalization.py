@@ -61,6 +61,8 @@ def _run(
     rubric_axes: list[str] | None,
     prior_axes_coverage: list[AxisCoverage] | None = None,
     close_guard_axes: list[str] | None = None,
+    minimum_close_coverage_axes: int = 0,
+    allow_under_minimum_close: bool = False,
 ):
     router = _ScriptedRouter([_completion(content=json.dumps(payload))])
     return asyncio.run(
@@ -73,6 +75,8 @@ def _run(
             rubric_axes=rubric_axes,
             prior_axes_coverage=prior_axes_coverage,
             close_guard_axes=close_guard_axes,
+            minimum_close_coverage_axes=minimum_close_coverage_axes,
+            allow_under_minimum_close=allow_under_minimum_close,
         )
     )
 
@@ -181,6 +185,29 @@ def test_close_guard_leaves_should_close_true_when_R8_nonzero() -> None:
     assert result.intent.should_close is True
 
 
+def test_close_guard_blocks_close_when_minimum_axes_not_covered() -> None:
+    axes = [{"axis": "R8", "score": 0.5, "gap": ""}]
+    result = _run(
+        payload=_intent_payload(axes_coverage=axes, should_close=True),
+        rubric_axes=[f"R{n}" for n in range(1, 9)],
+        close_guard_axes=["R8"],
+        minimum_close_coverage_axes=4,
+    )
+    assert result.intent.should_close is False
+
+
+def test_close_guard_allows_under_minimum_for_participant_completion() -> None:
+    axes = [{"axis": "R8", "score": 0.5, "gap": ""}]
+    result = _run(
+        payload=_intent_payload(axes_coverage=axes, should_close=True),
+        rubric_axes=[f"R{n}" for n in range(1, 9)],
+        close_guard_axes=["R8"],
+        minimum_close_coverage_axes=4,
+        allow_under_minimum_close=True,
+    )
+    assert result.intent.should_close is True
+
+
 def test_close_guard_is_inert_when_not_configured() -> None:
     axes = [{"axis": "R8", "score": 0.0, "gap": ""}]
     result = _run(
@@ -245,3 +272,30 @@ def test_interviewer_no_close_guard_when_rubric_empty() -> None:
         )
     )
     assert intent.should_close is True
+
+
+def test_interviewer_derives_minimum_close_coverage_from_outline_rubric() -> None:
+    outline = OutlineArtifact(
+        axes=[f"R{n} — Foo" for n in range(1, 9)],
+        rubric=OutlineRubric(
+            mandatory_close_axes=["R8"],
+            minimum_close_coverage_axes=4,
+        ),
+    )
+    payload = _intent_payload(
+        axes_coverage=[{"axis": "R8", "score": 0.5, "gap": ""}],
+        should_close=True,
+    )
+    router = _ScriptedRouter([_completion(content=json.dumps(payload))])
+    intent = asyncio.run(
+        run_brain_b_interviewer(
+            outline=outline,
+            transcript_tail=[],
+            session_signals=SessionSignals(),
+            router=router,
+            search_knowledge=_empty_search,
+            list_grounding_sources=lambda: [],
+            graph_neighborhood=None,
+        )
+    )
+    assert intent.should_close is False

@@ -81,6 +81,7 @@ sequenceDiagram
     R-->>API: session with participant_token
     API->>EP: pin_session(session.id, default_interviewer_endpoint)
     API->>R: mark_invite_used(invite.id, session.id)
+    API->>API: spawn_pre_plan_bg(session.id)
     API-->>W: Set participant cookie and return session
     W->>P: Navigate to /chat/{session_id}
 ```
@@ -126,11 +127,11 @@ The opening turn is deterministic. It does not call an LLM. The text is built by
 `opening_turn_message(campaign, session)` from the outline, consent mode, and
 micro-form answers.
 
-Current implementation note: the codebase includes `spawn_pre_plan_bg` and
-`run_pre_plan_background`, but the participant invite/start routes do not call
-that dispatcher today. Unless another caller has already written
-`session.next_plan`, the first substantive participant turn uses a scaffold
-intent and Brain B plans the next turn in the post-turn background task.
+Invite redemption schedules `spawn_pre_plan_bg(...)` for the fresh session.
+`POST /sessions/{id}/start` also schedules the same single-flight dispatcher if
+no ready plan exists yet. If the pre-plan is late or fails, the first
+substantive participant turn still degrades to the deterministic scaffold
+intent, and Brain B plans the following turn in the post-turn background task.
 
 ## Participant Turn: Foreground Path
 
@@ -240,7 +241,7 @@ sequenceDiagram
     participant Tools as Tool registry
     participant Repo as Repository
 
-    BG->>B: outline, transcript tail, signals, prior coverage
+    BG->>B: outline without full bank, question shortlist, transcript tail, signals, prior coverage
     B->>Router: acompletion(model=mira-scientist, tools, tool_choice=required)
     alt registry tool call
         Router-->>B: tool call
@@ -282,8 +283,12 @@ Brain B safeguards:
 - The terminal output is validated as `BrainBIntent`.
 - One parse-repair iteration is attempted before raising.
 - Axes coverage is normalized, clamped, and monotonic against prior coverage.
-- Question coverage is filtered to the eligible question bank.
+- Brain B sees a server-ranked shortlist of eligible question intents, while
+  question coverage is still filtered against the full eligible question ids.
 - Mandatory close axes can prevent premature `should_close=true`.
+- Campaigns can also declare `minimum_close_coverage_axes` so a normal close
+  requires broader non-zero evidence coverage; participant-led completion can
+  still close once mandatory axes are satisfied.
 
 ## Database Writes
 
@@ -323,6 +328,9 @@ Important write points:
 - Brain B question coverage changes write `question_answer`.
 - Knowledge retrieval writes one `retrieval_audit` row per `search_knowledge`
   tool call.
+- Brain B plans carry `retrieval_audit_ids`; the rendered agent turn stores the
+  primary `retrieval_audit_id` so admin audit views can load the exact retrieval
+  rows used by that turn.
 
 Schema tables currently defined but not the primary write path in this loop:
 

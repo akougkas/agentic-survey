@@ -29,6 +29,7 @@ __all__ = [
     "InterviewerBrainBError",
     "SearchKnowledge",
     "run_brain_b_interviewer",
+    "shortlist_question_bank_for_prompt",
 ]
 
 SearchKnowledge = Callable[[str, int], Awaitable[list[dict[str, Any]]]]
@@ -36,6 +37,9 @@ GraphNeighborhood = Callable[..., Awaitable[dict[str, Any]]]
 
 # Back-compat alias; the shared loop raises BrainBLoopError.
 InterviewerBrainBError = BrainBLoopError
+
+_QUESTION_SHORTLIST_LIMIT = 8
+_CONTINUING_QUESTION_STATUSES = {"targeting", "partial"}
 
 
 async def run_brain_b_interviewer(
@@ -93,17 +97,25 @@ async def run_brain_b_interviewer(
     )
     if eligible_question_ids is None:
         eligible_question_ids = [question.id for question in eligible_questions]
+    question_shortlist = shortlist_question_bank_for_prompt(
+        eligible_questions,
+        prior_question_coverage=prior_question_coverage,
+        prior_axes_coverage=prior_axes_coverage,
+        rubric_axes=list(outline.axes),
+        active_axis_prefix=prior_active_axis_prefix,
+        limit=_QUESTION_SHORTLIST_LIMIT,
+    )
 
     outline_payload = (
         _compact_outline_for_prompt(outline)
         if compact_context
-        else outline.model_dump()
+        else _outline_for_prompt(outline)
     )
     system_context = [
         "Current outline (JSON):\n" + json.dumps(outline_payload, indent=2),
-        "Question bank (eligible questions for this respondent):\n"
+        "Question shortlist (server-ranked candidate intents for this turn; the full eligible bank stays server-side):\n"
         + json.dumps(
-            [_question_for_prompt(question) for question in eligible_questions],
+            [_question_for_prompt(question) for question in question_shortlist],
             indent=2,
         ),
         "Prior question coverage (server enforces monotonicity):\n"
@@ -154,6 +166,8 @@ async def run_brain_b_interviewer(
         rubric_axes=list(outline.axes),
         prior_axes_coverage=prior_axes_coverage,
         close_guard_axes=list(outline.rubric.mandatory_close_axes),
+        minimum_close_coverage_axes=outline.rubric.minimum_close_coverage_axes,
+        allow_under_minimum_close=_allow_under_minimum_close(session_signals),
         eligible_question_ids=eligible_question_ids,
         prior_question_coverage=prior_question_coverage,
         reasoning_budget_tokens=reasoning_budget_tokens,
@@ -187,6 +201,130 @@ def filter_question_bank_for_role(
     return eligible
 
 
+def shortlist_question_bank_for_prompt(
+    question_bank: list[SurveyQuestion],
+    *,
+    prior_question_coverage: list[QuestionCoverage] | None = None,
+    prior_axes_coverage: list[AxisCoverage] | None = None,
+    rubric_axes: list[str] | None = None,
+    active_axis_prefix: str = "",
+    limit: int = _QUESTION_SHORTLIST_LIMIT,
+) -> list[SurveyQuestion]:
+    """Return a small ranked question-intent set for Brain B's prompt.
+
+    Role filtering has already happened before this helper runs. The shortlist
+    keeps continuation questions visible, then spreads candidates across the
+    lowest-covered rubric axes so Citadl does not dump the full instrument into
+    every planning call.
+    """
+    if limit <= 0:
+        return []
+    questions = [question.model_copy(deep=True) for question in question_bank]
+    if len(questions) <= limit:
+        return questions
+
+    prior_by_id = {entry.question_id: entry for entry in prior_question_coverage or []}
+    score_by_axis = {
+        _axis_prefix(entry.axis): max(0.0, min(1.0, entry.score))
+        for entry in prior_axes_coverage or []
+        if _axis_prefix(entry.axis)
+    }
+    axis_order = [_axis_prefix(axis) for axis in rubric_axes or []]
+    axis_order = [axis for axis in axis_order if axis]
+    axis_rank = {axis: index for index, axis in enumerate(axis_order)}
+    original_index = {question.id: index for index, question in enumerate(questions)}
+
+    selected: list[SurveyQuestion] = []
+    selected_ids: set[str] = set()
+
+    def add(question: SurveyQuestion | None) -> None:
+        if question is None or question.id in selected_ids or len(selected) >= limit:
+            return
+        selected.append(question.model_copy(deep=True))
+        selected_ids.add(question.id)
+
+    def question_rank(question: SurveyQuestion) -> tuple[int, int, int]:
+        prior = prior_by_id.get(question.id)
+        status = prior.status if prior is not None else "pending"
+        status_rank = {
+            "targeting": 0,
+            "partial": 1,
+            "pending": 2,
+            "skipped": 3,
+            "satisfied": 4,
+        }.get(status, 2)
+        tier_rank = {"A": 0, "B": 1, "C": 2}.get((question.tier or "").upper(), 3)
+        return (status_rank, tier_rank, original_index.get(question.id, 10_000))
+
+    def best_for_axis(axis: str) -> SurveyQuestion | None:
+        candidates = [
+            question
+            for question in questions
+            if question.id not in selected_ids and _axis_prefix(question.axis_tag) == axis
+        ]
+        if not candidates:
+            return None
+        live_candidates = [
+            question
+            for question in candidates
+            if prior_by_id.get(question.id, QuestionCoverage(question_id=question.id)).status
+            not in {"satisfied", "skipped"}
+        ]
+        return min(live_candidates or candidates, key=question_rank)
+
+    for question in sorted(
+        questions,
+        key=lambda q: (
+            0
+            if prior_by_id.get(q.id) is not None
+            and prior_by_id[q.id].status in _CONTINUING_QUESTION_STATUSES
+            else 1,
+            question_rank(q),
+        ),
+    ):
+        prior = prior_by_id.get(question.id)
+        if prior is not None and prior.status in _CONTINUING_QUESTION_STATUSES:
+            add(question)
+
+    active_axis = _axis_prefix(active_axis_prefix)
+    if active_axis:
+        add(best_for_axis(active_axis))
+
+    ranked_axes = sorted(
+        {
+            _axis_prefix(question.axis_tag)
+            for question in questions
+            if _axis_prefix(question.axis_tag)
+        },
+        key=lambda axis: (score_by_axis.get(axis, 0.0), axis_rank.get(axis, 10_000), axis),
+    )
+    for axis in ranked_axes:
+        add(best_for_axis(axis))
+        if len(selected) >= limit:
+            break
+
+    for question in sorted(questions, key=question_rank):
+        add(question)
+        if len(selected) >= limit:
+            break
+
+    return selected
+
+
+def _axis_prefix(raw: str) -> str:
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    first = value.split(maxsplit=1)[0].strip("—:-. ")
+    if len(first) >= 2 and first[0].upper() == "R" and first[1:].isdigit():
+        return first.upper()
+    return value
+
+
+def _allow_under_minimum_close(session_signals: SessionSignals) -> bool:
+    return bool(session_signals.participant_explicit_completion)
+
+
 def _question_for_prompt(question: SurveyQuestion) -> dict[str, Any]:
     return {
         "id": question.id,
@@ -209,3 +347,10 @@ def _compact_outline_for_prompt(outline: OutlineArtifact) -> dict[str, Any]:
         "rubric": outline.rubric.model_dump(),
         "participant_faq": [entry.model_dump() for entry in outline.participant_faq],
     }
+
+
+def _outline_for_prompt(outline: OutlineArtifact) -> dict[str, Any]:
+    payload = outline.model_dump()
+    payload.pop("question_bank", None)
+    payload["question_bank_count"] = len(outline.question_bank)
+    return payload

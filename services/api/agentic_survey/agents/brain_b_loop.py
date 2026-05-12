@@ -1146,6 +1146,8 @@ def _finalize_valid_intent(
     rubric_axes: list[str] | None,
     prior_axes_coverage: list[AxisCoverage] | None,
     close_guard_axes: list[str] | None,
+    minimum_close_coverage_axes: int,
+    allow_under_minimum_close: bool,
     eligible_question_ids: list[str] | None,
     prior_question_coverage: list[QuestionCoverage] | None,
     prior_active_axis_prefix: str,
@@ -1165,10 +1167,12 @@ def _finalize_valid_intent(
             rubric_axes=rubric_axes,
             prior_axes=prior_axes_coverage,
         )
-    if close_guard_axes:
+    if close_guard_axes or minimum_close_coverage_axes > 0:
         intent = _enforce_close_guard(
             intent,
             close_guard_axes=close_guard_axes,
+            minimum_close_coverage_axes=minimum_close_coverage_axes,
+            allow_under_minimum_close=allow_under_minimum_close,
             surface=surface,
         )
     if eligible_question_ids is not None:
@@ -1207,11 +1211,11 @@ def _enforce_close_guard(
     intent: BrainBIntent,
     *,
     close_guard_axes: list[str] | None,
+    minimum_close_coverage_axes: int,
+    allow_under_minimum_close: bool,
     surface: Surface,
 ) -> BrainBIntent:
     if not intent.should_close:
-        return intent
-    if not close_guard_axes:
         return intent
     score_by_prefix: dict[str, float] = {}
     for entry in intent.axes_coverage:
@@ -1219,7 +1223,7 @@ def _enforce_close_guard(
         if not prefix:
             continue
         score_by_prefix[prefix] = _clamp_score(entry.score)
-    for raw_guard in close_guard_axes:
+    for raw_guard in close_guard_axes or []:
         prefix = _axis_prefix(raw_guard)
         if not prefix:
             continue
@@ -1229,6 +1233,20 @@ def _enforce_close_guard(
                 "close guard flipped should_close=False surface=%s reason=axis_%s_is_zero",
                 surface,
                 prefix,
+            )
+            return intent.model_copy(update={"should_close": False})
+    if minimum_close_coverage_axes > 0 and not allow_under_minimum_close:
+        covered_axes = {
+            prefix
+            for entry in intent.axes_coverage
+            if (prefix := _axis_prefix(entry.axis)) and _clamp_score(entry.score) > 0.0
+        }
+        if len(covered_axes) < minimum_close_coverage_axes:
+            logger.warning(
+                "close guard flipped should_close=False surface=%s reason=covered_axes_%s_below_minimum_%s",
+                surface,
+                len(covered_axes),
+                minimum_close_coverage_axes,
             )
             return intent.model_copy(update={"should_close": False})
     return intent
@@ -1341,6 +1359,8 @@ async def run_brain_b_with_tools(
     rubric_axes: list[str] | None = None,
     prior_axes_coverage: list[AxisCoverage] | None = None,
     close_guard_axes: list[str] | None = None,
+    minimum_close_coverage_axes: int = 0,
+    allow_under_minimum_close: bool = False,
     eligible_question_ids: list[str] | None = None,
     prior_question_coverage: list[QuestionCoverage] | None = None,
     reasoning_budget_tokens: int | None = None,
@@ -1368,8 +1388,11 @@ async def run_brain_b_with_tools(
     prior defaults to ``0.0``). When ``close_guard_axes`` is truthy and the
     model emitted ``should_close=True``, the guard flips it back to ``False``
     whenever any listed axis is missing or scored ``0.0``; the flip is logged
-    for audit. Both knobs default to ``None`` so the Designer surface keeps
-    its existing permissive behavior.
+    for audit. ``minimum_close_coverage_axes`` can also require a practical
+    number of touched axes before a normal close, while
+    ``allow_under_minimum_close`` lets explicit participant completion or
+    fatigue still close once mandatory axes are satisfied. These knobs default
+    to permissive values so the Designer surface keeps its existing behavior.
 
     When ``eligible_question_ids`` is provided, Interviewer ``question_coverage``
     is merged into ``prior_question_coverage`` with out-of-bank emissions
@@ -1562,6 +1585,8 @@ async def run_brain_b_with_tools(
                 rubric_axes=rubric_axes,
                 prior_axes_coverage=prior_axes_coverage,
                 close_guard_axes=close_guard_axes,
+                minimum_close_coverage_axes=minimum_close_coverage_axes,
+                allow_under_minimum_close=allow_under_minimum_close,
                 eligible_question_ids=eligible_question_ids,
                 prior_question_coverage=prior_question_coverage,
                 prior_active_axis_prefix=prior_active_axis_prefix,
@@ -1609,6 +1634,8 @@ async def run_brain_b_with_tools(
                     rubric_axes=rubric_axes,
                     prior_axes_coverage=prior_axes_coverage,
                     close_guard_axes=close_guard_axes,
+                    minimum_close_coverage_axes=minimum_close_coverage_axes,
+                    allow_under_minimum_close=allow_under_minimum_close,
                     eligible_question_ids=eligible_question_ids,
                     prior_question_coverage=prior_question_coverage,
                     prior_active_axis_prefix=prior_active_axis_prefix,
@@ -1751,6 +1778,8 @@ async def run_brain_b_with_tools(
             rubric_axes=rubric_axes,
             prior_axes_coverage=prior_axes_coverage,
             close_guard_axes=close_guard_axes,
+            minimum_close_coverage_axes=minimum_close_coverage_axes,
+            allow_under_minimum_close=allow_under_minimum_close,
             eligible_question_ids=eligible_question_ids,
             prior_question_coverage=prior_question_coverage,
             prior_active_axis_prefix=prior_active_axis_prefix,

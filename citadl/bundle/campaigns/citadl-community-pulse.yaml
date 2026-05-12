@@ -1118,8 +1118,8 @@ outline:
     mitigation: Probes anchor in recent failure episodes and desired-vs-actual gaps, not aspirational statements. R8 disconfirmation is fired on every respondent.
   - risk: Probe-selection drift where Brain B repeatedly picks the easy axes (R1, R4) and neglects harder ones (R3, R8).
     mitigation: Rubric-axis saturation scoring (runtime feature) tracks coverage per axis; Brain B prompt requires R8 coverage before close authority fires.
-  - risk: Premature close declared before R1–R8 have touched, especially on long conversations that drift.
-    mitigation: Close authority gated on rubric-axis coverage minimums; scientist can override close either direction through the operator console.
+  - risk: Premature close declared after only the mandatory R8 critique, leaving the rest of the evidence map too thin to use.
+    mitigation: R8 remains a hard close gate, and normal close also requires at least four non-zero rubric axes; participant-led completion can still close gracefully once R8 has been heard.
   - risk: Respondent fatigue on open-ended conversation at 30-plus minutes; dropout before R7–R8.
     mitigation: Brain B tracks turn count and fatigue signals; if fatigue surfaces, Brain B surfaces R8 early and closes gracefully, accepting partial coverage over dropout.
   - risk: Bot or low-effort submissions in the public-recruitment path distorting the corpus.
@@ -1154,10 +1154,12 @@ outline:
     - Avoid introducing "agentic" or "autonomous" before the respondent does; probe in the respondent's own vocabulary.
     - Anchor every abstract response in a recent concrete episode.
     - Fire R8 on every respondent; partial coverage is better than skipping it.
+    - Do not close after R8 alone; normal close needs at least four non-zero axes unless the respondent clearly wants to stop.
     - Correct register openly if the opening classification of the respondent proves wrong.
     - Do not defend the vision when R8 is answered; elicit and record.
     mandatory_close_axes:
     - R8
+    minimum_close_coverage_axes: 4
   freshness_query: agentic AI scientific data lifecycle community requirements trust governance 2026
   persona_hints:
     name: Mira
@@ -1167,7 +1169,7 @@ outline:
     tone: 'Measured, curious, technically literate, and honest about uncertainty. Mira matches the respondent''s register across a continuous gradient. When the respondent sounds like a practicing PI, Mira reads as a peer scientist; when they sound like a storage architect, Mira reads as a peer operator; when they sound like an AI researcher, Mira reads as a peer AI researcher. Mira never reads as corporate, as salesy, or as methodology-explaining.
 
       '
-    behavior: 'Open with a light question that lets the respondent self-describe in one or two sentences. Use the first two or three turns to infer role, domain, and technical fluency from their vocabulary, metaphors, and what they describe as difficult. Hold the register tentatively and correct openly if the respondent signals a different identity. Ask one precise question at a time. Funnel from broad to concrete quickly; prefer recent specific episodes over abstract opinions. Select probes from the R1–R8 rubric based on what the respondent has opened and the coverage state of the conversation so far. Track which axes have been touched and which have not. Fire R8 on every respondent without exception. Close gracefully when the rubric is sufficiently covered for this respondent''s available time and attention, not when a fixed turn ceiling is reached.
+    behavior: 'Open with a light question that lets the respondent self-describe in one or two sentences. Use the first two or three turns to infer role, domain, and technical fluency from their vocabulary, metaphors, and what they describe as difficult. Hold the register tentatively and correct openly if the respondent signals a different identity. Ask one precise question at a time. Funnel from broad to concrete quickly; prefer recent specific episodes over abstract opinions. Select probes from the R1–R8 rubric based on what the respondent has opened and the coverage state of the conversation so far. Track which axes have been touched and which have not. Fire R8 on every respondent without exception, but do not treat R8 alone as enough to close. Normal close needs R8 plus at least three other touched axes; if the respondent clearly wants to stop, close gently after R8 rather than pushing for completeness.
 
       '
   consent_language: 'This is a research conversation conducted by Mira, an autonomous interview agent, for the CITADL project (Cyberinfrastructure for Intelligent, Trustworthy, Agentic Data Lifecycles). Your participation is voluntary. You can skip any question, pause at any time, or stop the conversation entirely with no explanation. You may stay anonymous or share your name and affiliation if you prefer — named responses may be quoted with attribution in the resulting NSF proposal and internal project artifacts. Everything you say is stored privately on infrastructure operated by the CITADL planning team, accessed only by team members, and used to inform the architecture and governance of a proposed national agentic data management infrastructure. No email or identifying information is collected beyond what you volunteer. The conversation will take roughly twenty to forty minutes depending on how much of your experience you choose to share.
@@ -1236,8 +1238,8 @@ seed_sources:
     Rich grounding material for each axis — full probe phrasings, trigger
     conditions, depth pathways — lives in the citadl-probe-bank.md
     knowledge document. Full project context lives in the
-    citadl-vision-brief.md knowledge document. Mira retrieves from both
-    through search_knowledge when planning the next probe.
+    citadl-vision-brief.md knowledge document. Mira retrieves from those
+    sources only when the next probe needs that grounding, not as a ritual.
   rationale: |
     Anchors Brain B's planning on the eight-axis rubric and points to the two primary knowledge documents that carry the detailed grounding. Ensures Brain B knows which axes it must cover and which artifact to search when it needs deeper probe material.
 - kind: raw_text

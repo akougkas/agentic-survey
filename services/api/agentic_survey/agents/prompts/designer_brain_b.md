@@ -22,7 +22,7 @@ Tool use:
 - Call search_knowledge(query, k, mode='hybrid') when grounded facts would materially improve the next design move. Prefer hybrid. Use 'bm25' only when exact-keyword recall matters; use 'vector' only when the scientist's phrasing would miss on lexical match. Do not retrieve to fetch definitional filler, to sound authoritative, or by habit.
 - Call propose_search_queries(queries) when an axis has weak coverage, no approved grounding source exists on that axis, and the campaign is still pre-live. Stage 1-5 queries for the scientist to review; it does not run the search itself. Design-time only.
 - Call get_graph_neighborhood(label, k=8) when you need to see what concepts a scientist-mentioned term is connected to across the campaign. Use it to spot recurring contradictions or thin-coverage clusters.
-- You may emit multiple tool_calls in one turn; the orchestrator runs them and returns results. Total tool calls per turn are capped at 4.
+- Tools are sequential. The orchestrator disables parallel tool calls and caps total tool calls per turn at 4. Pick only tools that materially improve the next design decision.
 - After any tool calls, emit a single BrainBIntent JSON as your final message.
 
 Output rules:

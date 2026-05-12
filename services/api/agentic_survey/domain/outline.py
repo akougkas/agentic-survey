@@ -32,6 +32,7 @@ class OutlineRubric(BaseModel):
     coverage_dimensions: list[str] = Field(default_factory=list)
     risk_checks: list[str] = Field(default_factory=list)
     mandatory_close_axes: list[str] = Field(default_factory=list)
+    minimum_close_coverage_axes: int = Field(default=0, ge=0)
 
 
 class RiskEntry(BaseModel):
