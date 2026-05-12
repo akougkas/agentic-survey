@@ -8,7 +8,9 @@ export type CampaignState =
   | 'archived';
 
 export type AgentRole = 'chatter' | 'scientist' | 'validator' | 'analyst' | 'embedding' | 'ingest';
-export type Endpoint = 'mini' | 'dynamo';
+export type Endpoint = 'chatter' | 'scientist';
+export type ReasoningMode = 'off' | 'on' | 'budget';
+export type ReasoningKwarg = 'enable_thinking' | 'reasoning_effort' | 'none';
 export type AgentModelSelections = Partial<Record<AgentRole, string>>;
 export type ParticipantControl = 'pause' | 'skip' | 'continue' | 'stop';
 
@@ -21,6 +23,10 @@ export interface CatalogEntry {
   notes?: string | null;
   enabled: boolean;
   is_default: boolean;
+  reasoning_mode: ReasoningMode;
+  reasoning_budget_tokens?: number | null;
+  reasoning_kwarg: ReasoningKwarg;
+  temperature?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -34,6 +40,10 @@ export interface CatalogEntryPayload {
   notes?: string | null;
   enabled: boolean;
   is_default: boolean;
+  reasoning_mode: ReasoningMode;
+  reasoning_budget_tokens?: number | null;
+  reasoning_kwarg: ReasoningKwarg;
+  temperature?: number | null;
 }
 
 export interface OutlineRubric {

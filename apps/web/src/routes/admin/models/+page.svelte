@@ -6,9 +6,19 @@
   import { createEntry, deleteEntry, listCatalog, updateEntry } from '$lib/admin-models';
   import { ApiError } from '$lib/api';
   import { getAdminSession } from '$lib/admin';
-  import type { AgentRole, CatalogEntry, CatalogEntryPayload } from '$lib/types';
+  import type {
+    AgentRole,
+    CatalogEntry,
+    CatalogEntryPayload,
+    Endpoint,
+    ReasoningKwarg,
+    ReasoningMode
+  } from '$lib/types';
 
   const roleOrder: AgentRole[] = ['chatter', 'scientist', 'validator', 'analyst', 'embedding', 'ingest'];
+  const endpointOptions: Endpoint[] = ['chatter', 'scientist'];
+  const reasoningModeOptions: ReasoningMode[] = ['off', 'on', 'budget'];
+  const reasoningKwargOptions: ReasoningKwarg[] = ['enable_thinking', 'reasoning_effort', 'none'];
   const roleLabels: Record<AgentRole, string> = {
     chatter: 'Chatter',
     scientist: 'Scientist',
@@ -53,12 +63,65 @@
     return {
       catalog_id: '',
       role,
-      endpoint: role === 'chatter' ? 'mini' : 'dynamo',
+      endpoint: defaultEndpointForRole(role),
       model_id: '',
       label: '',
       notes: '',
       enabled: true,
-      is_default: false
+      is_default: false,
+      reasoning_mode: 'off',
+      reasoning_budget_tokens: null,
+      reasoning_kwarg: 'enable_thinking',
+      temperature: null
+    };
+  }
+
+  function defaultEndpointForRole(role: AgentRole): Endpoint {
+    return role === 'chatter' ? 'chatter' : 'scientist';
+  }
+
+  function endpointLabel(endpoint: Endpoint): string {
+    return endpoint === 'chatter' ? 'Chatter' : 'Scientist';
+  }
+
+  function optionalNumber(value: string): number | null {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function optionalInteger(value: string): number | null {
+    const parsed = optionalNumber(value);
+    if (parsed === null) {
+      return null;
+    }
+    return Number.isInteger(parsed) ? parsed : Math.trunc(parsed);
+  }
+
+  function formatOptionalNumber(value: number | null | undefined): string {
+    return value === null || value === undefined ? '' : String(value);
+  }
+
+  function handleRoleChange(role: AgentRole): void {
+    const previousDefault = defaultEndpointForRole(form.role);
+    form.role = role;
+    if (form.endpoint === previousDefault) {
+      form.endpoint = defaultEndpointForRole(role);
+    }
+  }
+
+  function normalizedForm(): CatalogEntryPayload {
+    return {
+      ...form,
+      catalog_id: form.catalog_id.trim(),
+      model_id: form.model_id.trim(),
+      label: form.label.trim(),
+      notes: form.notes?.trim() || null,
+      reasoning_budget_tokens: form.reasoning_budget_tokens ?? null,
+      temperature: form.temperature ?? null
     };
   }
 
@@ -101,7 +164,11 @@
       label: entry.label,
       notes: entry.notes ?? '',
       enabled: entry.enabled,
-      is_default: entry.is_default
+      is_default: entry.is_default,
+      reasoning_mode: entry.reasoning_mode ?? 'off',
+      reasoning_budget_tokens: entry.reasoning_budget_tokens ?? null,
+      reasoning_kwarg: entry.reasoning_kwarg ?? 'none',
+      temperature: entry.temperature ?? null
     };
     editorOpen = true;
     error = '';
@@ -117,20 +184,22 @@
     saving = true;
     error = '';
     try {
+      const payload = normalizedForm();
       if (editorMode === 'edit') {
-        await updateEntry(form.catalog_id, form.role, {
-          endpoint: form.endpoint,
-          model_id: form.model_id,
-          label: form.label,
-          notes: form.notes?.trim() || null,
-          enabled: form.enabled,
-          is_default: form.is_default
+        await updateEntry(payload.catalog_id, payload.role, {
+          endpoint: payload.endpoint,
+          model_id: payload.model_id,
+          label: payload.label,
+          notes: payload.notes,
+          enabled: payload.enabled,
+          is_default: payload.is_default,
+          reasoning_mode: payload.reasoning_mode,
+          reasoning_budget_tokens: payload.reasoning_budget_tokens,
+          reasoning_kwarg: payload.reasoning_kwarg,
+          temperature: payload.temperature
         });
       } else {
-        await createEntry({
-          ...form,
-          notes: form.notes?.trim() || null
-        });
+        await createEntry(payload);
       }
       await loadEntries();
       closeEditor();
@@ -232,7 +301,16 @@
 
                     <div class="grid gap-2">
                       <p class="label m-0">Endpoint</p>
-                      <p class="m-0 text-sm text-[color:var(--text)]">{entry.endpoint}</p>
+                      <p class="m-0 text-sm text-[color:var(--text)]">{endpointLabel(entry.endpoint)}</p>
+                      <p class="m-0 text-xs leading-6 text-[color:var(--muted)]">
+                        reasoning {entry.reasoning_mode}
+                        {#if entry.reasoning_budget_tokens}
+                          ; {entry.reasoning_budget_tokens} tokens
+                        {/if}
+                        {#if entry.temperature !== null && entry.temperature !== undefined}
+                          ; temp {entry.temperature}
+                        {/if}
+                      </p>
                     </div>
 
                     <div class="flex flex-wrap justify-start gap-2 xl:justify-end">
@@ -275,7 +353,12 @@
 
           <label class="grid gap-2">
             <span class="label">Role</span>
-            <select bind:value={form.role} class="field" disabled={editorMode === 'edit'}>
+            <select
+              value={form.role}
+              class="field"
+              disabled={editorMode === 'edit'}
+              on:change={(event) => handleRoleChange((event.currentTarget as HTMLSelectElement).value as AgentRole)}
+            >
               {#each roleOrder as role}
                 <option value={role}>{roleLabels[role]}</option>
               {/each}
@@ -285,8 +368,9 @@
           <label class="grid gap-2">
             <span class="label">Endpoint</span>
             <select bind:value={form.endpoint} class="field">
-              <option value="mini">mini</option>
-              <option value="dynamo">dynamo</option>
+              {#each endpointOptions as endpoint}
+                <option value={endpoint}>{endpointLabel(endpoint)}</option>
+              {/each}
             </select>
           </label>
 
@@ -304,6 +388,61 @@
             <span class="label">Notes</span>
             <textarea bind:value={form.notes} class="field min-h-[7rem]"></textarea>
           </label>
+
+          <div class="grid gap-4 border-y border-[color:var(--line)] py-4">
+            <div class="grid gap-4 md:grid-cols-2">
+              <label class="grid gap-2">
+                <span class="label">Reasoning mode</span>
+                <select bind:value={form.reasoning_mode} class="field">
+                  {#each reasoningModeOptions as mode}
+                    <option value={mode}>{mode}</option>
+                  {/each}
+                </select>
+              </label>
+
+              <label class="grid gap-2">
+                <span class="label">Reasoning kwarg</span>
+                <select bind:value={form.reasoning_kwarg} class="field">
+                  {#each reasoningKwargOptions as kwarg}
+                    <option value={kwarg}>{kwarg}</option>
+                  {/each}
+                </select>
+              </label>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <label class="grid gap-2">
+                <span class="label">Reasoning budget tokens</span>
+                <input
+                  value={formatOptionalNumber(form.reasoning_budget_tokens)}
+                  min="1"
+                  step="1"
+                  type="number"
+                  class="field"
+                  placeholder="Default"
+                  on:input={(event) =>
+                    (form.reasoning_budget_tokens = optionalInteger(
+                      (event.currentTarget as HTMLInputElement).value
+                    ))}
+                />
+              </label>
+
+              <label class="grid gap-2">
+                <span class="label">Temperature</span>
+                <input
+                  value={formatOptionalNumber(form.temperature)}
+                  min="0"
+                  max="2"
+                  step="0.05"
+                  type="number"
+                  class="field"
+                  placeholder="Default"
+                  on:input={(event) =>
+                    (form.temperature = optionalNumber((event.currentTarget as HTMLInputElement).value))}
+                />
+              </label>
+            </div>
+          </div>
 
           <label class="flex items-center gap-3 text-sm text-[color:var(--muted)]">
             <input bind:checked={form.enabled} type="checkbox" />
