@@ -74,8 +74,8 @@ Coolify must inject:
 
 | Variable | Value | Notes |
 |---|---|---|
-| `SURVEY_API_IMAGE` | *(set pushed M11.10 API image)* | Used by backend and worker. |
-| `SURVEY_WEB_IMAGE` | *(set pushed M11.10 web image)* | Used by SvelteKit frontend. |
+| `SURVEY_API_IMAGE` | *(set pushed API image)* | Used by backend and worker. |
+| `SURVEY_WEB_IMAGE` | *(set pushed web image)* | Used by SvelteKit frontend. |
 | `SURVEY_PUBLIC_BASE_URL` | `https://citadl.gnosis.run` | Used for invite URLs. |
 | `SURVEY_FRONTEND_ORIGIN` | `https://citadl.gnosis.run` | CORS. |
 | `SURVEY_PRODUCT_BUNDLE_DIR` | `/app/citadl/bundle` | Mounted read-only from the repo. |
@@ -130,7 +130,7 @@ on port 80. This matches the existing `gnosis-run-site` pattern confirmed in
 
 1. Confirm the runtime verifies clean locally:
    `make verify` (runs bundle-validate, api-test, web-check, web-build).
-2. Build and push the M11.10 API and web images to the registry blade can
+2. Build and push the current API and web images to the registry blade can
    pull from.
 3. In Coolify (`http://100.124.181.9:8000`), create a new **Docker Compose**
    application pointed at this repo with compose file path
