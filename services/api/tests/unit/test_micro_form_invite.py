@@ -305,26 +305,26 @@ def test_opening_turn_message_forbidden_substrings_absent_in_both_branches() -> 
     fallback_lower = fallback.lower()
     for bad in forbidden:
         assert bad.lower() not in fallback_lower, f"fallback leaked {bad!r}: {fallback}"
-    assert "skip" in fallback_lower and "pause" in fallback_lower
+    assert "what kind of work" in fallback_lower
 
 
-def test_opening_turn_message_names_controls_once() -> None:
+def test_opening_turn_message_leaves_controls_to_ui() -> None:
     campaign, repo, session_id = _campaign_with_answers(
         {"evidence_of_belonging": "Operating a Slurm cluster."}
     )
     session = repo.get_interview_session(session_id)
     assert session is not None
     message = opening_turn_message(campaign, session)
-    controls_sentence = "You can skip, pause, come back later, or stop anytime."
-    assert message.count(controls_sentence) == 1
+    lower = message.lower()
+    for phrase in ("skip", "pause", "come back", "stop anytime"):
+        assert phrase not in lower
 
 
-def test_opening_turn_message_has_three_beats_and_under_word_budget() -> None:
-    """Greeting + orientation + soft opener; under 120 words; ends with one '?'.
+def test_opening_turn_message_has_two_beats_and_under_word_budget() -> None:
+    """Greeting + consent posture + soft opener; under 70 words; ends with one '?'.
 
     Beat-1 marker: starts with the greeting.
-    Beat-2 marker: names the controls verbatim and the consent posture.
-    Beat-3 marker: ends with a single question and includes the soft-opener cue.
+    Beat-2 marker: ends with a single question and includes the soft-opener cue.
     """
     campaign, repo, session_id = _campaign_with_answers(
         {"evidence_of_belonging": "I run cryo-EM single-particle reconstruction on a university cluster."}
@@ -333,9 +333,8 @@ def test_opening_turn_message_has_three_beats_and_under_word_budget() -> None:
     assert session is not None
     message = opening_turn_message(campaign, session)
     word_count = len(message.split())
-    assert word_count <= 120, f"opener exceeded 120 words: {word_count} → {message}"
+    assert word_count <= 70, f"opener exceeded 70 words: {word_count} -> {message}"
     assert message.startswith("Welcome. I'm Mira")
-    assert "You can skip, pause, come back later, or stop anytime." in message
     assert "anonymous" in message.lower()
     assert "To start:" in message
     assert message.count("?") == 1, f"opener must end with one question: {message!r}"

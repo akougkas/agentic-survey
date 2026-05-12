@@ -62,15 +62,11 @@ logger = logging.getLogger(__name__)
 def opening_turn_message(campaign: Campaign, session: InterviewSessionRecord) -> str:
     """The first agent turn at the top of a participant session.
 
-    Three beats, deterministic (no LLM) so a session boots cleanly even
+    Two beats, deterministic (no LLM) so a session boots cleanly even
     when the router is cold:
 
-    1. Greeting and role-aware purpose. When the participant picked a role
-       at intake, the greeting calls it out so the conversation lands as
-       "with someone who's done what you do," not as a generic survey.
-    2. Orientation. Names the axis count, time bound, consent posture,
-       and the four control verbs (skip, pause, come back, stop).
-    3. Soft opener. Echoes ``evidence_of_belonging`` when present and
+    1. Greeting, consent posture, and optional role-aware purpose.
+    2. Soft opener. Echoes ``evidence_of_belonging`` when present and
        invites one concrete moment. If the participant skipped the
        optional role question, the opener asks it back in plain language
        instead of fabricating one. Never the R-axis probe — Brain B fires
@@ -85,26 +81,19 @@ def opening_turn_message(campaign: Campaign, session: InterviewSessionRecord) ->
     evidence = (answers.get("evidence_of_belonging") or "").strip()
     role_self_description = (answers.get("role_self_description") or "").strip()
     consent_mode = getattr(session, "consent_mode", "anonymous")
-    axis_count = sum(1 for axis in (campaign.outline.axes or []) if axis and axis.strip())
 
     role_phrase = _role_phrase_for_opener(role_self_description)
     if role_phrase:
         greeting = (
-            f"Welcome. I'm Mira, here to learn how {role_phrase} actually work with data day-to-day."
+            f"Welcome. I'm Mira. I'd like to understand how {role_phrase} actually work with data day to day."
         )
     else:
         greeting = "Welcome. I'm Mira."
 
-    axes_word = _axis_count_word(axis_count)
     if consent_mode == "named":
-        consent_phrase = "Your responses can be attributed to you, as you chose at intake."
+        consent_phrase = "You chose attribution at intake."
     else:
         consent_phrase = "Your responses stay anonymous."
-    controls = "You can skip, pause, come back later, or stop anytime."
-    orientation = (
-        f"We'll move through {axes_word} short topic threads at whatever depth "
-        f"your time allows. {consent_phrase} {controls}"
-    )
 
     if evidence:
         noun_phrase = _extract_noun_phrase(evidence)
@@ -122,7 +111,7 @@ def opening_turn_message(campaign: Campaign, session: InterviewSessionRecord) ->
             "To start: what does a recent ordinary day with data look like for you?"
         )
 
-    return f"{greeting} {orientation} {opener}"
+    return f"{greeting} {consent_phrase} {opener}"
 
 
 # Mapping the optional intake role to a peer-style noun the greeting can use.
@@ -144,28 +133,6 @@ def _role_phrase_for_opener(role_self_description: str) -> str:
     if not cleaned:
         return ""
     return _ROLE_PHRASE_BY_OPTION.get(cleaned, "")
-
-
-_AXIS_COUNT_WORDS: dict[int, str] = {
-    1: "one",
-    2: "two",
-    3: "three",
-    4: "four",
-    5: "five",
-    6: "six",
-    7: "seven",
-    8: "eight",
-    9: "nine",
-    10: "ten",
-}
-
-
-def _axis_count_word(count: int) -> str:
-    if count <= 0:
-        return "a handful of"
-    if count in _AXIS_COUNT_WORDS:
-        return _AXIS_COUNT_WORDS[count]
-    return str(count)
 
 
 # Pivot table: first-person pronouns and contractions in a micro-form answer
