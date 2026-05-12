@@ -472,6 +472,7 @@ def test_opening_turn_message_handles_i_am_evidence_without_broken_grammar() -> 
 
     assert "you am" not in message.lower()
     assert "you're a professor researching data management at scale" in message
+    assert "with that" not in message
     assert message.count("?") == 1
 
 

@@ -102,7 +102,7 @@ def opening_turn_message(campaign: Campaign, session: InterviewSessionRecord) ->
         noun_phrase = _extract_noun_phrase(evidence)
         opener = (
             f"To start: you mentioned {noun_phrase}. "
-            "What does a typical day with that look like for you these days?"
+            "What does a typical day in that work look like right now?"
         )
     elif not role_self_description:
         opener = (
