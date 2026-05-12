@@ -24,6 +24,7 @@ from agentic_survey.llm.reasoning import (
     repair_completion_tokens,
     sanitize_thinking_messages,
     set_lmstudio_thinking,
+    visible_reply_max_tokens,
 )
 from agentic_survey.llm.router import LiteLLMRouter, LiteLLMRouterError, get_litellm_router
 from agentic_survey.repository import Campaign, InMemoryRepository, get_repository
@@ -290,7 +291,11 @@ class LLMClient:
         if extra_body:
             request["extra_body"] = dict(extra_body)
         if disable_reasoning:
-            set_lmstudio_thinking(request, enabled=False)
+            set_lmstudio_thinking(
+                request,
+                enabled=False,
+                min_tokens=visible_reply_max_tokens(),
+            )
         elif resolution is not None:
             apply_reasoning_settings(resolution, request)
         # Gemma's llama-server rejects thinking-enabled requests whose final

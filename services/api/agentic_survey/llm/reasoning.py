@@ -224,7 +224,11 @@ def apply_reasoning_settings(
 
     if kwarg == "enable_thinking":
         if mode == "off":
-            set_lmstudio_thinking(request, enabled=False)
+            set_lmstudio_thinking(
+                request,
+                enabled=False,
+                min_tokens=visible_reply_max_tokens(),
+            )
         elif mode == "on":
             set_lmstudio_thinking(
                 request,
@@ -248,6 +252,7 @@ def apply_reasoning_settings(
     if kwarg == "reasoning_effort":
         if mode == "off":
             request["reasoning_effort"] = "minimal"
+            _ensure_min_max_tokens(request, visible_reply_max_tokens())
         elif mode == "on":
             request["reasoning_effort"] = "high"
             _ensure_min_max_tokens(request, reasoning_completion_tokens())

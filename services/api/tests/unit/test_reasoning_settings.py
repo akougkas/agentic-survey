@@ -14,6 +14,7 @@ from agentic_survey.llm.reasoning import (
     reasoning_completion_tokens,
     reasoning_final_response_tokens,
     set_lmstudio_thinking,
+    visible_reply_max_tokens,
 )
 from agentic_survey.repository import InMemoryRepository
 
@@ -165,7 +166,7 @@ def test_validator_catalog_default_disables_thinking() -> None:
         request,
     )
 
-    assert request["max_tokens"] == 1024
+    assert request["max_tokens"] >= visible_reply_max_tokens()
     assert request["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
 
 
@@ -206,7 +207,7 @@ def test_empty_content_repair_disables_reasoning(monkeypatch) -> None:
     assert len(router.calls) == 2
     assert router.calls[0]["max_tokens"] == reasoning_completion_tokens()
     assert router.calls[0]["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
-    assert router.calls[1]["max_tokens"] == REPAIR_COMPLETION_TOKENS
+    assert router.calls[1]["max_tokens"] >= visible_reply_max_tokens()
     assert router.calls[1]["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
 
     get_settings.cache_clear()
@@ -238,5 +239,7 @@ def test_llm_client_recovers_json_from_reasoning_content(monkeypatch) -> None:
 
     assert json.loads(result.content) == payload
     assert len(router.calls) == 1
+    assert router.calls[0]["max_tokens"] >= visible_reply_max_tokens()
+    assert router.calls[0]["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
 
     get_settings.cache_clear()

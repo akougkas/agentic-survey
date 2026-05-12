@@ -422,6 +422,9 @@ Role behavior:
   - Used by Brain A for visible prose.
   - Reasoning is off.
   - Temperature comes from `SURVEY_CHATTER_TEMPERATURE`.
+  - Requests still reserve visible-output headroom because some local
+    reasoning models emit hidden `reasoning_content` even when the chat
+    template is told not to think.
 - Scientist routes to `mira-scientist`.
   - Used by Brain B for planning and tool use.
   - Reasoning is controlled by `SURVEY_SCIENTIST_SUPPORTS_REASONING`.
@@ -432,7 +435,9 @@ Role behavior:
     `reasoning_content` and still return a parseable final object.
 - Validator routes to `validator`.
   - Called by `LLMClient.chat(...)`.
-  - Uses `temperature=0.0` and disables reasoning.
+  - Uses `temperature=0.0`, disables reasoning, and keeps the same
+    visible-output token floor used by chatter/retry calls so hidden reasoning
+    leakage cannot consume the whole JSON budget.
   - Repairs malformed JSON once.
 - Embeddings route to `embeddings`.
   - Used by query embedding and concept/knowledge vector operations.
